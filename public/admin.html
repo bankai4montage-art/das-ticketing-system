@@ -292,6 +292,35 @@
       document.getElementById('addCourierForm').reset();
       loadCouriers();
     });
+     async function uploadCsvSheet() {
+  const fileInput = document.getElementById('csvFile');
+  const resultEl = document.getElementById('uploadResult');
+  
+  if (fileInput.files.length === 0) {
+    alert('يرجى اختيار ملف CSV أولاً');
+    return;
+  }
+
+  const file = fileInput.files[0];
+  const text = await file.text();
+
+  const res = await fetch('/api/admin/upload-couriers', {
+    post: 'POST',
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain' },
+    body: text
+  });
+
+  const data = await res.json();
+  if (res.ok) {
+    resultEl.textContent = `✅ تم رفع وتحديث ${data.count} مندوب بنجاح!`;
+    resultEl.classList.remove('hidden');
+    loadCouriers(); // تحديث قائمة المناديب الظاهرة
+    fileInput.value = '';
+  } else {
+    alert(data.error || 'حدث خطأ أثناء الرفع');
+  }
+}
   </script>
 </body>
 </html>
