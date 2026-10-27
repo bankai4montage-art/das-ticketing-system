@@ -131,6 +131,14 @@
         <input type="text" id="newCourierPhone" class="input" placeholder="رقم الموبايل" inputmode="tel">
         <button type="submit" class="btn btn-ok" id="addCourierBtn"><span class="spinner"></span><i data-ico="plus"></i><span class="label">حفظ المندوب</span></button>
       </form>
+      <div class="upload-block">
+        <h4 style="font-size:12px;color:var(--text-3)">أو ارفع شيت المناديب (CSV فيه عمود Code وعمود Name) — إعادة الرفع بتحدّط الأسماء</h4>
+        <div class="upload-row">
+          <input type="file" id="csvFile" class="visually-hidden" accept=".csv,text/csv">
+          <button type="button" class="btn btn-ok btn-sm" id="uploadBtn" onclick="pickCsv()"><span class="spinner"></span><i data-ico="upload"></i><span class="label">رفع شيت CSV</span></button>
+          <span class="file-name" id="csvFileName"></span>
+        </div>
+      </div>
       <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
         <h4 style="font-size:12px;color:var(--text-3);margin-bottom:10px" id="couriersCount">المناديب المسجلين</h4>
         <div id="couriersList" style="max-height:230px;overflow-y:auto;display:grid;gap:8px"></div>
@@ -310,12 +318,15 @@
               onchange="updateTicket(${t.id})" onkeydown="if(event.key==='Enter')this.blur()">
           </td>
           <td data-label="الحالة">
-            <select id="status-${t.id}" class="select status-select ${cls}" onchange="updateTicket(${t.id})">
-              <option value="يتم المراجعة" ${t.status === 'يتم المراجعة' ? 'selected' : ''}>⏳ يتم المراجعة</option>
-              <option value="اتحلت" ${t.status === 'اتحلت' ? 'selected' : ''}>✅ اتحلت</option>
-              <option value="لازم تيجي المكتب" ${t.status === 'لازم تيجي المكتب' ? 'selected' : ''}>🏢 لازم تيجي المكتب</option>
-            </select>
-            <span class="saved-tick" id="tick-${t.id}">${DAS.icon('check')}</span>
+            <div class="status-wrap">
+              <select id="status-${t.id}" class="select status-select ${cls}" onchange="updateTicket(${t.id})">
+                <option value="يتم المراجعة" ${t.status === 'يتم المراجعة' ? 'selected' : ''}>⏳ يتم المراجعة</option>
+                <option value="اتحلت" ${t.status === 'اتحلت' ? 'selected' : ''}>✅ اتحلت</option>
+                <option value="لازم تيجي المكتب" ${t.status === 'لازم تيجي المكتب' ? 'selected' : ''}>🏢 لازم تيجي المكتب</option>
+              </select>
+              <span class="saved-tick" id="tick-${t.id}">${DAS.icon('check')}</span>
+              <button class="btn btn-del btn-icon" title="مسح الشكوى" aria-label="مسح الشكوى" onclick="deleteTicket(${t.id})">${DAS.icon('trash')}</button>
+            </div>
           </td>
         </tr>`;
       }).join('');
@@ -341,6 +352,59 @@
         DAS.toast('فشل الحفظ، حاول مرة أخرى', 'err');
       }
     }
+
+    async function deleteTicket(id) {
+      if (!confirm('متأكد من مسح الشكوى دي نهائياً؟')) return;
+      try {
+        const res = await adminFetch(`/api/admin/tickets/${id}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error();
+        DAS.toast('تم مسح الشكوى');
+        fetchTickets(true);
+      } catch (e) {
+        DAS.toast('فشل المسح، حاول مرة أخرى', 'err');
+      }
+    }
+
+    // ---------- رفع شيت المناديب (CSV) ----------
+    function pickCsv() { $('csvFile').click(); }
+
+    // قارئة CSV: نجرّب UTF-8 الأول، ولو الملف متسجل من Excel بترميز عربي بنفكّه windows-1256
+    async function readCsvText(file) {
+      const buf = await file.arrayBuffer();
+      try {
+        return new TextDecoder('utf-8', { fatal: true }).decode(buf);
+      } catch (e) {
+        return new TextDecoder('windows-1256').decode(buf);
+      }
+    }
+
+    $('csvFile').addEventListener('change', async () => {
+      const file = $('csvFile').files[0];
+      if (!file) return;
+      const btn = $('uploadBtn');
+      DAS.busy(btn, true);
+      $('csvFileName').textContent = file.name;
+      try {
+        const text = await readCsvText(file);
+        const res = await adminFetch('/api/admin/upload-couriers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/csv' },
+          body: text
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          DAS.toast(data.error || 'فشل رفع الشيت', 'err');
+          return;
+        }
+        DAS.toast(`تم رفع/تحديث ${data.count} مندوب من الشيت`);
+        loadCouriers();
+      } catch (e) {
+        DAS.toast('فشل رفع الشيت', 'err');
+      } finally {
+        DAS.busy(btn, false);
+        $('csvFile').value = '';
+      }
+    });
 
     // ---------- Filters ----------
     document.querySelectorAll('.kpi').forEach(k => k.addEventListener('click', () => {

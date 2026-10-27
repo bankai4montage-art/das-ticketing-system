@@ -87,20 +87,6 @@ db.serialize(() => {
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
-
-  // إضافة مناديب تجريبيين لو الجدول فاضي (محلياً بس)
-  if (!isProd) {
-    db.get("SELECT COUNT(*) as count FROM couriers", (err, row) => {
-      if (row && row.count === 0) {
-        const stmt = db.prepare("INSERT INTO couriers (das_code, name, phone) VALUES (?, ?, ?)");
-        stmt.run("DAS-101", "أحمد محمد علي", "01012345678");
-        stmt.run("DAS-102", "محمود حسن إبراهيم", "01287654321");
-        stmt.run("DAS-103", "كريم عادل سعيد", "01122334455");
-        stmt.run("DAS-104", "مصطفى طارق", "01555667788");
-        stmt.finalize();
-      }
-    });
-  }
 });
 
 // ================= API للمندوب =================

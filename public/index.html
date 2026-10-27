@@ -26,7 +26,7 @@
 
         <form id="loginForm" autocomplete="off">
           <div class="field">
-            <input type="text" id="dasInput" class="input code-input" required placeholder="DAS-101" autocapitalize="characters" spellcheck="false" aria-label="كود المندوب">
+            <input type="text" id="dasInput" class="input code-input" required placeholder="ادخل كود المندوب" autocapitalize="characters" spellcheck="false" aria-label="كود المندوب">
           </div>
           <p id="loginError" class="err-text" role="alert"></p>
           <button type="submit" class="btn btn-primary" style="width:100%" id="loginBtn">
@@ -42,7 +42,7 @@
       <header class="glass topbar rise">
         <div class="avatar" id="avatar">DA</div>
         <div class="who">
-          <div class="code mono" id="courierCodeBadge">DAS-101</div>
+          <div class="code mono" id="courierCodeBadge">—</div>
           <div class="name" id="courierName">—</div>
         </div>
         <div class="actions">
@@ -127,8 +127,6 @@
     let firstLoad = true;
 
     $('issueDateInput').valueAsDate = new Date();
-
-    function fillCode(c) { $('dasInput').value = c; $('dasInput').focus(); }
 
     // استرجاع الجلسة
     try {
