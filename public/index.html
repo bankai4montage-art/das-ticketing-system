@@ -35,8 +35,8 @@
     </form>
 
     <div class="mt-6 pt-4 border-t border-slate-700/60 text-center">
-      <p class="text-xs text-slate-500">أكواد للتجربة السريعة: <span class="text-slate-300 font-mono">DAS-101</span> أو <span class="text-slate-300 font-mono">DAS-102</span></p>
-      <a href="/admin.html" class="inline-block mt-3 text-xs text-indigo-400 hover:underline">الدخول للوحة الإدارة (Admin) &larr;</a>
+      <p class="text-xs text-slate-500">أكواد للتجربة: <span class="text-slate-300 font-mono">DAS-101</span> أو <span class="text-slate-300 font-mono">DAS-102</span></p>
+      <a href="/admin.html" class="inline-block mt-3 text-xs text-indigo-400 hover:underline">الدخول لوحة الإدارة (Admin) &larr;</a>
     </div>
   </div>
 
@@ -124,9 +124,7 @@
         </span>
       </div>
 
-      <div id="myTicketsList" class="space-y-3">
-        <!-- الشكاوى هتنزل هنا بالجافاسكريبت -->
-      </div>
+      <div id="myTicketsList" class="space-y-3"></div>
     </div>
 
   </div>
@@ -135,10 +133,8 @@
     let currentCourier = null;
     let pollInterval = null;
 
-    // تعيين تاريخ اليوم كافتراضي
     document.getElementById('issueDateInput').valueAsDate = new Date();
 
-    // فحص لو المندوب مسجل دخول قبل كده
     const saved = localStorage.getItem('das_courier');
     if (saved) {
       currentCourier = JSON.parse(saved);
@@ -179,7 +175,7 @@
       document.getElementById('courierName').textContent = currentCourier.name;
       loadMyTickets();
       if (pollInterval) clearInterval(pollInterval);
-      pollInterval = setInterval(loadMyTickets, 4000); // تحديث لحظي كل 4 ثواني
+      pollInterval = setInterval(loadMyTickets, 4000);
     }
 
     function logout() {
