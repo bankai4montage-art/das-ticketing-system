@@ -60,6 +60,14 @@
         </div>
       </header>
 
+      <!-- تبويبات العرض: الشكاوى / السلف -->
+      <section class="view-tabs rise">
+        <button class="chip active" id="tabTickets" onclick="switchView('tickets')"><i data-ico="layers"></i> الشكاوى</button>
+        <button class="chip" id="tabAdvances" onclick="switchView('advances')"><i data-ico="banknote"></i> السلف</button>
+      </section>
+
+      <div id="ticketsView">
+
       <!-- KPIs (بتشتغل كفلتر برضه) -->
       <section class="kpis stagger">
         <button class="kpi active" style="--i:1" data-status="all">
@@ -115,6 +123,36 @@
         </table>
       </section>
 
+      </div>
+
+      <!-- ============ عرض السلف ============ -->
+      <div id="advancesView" class="hidden">
+        <section class="glass adv-head rise">
+          <div>
+            <b>طلبات السلف</b>
+            <div class="adv-summary" id="advSummary">—</div>
+          </div>
+          <button class="btn btn-ok btn-sm" onclick="toggleAdvanceModal()"><i data-ico="plus"></i> تسجيل سلفة مصروفة</button>
+        </section>
+
+        <section class="glass table-wrap rise">
+          <table class="tbl">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>المندوب</th>
+                <th>المبلغ</th>
+                <th>السبب</th>
+                <th>المحفظة</th>
+                <th>الحالة</th>
+                <th>ملاحظة</th>
+              </tr>
+            </thead>
+            <tbody id="advTableBody"></tbody>
+          </table>
+        </section>
+      </div>
+
     </div>
   </div>
 
@@ -146,11 +184,36 @@
     </div>
   </div>
 
+  <!-- ============ نافذة تسجيل سلفة ============ -->
+  <div id="advanceModal" class="modal-back" onclick="if(event.target===this)toggleAdvanceModal()">
+    <div class="modal">
+      <div class="form-head">
+        <h3>تسجيل سلفة مصروفة</h3>
+        <button class="btn btn-ghost btn-icon" onclick="toggleAdvanceModal()" aria-label="إغلاق"><i data-ico="close"></i></button>
+      </div>
+      <form id="addAdvanceForm" style="display:grid;gap:12px">
+        <input type="text" id="advNewCode" class="input mono" style="text-transform:uppercase" placeholder="كود المندوب (مثال: DAS-105)" required>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <input type="number" id="advNewAmount" class="input" placeholder="المبلغ (جنيه)" min="50" max="1000000" step="50" required inputmode="numeric">
+          <input type="text" id="advNewWallet" class="input mono" placeholder="رقم المحفظة" inputmode="numeric">
+        </div>
+        <input type="text" id="advNewReason" class="input" placeholder="سبب السلفة" required>
+        <p id="addAdvErr" class="err-text" role="alert" style="min-height:0;margin:0"></p>
+        <button type="submit" class="btn btn-ok" id="addAdvanceBtn"><span class="spinner"></span><i data-ico="plus"></i><span class="label">حفظ السلفة</span></button>
+      </form>
+      <div class="hint" style="margin-top:16px;padding-top:14px">السلفة اللي بتسجلها هنا بتتحدد على "تمت الصرف" تلقائي — طلبات المندوبين بتوصل من تاباتهم بـ"قيد المراجعة"</div>
+    </div>
+  </div>
+
   <script>
     const $ = (id) => document.getElementById(id);
     const STATUS_CLS = { 'اتحلت': 'ok', 'لازم تيجي المكتب': 'bad', 'يتم المراجعة': 'warn' };
 
     let allTickets = [];
+    let allAdvances = [];
+    let advSig = null;
+    let advPrevIds = new Set();
+    let advFirstRender = true;
     let sig = null;
     let prevIds = new Set();
     let firstRender = true;
@@ -217,8 +280,9 @@
       $('adminLoginBox').classList.add('hidden');
       $('dashboardContent').classList.remove('hidden');
       fetchTickets(true);
+      fetchAdvances(true);
       if (pollTimer) clearInterval(pollTimer);
-      pollTimer = setInterval(fetchTickets, 4000);
+      pollTimer = setInterval(() => { fetchTickets(); fetchAdvances(); }, 4000);
     }
 
     function adminLogout() {
@@ -300,7 +364,12 @@
         const anim = animate ? '' : 'animation:none';
         return `
         <tr class="${flash}" style="--i:${Math.min(i, 14)};${anim}">
-          <td data-label="رقم الطلب" class="mono" style="color:var(--text-3);font-size:12px">#${t.id}</td>
+          <td data-label="رقم الطلب" class="mono">
+            <div class="row-head">
+              <span style="color:var(--text-3);font-size:12px">#${t.id}</span>
+              <button class="btn btn-del btn-icon" title="مسح الشكوى" aria-label="مسح الشكوى" onclick="deleteTicket(${t.id})">${DAS.icon('trash')}</button>
+            </div>
+          </td>
           <td data-label="المندوب">
             <div class="cell-courier">
               <div class="av" style="background:${DAS.gradient(t.das_code)}">${DAS.esc(DAS.initials(t.courier_name))}</div>
@@ -318,15 +387,12 @@
               onchange="updateTicket(${t.id})" onkeydown="if(event.key==='Enter')this.blur()">
           </td>
           <td data-label="الحالة">
-            <div class="status-wrap">
-              <select id="status-${t.id}" class="select status-select ${cls}" onchange="updateTicket(${t.id})">
-                <option value="يتم المراجعة" ${t.status === 'يتم المراجعة' ? 'selected' : ''}>⏳ يتم المراجعة</option>
-                <option value="اتحلت" ${t.status === 'اتحلت' ? 'selected' : ''}>✅ اتحلت</option>
-                <option value="لازم تيجي المكتب" ${t.status === 'لازم تيجي المكتب' ? 'selected' : ''}>🏢 لازم تيجي المكتب</option>
-              </select>
-              <span class="saved-tick" id="tick-${t.id}">${DAS.icon('check')}</span>
-              <button class="btn btn-del btn-icon" title="مسح الشكوى" aria-label="مسح الشكوى" onclick="deleteTicket(${t.id})">${DAS.icon('trash')}</button>
-            </div>
+            <select id="status-${t.id}" class="select status-select ${cls}" onchange="updateTicket(${t.id})">
+              <option value="يتم المراجعة" ${t.status === 'يتم المراجعة' ? 'selected' : ''}>⏳ يتم المراجعة</option>
+              <option value="اتحلت" ${t.status === 'اتحلت' ? 'selected' : ''}>✅ اتحلت</option>
+              <option value="لازم تيجي المكتب" ${t.status === 'لازم تيجي المكتب' ? 'selected' : ''}>🏢 لازم تيجي المكتب</option>
+            </select>
+            <span class="saved-tick" id="tick-${t.id}">${DAS.icon('check')}</span>
           </td>
         </tr>`;
       }).join('');
@@ -468,7 +534,146 @@
     });
 
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && $('courierModal').classList.contains('open')) toggleCourierModal();
+      if (e.key === 'Escape') {
+        if ($('courierModal').classList.contains('open')) toggleCourierModal();
+        if ($('advanceModal').classList.contains('open')) toggleAdvanceModal();
+      }
+    });
+
+    // ---------- عرض السلف ----------
+    const ADV_CLS = { 'تمت الصرف': 'ok', 'مرفوضة': 'bad', 'قيد المراجعة': 'warn' };
+
+    function switchView(v) {
+      const adv = v === 'advances';
+      $('ticketsView').classList.toggle('hidden', adv);
+      $('advancesView').classList.toggle('hidden', !adv);
+      $('tabTickets').classList.toggle('active', !adv);
+      $('tabAdvances').classList.toggle('active', adv);
+    }
+
+    async function fetchAdvances(force) {
+      let data;
+      try {
+        const res = await adminFetch('/api/admin/advances');
+        data = await res.json();
+      } catch (e) { return; }
+      const advances = data.advances || [];
+      const newSig = JSON.stringify(advances.map(a => [a.id, a.status, a.admin_note]));
+      if (newSig === advSig && !force) return;
+      advSig = newSig;
+
+      if (!advFirstRender) {
+        const fresh = advances.filter(a => !advPrevIds.has(a.id));
+        if (fresh.length) {
+          DAS.toast(fresh.length === 1 ? `طلب سلفة جديد من ${fresh[0].courier_name} بمبلغ ${fresh[0].amount} ج` : `${fresh.length} طلبات سلف جديدة`);
+        }
+      }
+      advPrevIds = new Set(advances.map(a => a.id));
+      allAdvances = advances;
+      renderAdvances();
+    }
+
+    function renderAdvances() {
+      const list = allAdvances;
+      const pending = list.filter(a => a.status === 'قيد المراجعة');
+      const paid = list.filter(a => a.status === 'تمت الصرف');
+      const sum = (arr) => arr.reduce((t, a) => t + (Number(a.amount) || 0), 0);
+      $('advSummary').textContent = `${list.length} سلفة — قيد المراجعة: ${pending.length} (${sum(pending)} ج) — مصروفة: ${paid.length} (${sum(paid)} ج)`;
+
+      const tbody = $('advTableBody');
+      if (!list.length) {
+        tbody.innerHTML = `<tr><td colspan="7"><div class="empty fade"><div class="eic">${DAS.icon('banknote', 'ico-lg')}</div><b>لا توجد سلف</b>طلبات المناديب هتظهر هنا، أو سجل سلفة صرفتها بنفسك</div></td></tr>`;
+        return;
+      }
+
+      const animate = advFirstRender;
+      advFirstRender = false;
+
+      tbody.innerHTML = list.map((a, i) => {
+        const cls = ADV_CLS[a.status] || 'warn';
+        const anim = animate ? '' : 'animation:none';
+        return `
+        <tr style="--i:${Math.min(i, 14)};${anim}">
+          <td class="mono" style="color:var(--text-3);font-size:12px">#${a.id}</td>
+          <td data-label="المندوب">
+            <div class="cell-courier">
+              <div class="av" style="background:${DAS.gradient(a.das_code)}">${DAS.esc(DAS.initials(a.courier_name))}</div>
+              <div><b>${DAS.esc(a.courier_name)}</b><small class="mono">${DAS.esc(a.das_code)}</small></div>
+            </div>
+          </td>
+          <td data-label="المبلغ"><span class="amt">${DAS.esc(a.amount)} ج</span></td>
+          <td data-label="السبب" class="desc-cell">${DAS.esc(a.reason)}</td>
+          <td data-label="المحفظة" class="mono">${DAS.esc(a.wallet || '—')}</td>
+          <td data-label="الحالة">
+            <select id="advstatus-${a.id}" class="select status-select ${cls}" onchange="updateAdvance(${a.id})">
+              <option value="قيد المراجعة" ${a.status === 'قيد المراجعة' ? 'selected' : ''}>⏳ قيد المراجعة</option>
+              <option value="تمت الصرف" ${a.status === 'تمت الصرف' ? 'selected' : ''}>✅ تمت الصرف</option>
+              <option value="مرفوضة" ${a.status === 'مرفوضة' ? 'selected' : ''}>❌ مرفوضة</option>
+            </select>
+            <span class="saved-tick" id="advtick-${a.id}">${DAS.icon('check')}</span>
+          </td>
+          <td data-label="ملاحظة">
+            <input type="text" id="advnote-${a.id}" class="input note-input" value="${DAS.esc(a.admin_note || '')}" placeholder="رد للمندوب..."
+              onchange="updateAdvance(${a.id})" onkeydown="if(event.key==='Enter')this.blur()">
+          </td>
+        </tr>`;
+      }).join('');
+    }
+
+    async function updateAdvance(id) {
+      const sel = $(`advstatus-${id}`);
+      const status = sel.value;
+      const admin_note = $(`advnote-${id}`).value;
+      sel.className = 'select status-select ' + (ADV_CLS[status] || 'warn');
+      try {
+        const res = await adminFetch(`/api/admin/advances/${id}`, {
+          method: 'PUT',
+          body: JSON.stringify({ status, admin_note })
+        });
+        if (!res.ok) throw new Error();
+        const tick = $(`advtick-${id}`);
+        if (tick) { tick.classList.add('show'); setTimeout(() => tick.classList.remove('show'), 1800); }
+        DAS.toast('تم حفظ التحديث');
+        fetchAdvances(true);
+      } catch (e) {
+        DAS.toast('فشل الحفظ، حاول مرة أخرى', 'err');
+      }
+    }
+
+    function toggleAdvanceModal() {
+      const m = $('advanceModal');
+      m.classList.toggle('open');
+      if (m.classList.contains('open')) $('addAdvErr').textContent = '';
+    }
+
+    $('addAdvanceForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const errEl = $('addAdvErr');
+      const btn = $('addAdvanceBtn');
+      errEl.textContent = '';
+      DAS.busy(btn, true);
+      try {
+        const res = await adminFetch('/api/admin/advances', {
+          method: 'POST',
+          body: JSON.stringify({
+            das_code: $('advNewCode').value,
+            amount: Number($('advNewAmount').value),
+            reason: $('advNewReason').value,
+            wallet: $('advNewWallet').value
+          })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          errEl.textContent = data.error || 'فشل حفظ السلفة';
+          return;
+        }
+        $('addAdvanceForm').reset();
+        toggleAdvanceModal();
+        DAS.toast('تم تسجيل السلفة على حساب "تمت الصرف"');
+        fetchAdvances(true);
+      } catch (err) {
+        errEl.textContent = 'تعذر الاتصال بالسيرفر';
+      } finally { DAS.busy(btn, false); }
     });
   </script>
 </body>

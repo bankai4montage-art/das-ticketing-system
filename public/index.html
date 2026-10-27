@@ -72,6 +72,11 @@
           <h4>القبض</h4>
           <p>خصومات، بونص، تقفيل، حسابات</p>
         </button>
+        <button class="cat-card adv span rise" style="animation-delay:.36s" onclick="openAdvanceForm()" id="cardAdvance">
+          <div class="ci"><i data-ico="banknote" data-cls="ico-lg"></i></div>
+          <h4>سلفة</h4>
+          <p>طلب سلفة من القبض — تحويل على محفظتك</p>
+        </button>
       </section>
 
       <!-- فورم الشكوى -->
@@ -103,6 +108,35 @@
         </form>
       </section>
 
+      <!-- فورم السلفة -->
+      <section id="advanceFormBox" class="glass form-box hidden" style="border-color:color-mix(in srgb, var(--warn) 45%, transparent)">
+        <div class="form-head">
+          <h3>طلب سلفة</h3>
+          <button class="btn btn-ghost btn-sm" onclick="closeAdvanceForm()" type="button"><i data-ico="close"></i> إغلاق</button>
+        </div>
+        <form id="advanceForm">
+          <div class="form-grid">
+            <div class="field">
+              <label for="advAmount">المبلغ المطلوب (جنيه)</label>
+              <input type="number" id="advAmount" class="input" min="50" max="20000" step="50" required placeholder="500">
+            </div>
+            <div class="field">
+              <label for="advWallet">رقم المحفظة (فودافون كاش / انستاباي)</label>
+              <input type="tel" id="advWallet" class="input mono" required inputmode="numeric" pattern="[0-9]{10,13}" maxlength="13" placeholder="01xxxxxxxxx">
+            </div>
+          </div>
+          <div class="field" style="margin-bottom:16px">
+            <label for="advReason">سبب السلفة</label>
+            <textarea id="advReason" class="textarea" rows="3" required maxlength="300" placeholder="اكتب سبب السلفة باختصار..."></textarea>
+            <div class="counter"><span id="advCharCount">0</span> / 300</div>
+          </div>
+          <p id="advErr" class="err-text" role="alert"></p>
+          <button type="submit" class="btn btn-primary" style="width:100%" id="advSubmitBtn">
+            <span class="spinner"></span><i data-ico="send"></i><span class="label">إرسال طلب السلفة</span>
+          </button>
+        </form>
+      </section>
+
       <!-- متابعة الشكاوى -->
       <section class="glass tickets-card rise" style="animation-delay:.35s">
         <div class="section-title" style="margin:0 0 16px">
@@ -112,6 +146,17 @@
         <div id="myTicketsList" class="ticket-list">
           <div class="skeleton" style="height:110px"></div>
           <div class="skeleton" style="height:110px"></div>
+        </div>
+      </section>
+
+      <!-- متابعة السلف -->
+      <section class="glass tickets-card rise" style="animation-delay:.42s">
+        <div class="section-title" style="margin:0 0 16px">
+          <span style="font-size:16px;color:var(--text);font-weight:800">سلفك وحالتها</span>
+          <span class="live"><i></i> تحديث تلقائي</span>
+        </div>
+        <div id="myAdvancesList" class="ticket-list">
+          <div class="skeleton" style="height:90px"></div>
         </div>
       </section>
 
@@ -125,6 +170,9 @@
     let lastSig = null;
     let prevMap = {};
     let firstLoad = true;
+    let advSig = null;
+    let advPrevMap = {};
+    let advFirstLoad = true;
 
     $('issueDateInput').valueAsDate = new Date();
 
@@ -170,9 +218,11 @@
       const av = $('avatar');
       av.textContent = DAS.initials(currentCourier.name);
       firstLoad = true; lastSig = null; prevMap = {};
+      advFirstLoad = true; advSig = null; advPrevMap = {};
       loadMyTickets();
+      loadMyAdvances();
       if (pollInterval) clearInterval(pollInterval);
-      pollInterval = setInterval(loadMyTickets, 4000);
+      pollInterval = setInterval(() => { loadMyTickets(); loadMyAdvances(); }, 4000);
     }
 
     function logout() {
@@ -183,6 +233,7 @@
       $('loginScreen').classList.remove('hidden');
       $('dasInput').value = '';
       closeForm();
+      closeAdvanceForm();
     }
 
     const OPTIONS = {
@@ -191,6 +242,7 @@
     };
 
     function openForm(category) {
+      closeAdvanceForm();
       $('selectedCategory').value = category;
       $('formTitle').textContent = `تسجيل شكوى بخصوص: ${category}`;
       const sel = $('subTypeInput');
@@ -247,6 +299,137 @@
         DAS.busy(btn, false);
       }
     });
+
+    const ADV_STATUS = {
+      'تمت الصرف':   { cls: 'ok',   label: 'تمت الصرف' },
+      'مرفوضة':      { cls: 'bad',  label: 'مرفوضة' },
+      'قيد المراجعة': { cls: 'warn', label: 'قيد المراجعة' }
+    };
+    const advSt = (s) => ADV_STATUS[s] || ADV_STATUS['قيد المراجعة'];
+
+    function advBadge(status) {
+      const s = advSt(status);
+      return `<span class="badge ${s.cls}"><span class="dot"></span>${s.label}</span>`;
+    }
+
+    // ---------- السلفة ----------
+    function openAdvanceForm() {
+      $('ticketFormBox').classList.add('hidden');
+      $('cardShift').classList.remove('active');
+      $('cardPayroll').classList.remove('active');
+      $('cardAdvance').classList.add('active');
+      const box = $('advanceFormBox');
+      box.classList.remove('hidden');
+      box.style.animation = 'none'; void box.offsetWidth; box.style.animation = '';
+      box.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setTimeout(() => $('advAmount').focus({ preventScroll: true }), 350);
+    }
+
+    function closeAdvanceForm() {
+      $('advanceFormBox').classList.add('hidden');
+      $('advanceForm').reset();
+      $('advCharCount').textContent = '0';
+      $('advErr').textContent = '';
+      $('cardAdvance').classList.remove('active');
+    }
+
+    $('advReason').addEventListener('input', (e) => { $('advCharCount').textContent = e.target.value.length; });
+
+    $('advanceForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const errEl = $('advErr');
+      const btn = $('advSubmitBtn');
+      errEl.textContent = '';
+      DAS.busy(btn, true);
+      try {
+        const res = await fetch('/api/advances', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            das_code: currentCourier.das_code,
+            amount: Number($('advAmount').value),
+            reason: $('advReason').value,
+            wallet: $('advWallet').value
+          })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          closeAdvanceForm();
+          DAS.toast('تم إرسال طلب السلفة للإدارة');
+          DAS.confetti();
+          await loadMyAdvances();
+        } else {
+          errEl.textContent = data.error || 'فشل إرسال الطلب، حاول مرة أخرى';
+        }
+      } catch (err) {
+        errEl.textContent = 'تعذر الاتصال بالسيرفر';
+      } finally {
+        DAS.busy(btn, false);
+      }
+    });
+
+    async function loadMyAdvances() {
+      if (!currentCourier) return;
+      let data;
+      try {
+        const res = await fetch(`/api/courier/advances/${encodeURIComponent(currentCourier.das_code)}`);
+        if (!res.ok) return;
+        data = await res.json();
+      } catch (e) { return; }
+
+      const advances = data.advances || [];
+      const sig = JSON.stringify(advances.map(a => [a.id, a.status, a.admin_note]));
+      if (sig === advSig) return;
+      advSig = sig;
+
+      const changed = new Set();
+      if (!advFirstLoad) {
+        advances.forEach(a => {
+          const p = advPrevMap[a.id];
+          if (p && (p.status !== a.status || p.admin_note !== a.admin_note)) changed.add(a.id);
+        });
+        if (changed.size) DAS.toast('الإدارة حدّثت حالة سلفة من سلفك');
+      }
+      advPrevMap = Object.fromEntries(advances.map(a => [a.id, { status: a.status, admin_note: a.admin_note }]));
+      const animate = advFirstLoad;
+      advFirstLoad = false;
+
+      const container = $('myAdvancesList');
+      if (!advances.length) {
+        container.innerHTML = `
+          <div class="empty fade">
+            <div class="eic">${DAS.icon('banknote', 'ico-lg')}</div>
+            <b>لا توجد سلف حتى الآن</b>
+            لو محتاج سلفة اضغط على كارت السلفة فوق
+          </div>`;
+        return;
+      }
+
+      container.innerHTML = advances.map((a, i) => {
+        const s = advSt(a.status);
+        return `
+        <article class="ticket s-${s.cls} ${changed.has(a.id) ? 'flash' : ''}" style="--i:${animate ? i : 0};${animate ? '' : 'animation:none'}">
+          <div class="ticket-top">
+            <div class="l">
+              <span class="tag adv">سلفة</span>
+              <span class="amt">${DAS.esc(a.amount)} ج</span>
+            </div>
+            ${advBadge(a.status)}
+          </div>
+          <p class="desc">${DAS.esc(a.reason)}</p>
+          <div class="meta">المحفظة: <span class="mono">${DAS.esc(a.wallet)}</span></div>
+          ${a.admin_note ? `
+            <div class="reply">
+              <strong>${DAS.icon('msg')} رد الإدارة</strong>
+              ${DAS.esc(a.admin_note)}
+            </div>` : ''}
+          <div class="ticket-foot">
+            <span>رقم الطلب: #${a.id}</span>
+            <span class="mono">${DAS.esc(a.created_at || '')}</span>
+          </div>
+        </article>`;
+      }).join('');
+    }
 
     const STATUS = {
       'اتحلت':            { cls: 'ok',   icon: 'checkCircle', label: 'اتحلت' },

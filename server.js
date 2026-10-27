@@ -61,6 +61,7 @@ setInterval(() => {
 }, 3600e3).unref();
 
 const STATUSES = ['يتم المراجعة', 'اتحلت', 'لازم تيجي المكتب'];
+const ADV_STATUSES = ['قيد المراجعة', 'تمت الصرف', 'مرفوضة'];
 
 // إنشاء الجداول وإضافة بيانات مبدئية (للتجربة المحلية فقط — مش في الإنتاج)
 db.serialize(() => {
@@ -82,6 +83,21 @@ db.serialize(() => {
       issue_date TEXT,
       description TEXT NOT NULL,
       status TEXT DEFAULT 'يتم المراجعة',
+      admin_note TEXT DEFAULT '',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS advances (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      das_code TEXT NOT NULL,
+      courier_name TEXT NOT NULL,
+      amount REAL NOT NULL,
+      reason TEXT NOT NULL,
+      wallet TEXT NOT NULL,
+      status TEXT DEFAULT 'قيد المراجعة',
       admin_note TEXT DEFAULT '',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -146,9 +162,53 @@ app.post('/api/tickets', (req, res) => {
   });
 });
 
+// 4. طلب سلفة من المندوب — الكود لازم يكون مسجل، والاسم بيتاخد من الداتابيز
+app.post('/api/advances', (req, res) => {
+  if (rateLimited(req, 'advance-post', 12, 60e3)) return res.status(429).json({ error: 'طلبات كتير — استنى شوية وجرب تاني' });
+  const { das_code, amount, reason, wallet } = req.body || {};
+  if (!das_code || !reason || !wallet) {
+    return res.status(400).json({ error: 'يرجى ملء جميع البيانات المطلوبة' });
+  }
+  const amt = Number(amount);
+  if (!Number.isFinite(amt) || amt <= 0 || amt > 1000000) {
+    return res.status(400).json({ error: 'المبلغ غير صحيح' });
+  }
+
+  const cleanCode = String(das_code).trim().toUpperCase();
+  db.get("SELECT name FROM couriers WHERE UPPER(das_code) = ?", [cleanCode], (err, row) => {
+    if (err) return res.status(500).json({ error: 'خطأ في السيرفر' });
+    if (!row) return res.status(404).json({ error: 'كود المندوب غير مسجل في السيستم' });
+
+    const stmt = db.prepare(`
+      INSERT INTO advances (das_code, courier_name, amount, reason, wallet)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+    stmt.run(
+      [cleanCode, row.name, amt, String(reason), String(wallet).trim()],
+      function (err2) {
+        if (err2) return res.status(500).json({ error: 'فشل تسجيل طلب السلفة' });
+        res.json({ success: true, advance_id: this.lastID });
+      }
+    );
+  });
+});
+
+// 5. جلب سلف المندوب الخاصة به
+app.get('/api/courier/advances/:das_code', (req, res) => {
+  const cleanCode = String(req.params.das_code || '').trim().toUpperCase();
+  db.all(
+    "SELECT * FROM advances WHERE UPPER(das_code) = ? ORDER BY id DESC",
+    [cleanCode],
+    (err, rows) => {
+      if (err) return res.status(500).json({ error: 'خطأ في جلب البيانات' });
+      res.json({ advances: rows });
+    }
+  );
+});
+
 // ================= API للإدارة (Admin) =================
 
-// 4. التحقق من باسورد الأدمن وتسليم التوكن
+// 6. التحقق من باسورد الأدمن وتسليم التوكن
 app.post('/api/admin/login', (req, res) => {
   if (rateLimited(req, 'admin-login', 5, 60e3)) return res.status(429).json({ error: 'محاولات كتير — استنى دقيقة وجرب تاني' });
   const { password } = req.body || {};
@@ -165,7 +225,7 @@ app.use('/api/admin', (req, res, next) => {
   res.status(401).json({ error: 'غير مصرح — سجل دخول الإدارة الأول' });
 });
 
-// 5. جلب كل الشكاوى للإدارة
+// 7. جلب كل الشكاوى للإدارة
 app.get('/api/admin/tickets', (req, res) => {
   db.all("SELECT * FROM tickets ORDER BY id DESC", [], (err, rows) => {
     if (err) return res.status(500).json({ error: 'خطأ في جلب الشكاوى' });
@@ -173,7 +233,7 @@ app.get('/api/admin/tickets', (req, res) => {
   });
 });
 
-// 6. تحديث حالة الشكوى (Drop Menu) وملاحظة الإدارة — الحالة من مجموعة ثابتة بس
+// 8. تحديث حالة الشكوى (Drop Menu) وملاحظة الإدارة — الحالة من مجموعة ثابتة بس
 app.put('/api/admin/tickets/:id', (req, res) => {
   const { status, admin_note } = req.body || {};
   const ticketId = req.params.id;
@@ -191,7 +251,7 @@ app.put('/api/admin/tickets/:id', (req, res) => {
   );
 });
 
-// 7. مسح شكوى معينة من الإدارة
+// 9. مسح شكوى معينة من الإدارة
 app.delete('/api/admin/tickets/:id', (req, res) => {
   const ticketId = req.params.id;
   db.run("DELETE FROM tickets WHERE id = ?", [ticketId], function (err) {
@@ -200,7 +260,7 @@ app.delete('/api/admin/tickets/:id', (req, res) => {
   });
 });
 
-// 8. إضافة مندوب جديد — الكود المكرر بيرجع خطأ بدل ما يبدّل المندوب القديم
+// 10. إضافة مندوب جديد — الكود المكرر بيرجع خطأ بدل ما يبدّل المندوب القديم
 app.post('/api/admin/couriers', (req, res) => {
   const { das_code, name, phone } = req.body || {};
   if (!das_code || !name) return res.status(400).json({ error: 'الكود والاسم مطلوبين' });
@@ -220,7 +280,7 @@ app.post('/api/admin/couriers', (req, res) => {
   );
 });
 
-// 9. رفع شيت المناديب (CSV يحتوي على Code و Name)
+// 11. رفع شيت المناديب (CSV يحتوي على Code و Name)
 // الشيت هنا هو المرجع، فالكود الموجود بيتحدث (INSERT OR REPLACE) — مخصوص عشان إعادة الرفع تحدّط الأسماء
 app.post('/api/admin/upload-couriers', express.text({ type: '*/*' }), (req, res) => {
   const csvData = req.body;
@@ -252,12 +312,63 @@ app.post('/api/admin/upload-couriers', express.text({ type: '*/*' }), (req, res)
   });
 });
 
-// 10. جلب قائمة المناديب المسجلين
+// 12. جلب قائمة المناديب المسجلين
 app.get('/api/admin/couriers', (req, res) => {
   db.all("SELECT * FROM couriers ORDER BY das_code ASC", [], (err, rows) => {
     if (err) return res.status(500).json({ error: 'خطأ' });
     res.json({ couriers: rows });
   });
+});
+
+// 13. جلب كل طلبات السلف للإدارة
+app.get('/api/admin/advances', (req, res) => {
+  db.all("SELECT * FROM advances ORDER BY id DESC", [], (err, rows) => {
+    if (err) return res.status(500).json({ error: 'خطأ في جلب السلف' });
+    res.json({ advances: rows });
+  });
+});
+
+// 14. تسجيل سلفة صرفها الأدمن بنفسه — بتتحط على "تمت الصرف" تلقائي
+app.post('/api/admin/advances', (req, res) => {
+  const { das_code, amount, reason, wallet, admin_note } = req.body || {};
+  if (!das_code || !reason) return res.status(400).json({ error: 'الكود والسبب مطلوبين' });
+  const amt = Number(amount);
+  if (!Number.isFinite(amt) || amt <= 0 || amt > 1000000) {
+    return res.status(400).json({ error: 'المبلغ غير صحيح' });
+  }
+
+  const cleanCode = String(das_code).trim().toUpperCase();
+  db.get("SELECT name FROM couriers WHERE UPPER(das_code) = ?", [cleanCode], (err, row) => {
+    if (err) return res.status(500).json({ error: 'خطأ في السيرفر' });
+    if (!row) return res.status(404).json({ error: 'كود المندوب غير مسجل في السيستم' });
+
+    db.run(
+      `INSERT INTO advances (das_code, courier_name, amount, reason, wallet, status, admin_note)
+       VALUES (?, ?, ?, ?, ?, 'تمت الصرف', ?)`,
+      [cleanCode, row.name, amt, String(reason), String(wallet || '').trim(), String(admin_note || '')],
+      function (err2) {
+        if (err2) return res.status(500).json({ error: 'فشل حفظ السلفة' });
+        res.json({ success: true, advance_id: this.lastID });
+      }
+    );
+  });
+});
+
+// 15. تحديث حالة السلفة وملاحظة الإدارة — الحالة من مجموعة ثابتة بس
+app.put('/api/admin/advances/:id', (req, res) => {
+  const { status, admin_note } = req.body || {};
+  if (!ADV_STATUSES.includes(status)) {
+    return res.status(400).json({ error: 'حالة غير معروفة' });
+  }
+
+  db.run(
+    `UPDATE advances SET status = ?, admin_note = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+    [status, String(admin_note || ''), req.params.id],
+    function (err) {
+      if (err) return res.status(500).json({ error: 'فشل تحديث السلفة' });
+      res.json({ success: true });
+    }
+  );
 });
 
 app.listen(PORT, () => {
