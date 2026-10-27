@@ -381,7 +381,7 @@ a { color: inherit; text-decoration: none; }
 .top-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
 .kpis { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-bottom: 18px; }
-@media (min-width: 900px) { .kpis { grid-template-columns: repeat(4, 1fr); } }
+@media (min-width: 900px) { .kpis { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); } }
 .kpi {
   --c: var(--accent); --c-soft: var(--accent-soft);
   position: relative; overflow: hidden; padding: 18px; border-radius: 20px; background: var(--surface); border: 1px solid var(--border);
@@ -451,6 +451,41 @@ a { color: inherit; text-decoration: none; }
 
 /* التابات: كل تبويب بيتبدل بـ crossfade ناعم (والعناصر جواه بتعمل rise بترتيبها) */
 .view-panel { animation: fadeIn .35s ease both; }
+
+/* ---------- تقييم الحل ---------- */
+.rate-box { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 12px; padding: 12px 14px; border-radius: 14px; background: var(--surface); border: 1px dashed var(--border-strong); }
+.rate-box.done { border-style: solid; border-color: color-mix(in srgb, var(--warn) 35%, transparent); }
+.rate-label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; color: var(--text-2); }
+.rate-label .ico { width: 15px; height: 15px; color: var(--warn); }
+.stars, .stars-view { display: inline-flex; gap: 2px; }
+.star { background: none; border: none; padding: 2px; cursor: pointer; color: var(--text-3); transition: transform .18s var(--ease-spring), color .18s; }
+.star .ico { width: 22px; height: 22px; }
+.star:hover { transform: scale(1.25); }
+.star.on { color: var(--warn); }
+.star.on .ico { fill: currentColor; }
+.star:disabled { cursor: default; }
+.rate-note { flex: 1 1 150px; min-width: 130px; padding: 8px 12px; font-size: 13px; }
+.rate-note-view { flex-basis: 100%; font-size: 13px; color: var(--text-2); }
+
+/* النجوم المصغرة جوا جدول الأدمن */
+.stars-inline { display: inline-flex; align-items: center; gap: 4px; color: var(--warn); font-weight: 800; font-size: 13px; }
+.stars-inline .ico { width: 15px; height: 15px; fill: currentColor; }
+
+/* كارت KPI التقييم */
+.kpi.rate { --c: var(--warn); --c-soft: var(--warn-soft); cursor: default; }
+
+/* اسم المندوب في الجدول بيتفتح بروفايله */
+.cell-courier.clickable { cursor: pointer; border-radius: 12px; transition: background .2s; }
+.cell-courier.clickable:hover { background: var(--surface-2); }
+.cell-courier.clickable:hover b { color: var(--accent); }
+.clickable-row { cursor: pointer; transition: background .2s, border-color .2s; }
+.clickable-row:hover { background: var(--surface-2); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+
+/* بروفايل المندوب */
+.profile-head { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
+.profile-head .av { width: 56px; height: 56px; font-size: 18px; border-radius: 18px; margin: 0; }
+.profile-sum { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+@media (min-width: 640px) { .profile-sum { grid-template-columns: repeat(4, 1fr); } }
 
 /* ملخص التقرير الشهري */
 .report-sum { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 16px 0 6px; }

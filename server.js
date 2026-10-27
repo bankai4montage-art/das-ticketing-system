@@ -97,7 +97,10 @@ db.serialize(() => {
       admin_note TEXT DEFAULT '',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      archived INTEGER DEFAULT 0
+      archived INTEGER DEFAULT 0,
+      rating INTEGER,
+      rating_note TEXT DEFAULT '',
+      rated_at DATETIME
     )
   `);
 
@@ -116,11 +119,16 @@ db.serialize(() => {
     )
   `);
 
-  // قاعدة قديمة من غير عمود الأرشفة؟ نزوده تلقائي مرة واحدة (بعد إنشاء الجدول)
+  // قاعدة قديمة؟ نزود الأعمدة الناقصة تلقائي (بعد إنشاء الجدول)
   db.all("PRAGMA table_info(tickets)", (err, cols) => {
     if (err || !cols) return;
     if (!cols.some(c => c.name === 'archived')) {
       db.run("ALTER TABLE tickets ADD COLUMN archived INTEGER DEFAULT 0");
+    }
+    if (!cols.some(c => c.name === 'rating')) {
+      db.run("ALTER TABLE tickets ADD COLUMN rating INTEGER");
+      db.run("ALTER TABLE tickets ADD COLUMN rating_note TEXT DEFAULT ''");
+      db.run("ALTER TABLE tickets ADD COLUMN rated_at DATETIME");
     }
   });
 });
@@ -177,6 +185,35 @@ app.post('/api/tickets', (req, res) => {
       function (err2) {
         if (err2) return res.status(500).json({ error: 'فشل تسجيل الشكوى' });
         res.json({ success: true, ticket_id: this.lastID });
+      }
+    );
+  });
+});
+
+// 3-ب. تقييم حل الشكوى — للمندوب صاحب الشكوى بس، وبعد ما تكون "اتحلت"
+app.put('/api/tickets/:id/rate', (req, res) => {
+  if (rateLimited(req, 'ticket-rate', 20, 60e3)) return res.status(429).json({ error: 'محاولات كتير — استنى دقيقة وجرب تاني' });
+  const { das_code, rating, rating_note } = req.body || {};
+  const ticketId = req.params.id;
+
+  const r = Number(rating);
+  if (!Number.isInteger(r) || r < 1 || r > 5) {
+    return res.status(400).json({ error: 'التقييم لازم يكون رقم من 1 لـ 5' });
+  }
+  const note = String(rating_note || '').slice(0, 200);
+
+  db.get("SELECT * FROM tickets WHERE id = ?", [ticketId], (err, ticket) => {
+    if (err || !ticket) return res.status(404).json({ error: 'الشكوى غير موجودة' });
+    const cleanCode = String(das_code || '').trim().toUpperCase();
+    if (ticket.das_code !== cleanCode) return res.status(403).json({ error: 'الشكوى دي مش بتاعتك' });
+    if (ticket.status !== 'اتحلت') return res.status(400).json({ error: 'مفيش تقييم غير بعد ما الشكوى تتحل' });
+
+    db.run(
+      "UPDATE tickets SET rating = ?, rating_note = ?, rated_at = CURRENT_TIMESTAMP WHERE id = ?",
+      [r, note, ticketId],
+      (err2) => {
+        if (err2) return res.status(500).json({ error: 'فشل حفظ التقييم' });
+        res.json({ success: true });
       }
     );
   });

@@ -87,6 +87,10 @@
           <div class="top"><span>اتحلت</span><div class="ki"><i data-ico="checkCircle"></i></div></div>
           <b id="statResolved">0</b>
         </button>
+        <div class="kpi rate" style="--i:5" title="متوسط تقييمات المناديب للحلول">
+          <div class="top"><span>رضا التيم</span><div class="ki"><i data-ico="star"></i></div></div>
+          <b id="statRate">—</b>
+        </div>
       </section>
 
       <section class="glass dist rise" style="animation-delay:.3s">
@@ -108,6 +112,7 @@
           <button class="chip" data-period="month">هذا الشهر</button>
         </div>
         <div class="chips">
+          <button class="chip" id="weakChip" onclick="toggleWeak()"><i data-ico="star"></i> تقييم ضعيف</button>
           <button class="chip" id="archiveChip" onclick="toggleArchive()"><i data-ico="inbox"></i> الأرشيف</button>
           <button class="chip" onclick="exportTickets()"><i data-ico="download"></i> تصدير CSV</button>
         </div>
@@ -128,6 +133,7 @@
               <th>الشكوى والتفاصيل</th>
               <th>ملاحظة للمندوب</th>
               <th>الحالة</th>
+              <th>التقييم</th>
             </tr>
           </thead>
           <tbody id="ticketsTableBody"></tbody>
@@ -240,6 +246,17 @@
     </div>
   </div>
 
+  <!-- ============ نافذة بروفايل المندوب ============ -->
+  <div id="profileModal" class="modal-back" onclick="if(event.target===this)closeModal('profileModal')">
+    <div class="modal" style="max-width:720px">
+      <div class="form-head">
+        <h3>بروفايل المندوب</h3>
+        <button class="btn btn-ghost btn-icon" onclick="closeModal('profileModal')" aria-label="إغلاق"><i data-ico="close"></i></button>
+      </div>
+      <div id="profileBody"></div>
+    </div>
+  </div>
+
   <script>
     const $ = (id) => document.getElementById(id);
     const STATUS_CLS = { 'اتحلت': 'ok', 'لازم تيجي المكتب': 'bad', 'يتم المراجعة': 'warn' };
@@ -256,6 +273,7 @@
     let filterCat = 'all';
     let filterStatus = 'all';
     let filterPeriod = 'all';
+    let filterWeak = false;
     let archiveMode = false;
     let archiveTickets = [];
     let pendingFlash = new Set();
@@ -350,7 +368,7 @@
         data = await res.json();
       } catch (e) { return; }
       const tickets = data.tickets || [];
-      const newSig = JSON.stringify(tickets.map(t => [t.id, t.status, t.admin_note]));
+      const newSig = JSON.stringify(tickets.map(t => [t.id, t.status, t.admin_note, t.rating]));
       if (newSig === sig && !force) return;
       sig = newSig;
 
@@ -375,6 +393,8 @@
       DAS.countUp($('statReview'), rev);
       DAS.countUp($('statOffice'), off);
       DAS.countUp($('statResolved'), ok);
+      const rated = allTickets.filter(t => t.rating != null);
+      $('statRate').textContent = rated.length ? (rated.reduce((s, t) => s + t.rating, 0) / rated.length).toFixed(1) + '★' : '—';
       const pct = (v) => total ? (v / total * 100) : 0;
       $('dBarOk').style.width = pct(ok) + '%';
       $('dBarBad').style.width = pct(off) + '%';
@@ -389,15 +409,16 @@
       const filtered = source.filter(t => {
         const mc = archiveMode || filterCat === 'all' || t.category === filterCat;
         const ms = archiveMode || filterStatus === 'all' || t.status === filterStatus;
+        const mw = !filterWeak || (t.rating != null && t.rating <= 2);
         const created = DAS.parseUtc(t.created_at);
         const mp = !start || (created && created >= start);
         const mq = !q || t.das_code.toLowerCase().includes(q) || t.courier_name.toLowerCase().includes(q);
-        return mc && ms && mp && mq;
+        return mc && ms && mw && mp && mq;
       });
 
       const tbody = $('ticketsTableBody');
       if (!filtered.length) {
-        tbody.innerHTML = `<tr><td colspan="6"><div class="empty fade"><div class="eic">${DAS.icon('inbox', 'ico-lg')}</div><b>${archiveMode ? 'الأرشيف فاضي' : 'لا توجد شكاوى مطابقة'}</b>${archiveMode ? 'الشكاوى اللي اتحلت ومعدّي عليها 30 يوم بتنقل هنا تلقائي' : 'جرّب تغيير الفلاتر أو البحث'}</div></td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="7"><div class="empty fade"><div class="eic">${DAS.icon('inbox', 'ico-lg')}</div><b>${archiveMode ? 'الأرشيف فاضي' : 'لا توجد شكاوى مطابقة'}</b>${archiveMode ? 'الشكاوى اللي اتحلت ومعدّي عليها 30 يوم بتنقل هنا تلقائي' : 'جرّب تغيير الفلاتر أو البحث'}</div></td></tr>`;
         return;
       }
 
@@ -433,7 +454,7 @@
             </div>
           </td>
           <td data-label="المندوب">
-            <div class="cell-courier">
+            <div class="cell-courier clickable" data-profile-code="${DAS.esc(t.das_code)}" title="فتح بروفايل المندوب">
               <div class="av" style="background:${DAS.gradient(t.das_code)}">${DAS.esc(DAS.initials(t.courier_name))}</div>
               <div><b>${DAS.esc(t.courier_name)}</b><small class="mono">${DAS.esc(t.das_code)}</small></div>
             </div>
@@ -446,6 +467,9 @@
           <td data-label="الشكوى" class="desc-cell">${DAS.esc(t.description)}</td>
           <td data-label="ملاحظة للمندوب">${noteCell}</td>
           <td data-label="الحالة">${statusCell}</td>
+          <td data-label="التقييم">${t.rating != null
+            ? `<span class="stars-inline" title="${DAS.esc(t.rating_note || '')}">${DAS.icon('star')} ${t.rating}/5</span>`
+            : '<span style="color:var(--text-3)">—</span>'}</td>
         </tr>`;
       }).join('');
       pendingFlash.clear();
@@ -458,6 +482,12 @@
       if (filterPeriod === 'week') return new Date(Date.now() - 7 * 864e5);
       if (filterPeriod === 'month') return new Date(n.getFullYear(), n.getMonth(), 1);
       return null;
+    }
+
+    function toggleWeak() {
+      filterWeak = !filterWeak;
+      $('weakChip').classList.toggle('active', filterWeak);
+      renderTickets();
     }
 
     function toggleArchive() {
@@ -504,10 +534,10 @@
         const mp = !start || (created && created >= start);
         const mq = !q || t.das_code.toLowerCase().includes(q) || t.courier_name.toLowerCase().includes(q);
         return mc && ms && mp && mq;
-      }).map(t => [t.id, t.das_code, t.courier_name, t.category, t.sub_type, t.issue_date, t.status, t.admin_note || '', t.description, DAS.fmtDateTime(t.created_at)]);
+      }).map(t => [t.id, t.das_code, t.courier_name, t.category, t.sub_type, t.issue_date, t.status, t.admin_note || '', t.rating != null ? t.rating + '/5' : '', t.rating_note || '', t.description, DAS.fmtDateTime(t.created_at)]);
       if (!rows.length) { DAS.toast('مفيش شكاوى للتصدير بالفلاتر الحالية', 'err'); return; }
       DAS.downloadCsv(`das-tickets-${new Date().toISOString().slice(0, 10)}.csv`, [
-        ['#', 'الكود', 'الاسم', 'القسم', 'النوع', 'تاريخ المشكلة', 'الحالة', 'ملاحظة الإدارة', 'نص الشكوى', 'وقت التسجيل'],
+        ['#', 'الكود', 'الاسم', 'القسم', 'النوع', 'تاريخ المشكلة', 'الحالة', 'ملاحظة الإدارة', 'التقييم', 'تعليق التقييم', 'نص الشكوى', 'وقت التسجيل'],
         ...rows
       ]);
       DAS.toast('تم تنزيل ملف الشكاوى');
@@ -650,7 +680,7 @@
       const list = data.couriers || [];
       $('couriersCount').textContent = `المناديب المسجلين (${list.length})`;
       $('couriersList').innerHTML = list.map((c, i) => `
-        <div class="courier-row" style="--i:${Math.min(i, 12)}">
+        <div class="courier-row clickable-row" style="--i:${Math.min(i, 12)}" data-profile-code="${DAS.esc(c.das_code)}" title="فتح بروفايل المندوب">
           <div class="cell-courier">
             <div class="av" style="width:34px;height:34px;border-radius:11px;font-size:12px;background:${DAS.gradient(c.das_code)}">${DAS.esc(DAS.initials(c.name))}</div>
             <div><span class="c mono">${DAS.esc(c.das_code)}</span><small>${DAS.esc(c.name)}</small></div>
@@ -690,8 +720,106 @@
         if ($('courierModal').classList.contains('open')) toggleCourierModal();
         if ($('advanceModal').classList.contains('open')) toggleAdvanceModal();
         if ($('reportModal').classList.contains('open')) toggleReportModal();
+        if ($('profileModal').classList.contains('open')) closeModal('profileModal');
       }
     });
+
+    // ---------- بروفايل المندوب (دوس على الاسم في أي جدول) ----------
+    let couriersCache = null;
+
+    document.addEventListener('click', (e) => {
+      const el = e.target.closest('[data-profile-code]');
+      if (el) openProfile(el.dataset.profileCode);
+    });
+
+    async function openProfile(code) {
+      $('profileModal').classList.add('open');
+      $('profileBody').innerHTML = '<div class="skeleton" style="height:140px"></div>';
+
+      // الأرشيف بيتجاب مرة كل فتح (بالكاش) — الأسماء والتليفونات من كاش المناديب
+      const [archRes, courRes] = await Promise.all([
+        adminFetch('/api/admin/tickets/archived').then(r => r.json()).catch(() => null),
+        couriersCache ? Promise.resolve(null) : adminFetch('/api/admin/couriers').then(r => r.json()).catch(() => null)
+      ]);
+      const archived = archRes ? (archRes.tickets || []) : (openProfile.archivedCache || []);
+      openProfile.archivedCache = archived;
+      if (courRes) couriersCache = courRes.couriers || [];
+
+      const tickets = [...allTickets, ...archived].filter(t => t.das_code === code);
+      const advs = allAdvances.filter(a => a.das_code === code);
+      const courier = (couriersCache || []).find(c => c.das_code === code);
+      renderProfile(code, courier, tickets, advs);
+    }
+
+    function renderProfile(code, courier, tickets, advs) {
+      const rated = tickets.filter(t => t.rating != null);
+      const avg = rated.length ? (rated.reduce((s, t) => s + t.rating, 0) / rated.length).toFixed(1) : null;
+      const resolved = tickets.filter(t => t.status === 'اتحلت').length;
+      const review = tickets.filter(t => t.status === 'يتم المراجعة').length;
+      const office = tickets.filter(t => t.status === 'لازم تيجي المكتب').length;
+      const advTotal = advs.reduce((s, a) => s + (Number(a.amount) || 0), 0);
+      const weak = rated.filter(t => t.rating <= 2).length;
+
+      $('profileBody').innerHTML = `
+        <div class="profile-head">
+          <div class="av" style="background:${DAS.gradient(code)}">${DAS.esc(DAS.initials(courier ? courier.name : code))}</div>
+          <div>
+            <b style="font-size:17px">${DAS.esc(courier ? courier.name : 'مندوب غير معروف')}</b>
+            <div class="mono" style="color:var(--accent);font-size:13px">${DAS.esc(code)}</div>
+            ${courier && courier.phone ? `<div style="font-size:13px;color:var(--text-2)">${DAS.esc(courier.phone)}</div>` : ''}
+          </div>
+        </div>
+        <div class="profile-sum">
+          <div class="mini-stat"><b>${tickets.length}</b><span>إجمالي الشكاوى (شامل الأرشيف)</span></div>
+          <div class="mini-stat ok"><b>${resolved}</b><span>اتحلت</span></div>
+          <div class="mini-stat warn"><b>${review}</b><span>تحت المراجعة</span></div>
+          <div class="mini-stat bad"><b>${office}</b><span>لازم تيجي المكتب</span></div>
+          <div class="mini-stat"><b style="color:var(--warn)">${avg ? avg + '★' : '—'}</b><span>متوسط الرضا (${rated.length} تقييم)</span></div>
+          <div class="mini-stat bad"><b>${weak}</b><span>تقييمات ضعيفة (★2-)</span></div>
+          <div class="mini-stat"><b>${advs.length}</b><span>عدد السلف</span></div>
+          <div class="mini-stat"><b>${advTotal}</b><span>إجمالي السلف (ج)</span></div>
+        </div>
+        <div class="section-title" style="margin:18px 0 10px">الشكاوى</div>
+        ${tickets.length ? profileTicketsTable(tickets) : `<div class="empty fade"><b>مفيش شكاوى</b></div>`}
+        <div class="section-title" style="margin:18px 0 10px">السلف</div>
+        ${advs.length ? profileAdvancesTable(advs) : `<div class="empty fade"><b>مفيش سلف</b></div>`}
+      `;
+    }
+
+    function profileTicketsTable(tickets) {
+      const rows = tickets.sort((a, b) => b.id - a.id).map(t => `
+        <tr>
+          <td class="mono" style="color:var(--text-3);font-size:12px">#${t.id}</td>
+          <td data-label="القسم"><span class="tag ${t.category === 'الشيفت' ? 'shift' : 'pay'}">${DAS.esc(t.category)}</span> <span style="font-size:12px;color:var(--text-2)">${DAS.esc(t.sub_type)}</span>${t.archived ? ' <span class="tag adv">مؤرشفة</span>' : ''}</td>
+          <td data-label="الحالة"><span class="badge ${STATUS_CLS[t.status] || 'warn'}"><span class="dot"></span>${DAS.esc(t.status)}</span></td>
+          <td data-label="التقييم">${t.rating != null ? `<span class="stars-inline" title="${DAS.esc(t.rating_note || '')}">${DAS.icon('star')} ${t.rating}/5</span>` : '<span style="color:var(--text-3)">—</span>'}</td>
+          <td data-label="وقت التسجيل" style="font-size:12px;color:var(--text-2)">${DAS.fmtDateTime(t.created_at)}</td>
+        </tr>`).join('');
+      return `
+        <div class="table-wrap" style="border:none;box-shadow:none;background:transparent;padding:0">
+          <table class="tbl">
+            <thead><tr><th>#</th><th>القسم</th><th>الحالة</th><th>التقييم</th><th>وقت التسجيل</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>`;
+    }
+
+    function profileAdvancesTable(advs) {
+      const rows = advs.sort((a, b) => b.id - a.id).map(a => `
+        <tr>
+          <td class="mono" style="color:var(--text-3);font-size:12px">#${a.id}</td>
+          <td data-label="المبلغ"><span class="amt">${DAS.esc(a.amount)} ج</span></td>
+          <td data-label="السبب" class="desc-cell">${DAS.esc(a.reason)}<div class="meta">${DAS.fmtDateTime(a.created_at)}</div></td>
+          <td data-label="الحالة"><span class="badge ${ADV_CLS[a.status] || 'warn'}"><span class="dot"></span>${DAS.esc(a.status)}</span></td>
+        </tr>`).join('');
+      return `
+        <div class="table-wrap" style="border:none;box-shadow:none;background:transparent;padding:0">
+          <table class="tbl">
+            <thead><tr><th>#</th><th>المبلغ</th><th>السبب</th><th>الحالة</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>`;
+    }
 
     // ---------- التقرير الشهري للسلف ----------
     function toggleReportModal() {
@@ -745,7 +873,7 @@
             <thead><tr><th>المندوب</th><th>عدد السلف</th><th>مصروف (ج)</th><th>قيد المراجعة (ج)</th><th>مرفوض (ج)</th></tr></thead>
             <tbody>${couriers.map(c => `
               <tr>
-                <td data-label="المندوب"><div class="cell-courier"><div class="av" style="background:${DAS.gradient(c.das_code)}">${DAS.esc(DAS.initials(c.name))}</div><div><b>${DAS.esc(c.name)}</b><small class="mono">${DAS.esc(c.das_code)}</small></div></div></td>
+                <td data-label="المندوب"><div class="cell-courier clickable" data-profile-code="${DAS.esc(c.das_code)}" title="فتح بروفايل المندوب"><div class="av" style="background:${DAS.gradient(c.das_code)}">${DAS.esc(DAS.initials(c.name))}</div><div><b>${DAS.esc(c.name)}</b><small class="mono">${DAS.esc(c.das_code)}</small></div></div></td>
                 <td data-label="عدد السلف">${c.count}</td>
                 <td data-label="مصروف (ج)"><span class="amt">${c.paid}</span></td>
                 <td data-label="قيد المراجعة (ج)" style="color:var(--warn);font-weight:700">${c.pending}</td>
@@ -844,7 +972,7 @@
         <tr class="${flash}" style="--i:${Math.min(i, 14)};${anim}">
           <td class="mono" style="color:var(--text-3);font-size:12px">#${a.id}</td>
           <td data-label="المندوب">
-            <div class="cell-courier">
+            <div class="cell-courier clickable" data-profile-code="${DAS.esc(a.das_code)}" title="فتح بروفايل المندوب">
               <div class="av" style="background:${DAS.gradient(a.das_code)}">${DAS.esc(DAS.initials(a.courier_name))}</div>
               <div><b>${DAS.esc(a.courier_name)}</b><small class="mono">${DAS.esc(a.das_code)}</small></div>
             </div>

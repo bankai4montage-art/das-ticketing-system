@@ -171,6 +171,7 @@
     let lastSig = null;
     let prevMap = {};
     let firstLoad = true;
+    let myTicketsCache = [];
     let advSig = null;
     let advPrevMap = {};
     let advFirstLoad = true;
@@ -478,9 +479,10 @@
       } catch (e) { return; }
 
       const tickets = data.tickets || [];
-      const sig = JSON.stringify(tickets.map(t => [t.id, t.status, t.admin_note]));
+      const sig = JSON.stringify(tickets.map(t => [t.id, t.status, t.admin_note, t.rating]));
       if (sig === lastSig) return; // مفيش تغيير، منعمل ريندر ولا نعيد الأنيمشن
       lastSig = sig;
+      myTicketsCache = tickets;
       updateStats(tickets);
 
       // تحديد الشكاوى اللي اتغيرت من الإدارة عشان نعمل لها هايلايت
@@ -535,12 +537,80 @@
               ${DAS.esc(t.admin_note)}
             </div>` : ''}
           ${steps(t.status)}
+          ${t.status === 'اتحلت' ? rateBox(t) : ''}
           <div class="ticket-foot">
             <span>تاريخ المشكلة: ${DAS.esc(t.issue_date)}</span>
             <span class="mono">#${t.id}</span>
           </div>
         </article>`;
       }).join('');
+    }
+
+    // ---------- تقييم الحل ----------
+    const ratingPick = {};
+
+    function starRow(sel, id, interactive) {
+      return [1, 2, 3, 4, 5].map(n => `
+        <button type="button" class="star ${n <= (sel || 0) ? 'on' : ''}" ${interactive ? `onclick="pickStar(${id},${n})" aria-label="${n} من 5"` : 'disabled tabindex="-1"'}>${DAS.icon('star')}</button>`).join('');
+    }
+
+    function interactiveRateBox(t) {
+      const sel = ratingPick[t.id] || t.rating || 0;
+      return `
+      <div class="rate-box" id="rateBox-${t.id}">
+        <span class="rate-label">${DAS.icon('star')} ${t.rating ? 'عدّل تقييمك للحل' : 'قيّم الحل'}</span>
+        <div class="stars">${starRow(sel, t.id, true)}</div>
+        <input type="text" id="rateNote-${t.id}" class="input rate-note" maxlength="150" placeholder="تعليق (اختياري)" value="${DAS.esc(t.rating_note || '')}">
+        <button type="button" class="btn btn-primary btn-sm" id="rateBtn-${t.id}" onclick="submitRating(${t.id})">حفظ التقييم</button>
+      </div>`;
+    }
+
+    function rateBox(t) {
+      if (!t.rating) return interactiveRateBox(t);
+      return `
+      <div class="rate-box done" id="rateBox-${t.id}">
+        <span class="rate-label">${DAS.icon('star')} تقييمك للحل</span>
+        <div class="stars-view">${starRow(t.rating, t.id, false)}</div>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="editRating(${t.id})">تعديل التقييم</button>
+        ${t.rating_note ? `<div class="rate-note-view">${DAS.esc(t.rating_note)}</div>` : ''}
+      </div>`;
+    }
+
+    function pickStar(id, n) {
+      ratingPick[id] = n;
+      const box = $('rateBox-' + id);
+      if (box) box.querySelectorAll('.star').forEach((s, i) => s.classList.toggle('on', i < n));
+    }
+
+    function editRating(id) {
+      const t = myTicketsCache.find(x => x.id === id);
+      if (!t) return;
+      ratingPick[id] = t.rating;
+      const box = $('rateBox-' + id);
+      if (box) box.outerHTML = interactiveRateBox(t);
+    }
+
+    async function submitRating(id) {
+      const n = ratingPick[id];
+      const btn = $('rateBtn-' + id);
+      if (!n) { DAS.toast('اختار نجمة الأول', 'err'); return; }
+      DAS.busy(btn, true);
+      try {
+        const res = await fetch(`/api/tickets/${id}/rate`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ das_code: currentCourier.das_code, rating: n, rating_note: $('rateNote-' + id).value })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'فشل حفظ التقييم');
+        DAS.toast('شكرا على تقييمك');
+        DAS.confetti();
+        loadMyTickets();
+      } catch (e) {
+        DAS.toast(e.message, 'err');
+      } finally {
+        DAS.busy(btn, false);
+      }
     }
 
     DAS.glow('.cat-card');
