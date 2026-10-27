@@ -85,7 +85,7 @@ app.get('/api/courier/tickets/:das_code', (req, res) => {
   );
 });
 
-// 3. إرسال شكوى جديدة من المندوب
+// 3. إرسال شكوى جديدة من المندوب (الحالة الافتراضية دائماً: يتم المراجعة)
 app.post('/api/tickets', (req, res) => {
   const { das_code, courier_name, category, sub_type, issue_date, description } = req.body;
   if (!das_code || !category || !description) {
@@ -93,8 +93,8 @@ app.post('/api/tickets', (req, res) => {
   }
 
   const stmt = db.prepare(`
-    INSERT INTO tickets (das_code, courier_name, category, sub_type, issue_date, description)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO tickets (das_code, courier_name, category, sub_type, issue_date, description, status)
+    VALUES (?, ?, ?, ?, ?, ?, 'يتم المراجعة')
   `);
 
   stmt.run(
@@ -108,12 +108,17 @@ app.post('/api/tickets', (req, res) => {
 
 // ================= API للإدارة (Admin) =================
 
-// 4. التحقق من باسورد الأدمن (مضمون 100% ويقبل الأفتراضي والـ Environment)
+// 4. التحقق من باسورد الأدمن (مرتبط بمتغير Railway ومنع أي باسوردات ثابتة قديمة)
 app.post('/api/admin/login', (req, res) => {
   const { password } = req.body;
-  const currentAdminPass = process.env.ADMIN_PASS || 'admin123';
+  const railwayPass = process.env.ADMIN_PASS;
 
-  if (password === currentAdminPass || password === 'admin123' || password === 'das2026') {
+  // إذا لم يتم ضبط متغير في Railway، نعتبر الباسورد الافتراضي هو admin123 (ولكنه يقرأ من المتغير أولاً)
+  if (!railwayPass) {
+    if (password === 'admin123') return res.json({ success: true });
+  }
+
+  if (railwayPass && password === railwayPass) {
     res.json({ success: true });
   } else {
     res.status(401).json({ error: 'كلمة المرور غير صحيحة' });
@@ -143,7 +148,16 @@ app.put('/api/admin/tickets/:id', (req, res) => {
   );
 });
 
-// 7. إضافة مندوب جديد للسيستم من لوحة الإدارة
+// 7. مسح شكوى معينة من الإدارة
+app.delete('/api/admin/tickets/:id', (req, res) => {
+  const ticketId = req.params.id;
+  db.run("DELETE FROM tickets WHERE id = ?", [ticketId], function (err) {
+    if (err) return res.status(500).json({ error: 'فشل حذف الشكوى' });
+    res.json({ success: true });
+  });
+});
+
+// 8. إضافة مندوب جديد للسيستم من لوحة الإدارة
 app.post('/api/admin/couriers', (req, res) => {
   const { das_code, name, phone } = req.body;
   if (!das_code || !name) return res.status(400).json({ error: 'الكود والاسم مطلوبين' });
@@ -158,7 +172,7 @@ app.post('/api/admin/couriers', (req, res) => {
   );
 });
 
-// 8. رفع شيت المناديب (CSV يحتوي على Code و Name)
+// 9. رفع شيت المناديب (CSV يحتوي على Code و Name)
 app.post('/api/admin/upload-couriers', express.text({ type: '*/*' }), (req, res) => {
   const csvData = req.body;
   if (!csvData) return res.status(400).json({ error: 'الملف فارغ' });
@@ -189,7 +203,7 @@ app.post('/api/admin/upload-couriers', express.text({ type: '*/*' }), (req, res)
   });
 });
 
-// 9. جلب قائمة المناديب المسجلين
+// 10. جلب قائمة المناديب المسجلين
 app.get('/api/admin/couriers', (req, res) => {
   db.all("SELECT * FROM couriers ORDER BY das_code ASC", [], (err, rows) => {
     if (err) return res.status(500).json({ error: 'خطأ' });
