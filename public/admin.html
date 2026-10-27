@@ -492,7 +492,6 @@
       filterWeak = !filterWeak;
       $('weakChip').classList.toggle('active', filterWeak);
       renderTickets();
-      refadeTable();
     }
 
     function toggleArchive() {
@@ -622,32 +621,24 @@
     });
 
     // ---------- Filters ----------
-    // fade ناعم للجدول مع كل تغيير فلتر — بدل ما الصفوف تتنقل جاف
-    function refadeTable() {
-      const wrap = document.querySelector('#ticketsView .table-wrap');
-      if (!wrap) return;
-      wrap.classList.remove('soft-in');
-      void wrap.offsetWidth;
-      wrap.classList.add('soft-in');
-    }
-
     document.querySelectorAll('.kpi').forEach(k => k.addEventListener('click', () => {
       filterStatus = k.dataset.status;
       document.querySelectorAll('.kpi').forEach(x => x.classList.toggle('active', x === k));
+      // أنيميشن الضغطة على الكارت نفسه
+      k.classList.remove('pop-anim');
+      void k.offsetWidth;
+      k.classList.add('pop-anim');
       renderTickets();
-      refadeTable();
     }));
     document.querySelectorAll('#catChips .chip').forEach(c => c.addEventListener('click', () => {
       filterCat = c.dataset.cat;
       document.querySelectorAll('#catChips .chip').forEach(x => x.classList.toggle('active', x === c));
       renderTickets();
-      refadeTable();
     }));
     document.querySelectorAll('#periodChips [data-period]').forEach(c => c.addEventListener('click', () => {
       filterPeriod = c.dataset.period;
       document.querySelectorAll('#periodChips [data-period]').forEach(x => x.classList.toggle('active', x === c));
       renderTickets();
-      refadeTable();
     }));
     $('searchInput').addEventListener('input', renderTickets);
     $('advSearchInput').addEventListener('input', renderAdvances);
