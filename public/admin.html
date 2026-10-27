@@ -3,343 +3,375 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>لوحة الإدارة - Admin Dashboard</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
-  <style>
-    body { font-family: 'Cairo', sans-serif; background-color: #0b1120; color: #f8fafc; }
-  </style>
+  <meta name="theme-color" content="#060914">
+  <title>لوحة الإدارة - DAS Admin</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&family=JetBrains+Mono:wght@600;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/style.css">
+  <script src="/assets/common.js"></script>
 </head>
-<body class="min-h-screen p-4 md:p-6">
+<body>
 
-  <!-- شاشة باسورد الأدمن -->
-  <div id="adminLoginBox" class="max-w-sm mx-auto mt-20 bg-slate-800 border border-slate-700 rounded-2xl p-6 shadow-2xl">
-    <h1 class="text-xl font-extrabold text-center mb-2">لوحة تحكم الإدارة</h1>
-    <p class="text-xs text-slate-400 text-center mb-5">أدخل كلمة مرور الإدارة الخاصة بك للمتابعة</p>
-    <form id="adminLoginForm" class="space-y-4">
-      <input type="password" id="adminPass" placeholder="كلمة المرور" required
-        class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-center focus:outline-none focus:border-indigo-500">
-      <p id="adminErr" class="text-red-400 text-xs text-center hidden">كلمة المرور غير صحيحة</p>
-      <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-500 py-3 rounded-xl font-bold">دخول</button>
-    </form>
-  </div>
+  <div class="bg-fx" aria-hidden="true"><div class="orb o1"></div><div class="orb o2"></div><div class="orb o3"></div></div>
 
-  <!-- الداشبورد الكاملة -->
-  <div id="dashboardContent" class="max-w-7xl mx-auto hidden space-y-6">
-    
-    <!-- Top Bar -->
-    <div class="bg-slate-800/90 border border-slate-700 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-4">
-      <div>
-        <h1 class="text-xl font-extrabold text-white">إدارة شكاوى المناديب (DAS Admin)</h1>
-        <p class="text-xs text-slate-400">متابعة لحظية لشكاوى الشيفت والقبض</p>
+  <div class="app">
+
+    <!-- ============ دخول الأدمن ============ -->
+    <div id="adminLoginBox" class="center-wrap">
+      <div class="glass login-card rise">
+        <div class="logo"><i data-ico="shield" data-cls="ico-lg"></i></div>
+        <h1>لوحة تحكم الإدارة</h1>
+        <p class="sub">أدخل كلمة مرور الإدارة للمتابعة</p>
+        <form id="adminLoginForm">
+          <div class="input-icon">
+            <input type="password" id="adminPass" class="input" placeholder="كلمة المرور" required autocomplete="current-password" aria-label="كلمة المرور">
+            <i data-ico="lock"></i>
+          </div>
+          <p id="adminErr" class="err-text" role="alert"></p>
+          <button type="submit" class="btn btn-primary" style="width:100%" id="adminLoginBtn">
+            <span class="spinner"></span><span class="label">دخول</span>
+          </button>
+        </form>
+        <div class="hint"><a href="/" class="link-soft">صفحة المندوب <i data-ico="arrow"></i></a></div>
       </div>
-      <div class="flex items-center gap-3">
-        <button onclick="toggleCourierModal()" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition">
-          + إدارة ورفع شيت المناديب
+    </div>
+
+    <!-- ============ الداشبورد ============ -->
+    <div id="dashboardContent" class="admin-shell hidden">
+
+      <header class="glass admin-top rise">
+        <div class="brand">
+          <div class="logo">DAS</div>
+          <div>
+            <h1>إدارة شكاوى المناديب</h1>
+            <p>متابعة لحظية لشكاوى الشيفت والقبض</p>
+          </div>
+        </div>
+        <div class="top-actions">
+          <span class="live"><i></i> مباشر</span>
+          <button class="btn btn-ok btn-sm" onclick="toggleCourierModal()"><i data-ico="users"></i> المناديب</button>
+          <a href="/" class="btn btn-ghost btn-sm">صفحة المندوب <i data-ico="arrow"></i></a>
+          <button class="btn btn-ghost btn-icon theme-toggle" onclick="DAS.toggleTheme()" aria-label="تغيير المظهر">
+            <svg class="ico moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+            <svg class="ico sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+          </button>
+          <button class="btn btn-ghost btn-icon" onclick="adminLogout()" aria-label="خروج" title="خروج"><i data-ico="logout"></i></button>
+        </div>
+      </header>
+
+      <!-- KPIs (بتشتغل كفلتر برضه) -->
+      <section class="kpis stagger">
+        <button class="kpi active" style="--i:1" data-status="all">
+          <div class="top"><span>إجمالي الشكاوى</span><div class="ki"><i data-ico="layers"></i></div></div>
+          <b id="statTotal">0</b>
         </button>
-        <a href="/" class="bg-slate-700 hover:bg-slate-600 text-xs px-4 py-2.5 rounded-xl">صفحة المندوب &larr;</a>
-      </div>
-    </div>
+        <button class="kpi warn" style="--i:2" data-status="يتم المراجعة">
+          <div class="top"><span>يتم المراجعة</span><div class="ki"><i data-ico="clock"></i></div></div>
+          <b id="statReview">0</b>
+        </button>
+        <button class="kpi bad" style="--i:3" data-status="لازم تيجي المكتب">
+          <div class="top"><span>لازم تيجي المكتب</span><div class="ki"><i data-ico="building"></i></div></div>
+          <b id="statOffice">0</b>
+        </button>
+        <button class="kpi ok" style="--i:4" data-status="اتحلت">
+          <div class="top"><span>اتحلت</span><div class="ki"><i data-ico="checkCircle"></i></div></div>
+          <b id="statResolved">0</b>
+        </button>
+      </section>
 
-    <!-- كروت الإحصائيات السريعة -->
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-      <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
-        <span class="text-xs text-slate-400">إجمالي الشكاوى</span>
-        <p id="statTotal" class="text-2xl font-extrabold text-white mt-1">0</p>
-      </div>
-      <div class="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4">
-        <span class="text-xs text-amber-300">⏳ يتم المراجعة</span>
-        <p id="statReview" class="text-2xl font-extrabold text-amber-400 mt-1">0</p>
-      </div>
-      <div class="bg-red-500/10 border border-red-500/30 rounded-xl p-4">
-        <span class="text-xs text-red-300">🏢 لازم تيجي المكتب</span>
-        <p id="statOffice" class="text-2xl font-extrabold text-red-400 mt-1">0</p>
-      </div>
-      <div class="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-4">
-        <span class="text-xs text-emerald-300">✅ اتحلت</span>
-        <p id="statResolved" class="text-2xl font-extrabold text-emerald-400 mt-1">0</p>
-      </div>
-    </div>
+      <section class="glass dist rise" style="animation-delay:.3s">
+        <div class="dist-head"><span>نسبة الإنجاز</span><span id="resolveRate">0%</span></div>
+        <div class="dist-bar"><i class="c" id="dBarOk"></i><i class="b" id="dBarBad"></i><i class="a" id="dBarWarn"></i></div>
+      </section>
 
-    <!-- فلاتر البحث -->
-    <div class="bg-slate-800 border border-slate-700 rounded-2xl p-4 flex flex-wrap gap-3 items-center justify-between">
-      <div class="flex flex-wrap gap-2">
-        <select id="filterCategory" onchange="renderTickets()" class="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs">
-          <option value="all">كل الأقسام (الشيفت + القبض)</option>
-          <option value="الشيفت">الشيفت فقط</option>
-          <option value="القبض">القبض فقط</option>
-        </select>
-        <select id="filterStatus" onchange="renderTickets()" class="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs">
-          <option value="all">كل الحالات</option>
-          <option value="يتم المراجعة">يتم المراجعة</option>
-          <option value="لازم تيجي المكتب">لازم تيجي المكتب</option>
-          <option value="اتحلت">اتحلت</option>
-        </select>
-      </div>
-      <input type="text" id="searchInput" oninput="renderTickets()" placeholder="ابحث بكود DAS أو اسم المندوب..."
-        class="bg-slate-900 border border-slate-700 rounded-xl px-4 py-2 text-xs w-full sm:w-64">
-    </div>
+      <!-- فلاتر -->
+      <section class="glass toolbar rise" style="animation-delay:.38s">
+        <div class="chips" id="catChips">
+          <button class="chip active" data-cat="all">الكل</button>
+          <button class="chip" data-cat="الشيفت">الشيفت</button>
+          <button class="chip" data-cat="القبض">القبض</button>
+        </div>
+        <div class="search">
+          <input type="text" id="searchInput" class="input" placeholder="ابحث بكود DAS أو اسم المندوب..." aria-label="بحث">
+          <i data-ico="search"></i>
+        </div>
+      </section>
 
-    <!-- جدول الشكاوى -->
-    <div class="bg-slate-800 border border-slate-700 rounded-2xl overflow-hidden shadow-xl">
-      <div class="overflow-x-auto">
-        <table class="w-full text-right text-sm">
-          <thead class="bg-slate-900/90 text-slate-400 text-xs uppercase">
+      <!-- الجدول -->
+      <section class="glass table-wrap rise" style="animation-delay:.45s">
+        <table class="tbl">
+          <thead>
             <tr>
-              <th class="p-4">#</th>
-              <th class="p-4">المندوب (DAS)</th>
-              <th class="p-4">القسم والنوع</th>
-              <th class="p-4">الشكوى والتفاصيل</th>
-              <th class="p-4">ملاحظة للمندوب</th>
-              <th class="p-4">الحالة والتحكم</th>
+              <th>#</th>
+              <th>المندوب</th>
+              <th>القسم والنوع</th>
+              <th>الشكوى والتفاصيل</th>
+              <th>ملاحظة للمندوب</th>
+              <th>الحالة</th>
             </tr>
           </thead>
-          <tbody id="ticketsTableBody" class="divide-y divide-slate-700/60"></tbody>
+          <tbody id="ticketsTableBody"></tbody>
         </table>
-      </div>
-    </div>
+      </section>
 
+    </div>
   </div>
 
-  <!-- نافذة إدارة ورفع المناديب والشيت -->
-  <div id="courierModal" class="fixed inset-0 bg-black/75 hidden items-center justify-center p-4 z-50">
-    <div class="bg-slate-800 border border-slate-700 rounded-2xl max-w-lg w-full p-5 space-y-4 max-h-[90vh] overflow-y-auto">
-      <div class="flex justify-between items-center border-b border-slate-700 pb-3">
-        <h3 class="font-bold">إدارة المناديب (إضافة أو رفع شيت)</h3>
-        <button onclick="toggleCourierModal()" class="text-slate-400 hover:text-white">✕</button>
+  <!-- ============ نافذة المناديب ============ -->
+  <div id="courierModal" class="modal-back" onclick="if(event.target===this)toggleCourierModal()">
+    <div class="modal">
+      <div class="form-head">
+        <h3>إضافة / عرض المناديب</h3>
+        <button class="btn btn-ghost btn-icon" onclick="toggleCourierModal()" aria-label="إغلاق"><i data-ico="close"></i></button>
       </div>
-
-      <!-- رفع شيت CSV -->
-      <div class="bg-slate-900/60 border border-slate-700 p-3.5 rounded-xl space-y-2">
-        <h4 class="text-xs font-bold text-indigo-300">📁 رفع شيت المناديب (CSV)</h4>
-        <p class="text-[11px] text-slate-400">يجب أن يحتوي الشيت على عمودين رئيسيين: <span class="text-white font-mono">Code</span> و <span class="text-white font-mono">Name</span></p>
-        <div class="flex items-center gap-2 pt-1">
-          <input type="file" id="csvFile" accept=".csv" 
-            class="w-full text-xs text-slate-400 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-indigo-600 file:text-white hover:file:bg-indigo-500 cursor-pointer bg-slate-900 border border-slate-700 rounded-xl">
-          <button onclick="uploadCsvSheet()" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-3.5 py-2 rounded-xl transition whitespace-nowrap">
-            رفع الشيت
-          </button>
-        </div>
-        <p id="uploadResult" class="text-xs mt-1 text-emerald-400 hidden"></p>
-      </div>
-
-      <!-- إضافة مندوب يدوي -->
-      <form id="addCourierForm" class="space-y-3 pt-2 border-t border-slate-700">
-        <h4 class="text-xs font-bold text-slate-300">إضافة مندوب فردي يدوياً:</h4>
-        <div class="grid grid-cols-2 gap-2">
-          <input type="text" id="newDasCode" placeholder="كود (مثال: DAS-105)" required
-            class="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs uppercase">
-          <input type="text" id="newCourierPhone" placeholder="رقم الموبايل"
-            class="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs">
-        </div>
-        <input type="text" id="newCourierName" placeholder="اسم المندوب الثلاثي" required
-          class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs">
-        <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-500 py-2 rounded-xl font-bold text-xs">حفظ المندوب</button>
+      <form id="addCourierForm" style="display:grid;gap:12px">
+        <input type="text" id="newDasCode" class="input mono" style="text-transform:uppercase" placeholder="كود المندوب (مثال: DAS-105)" required>
+        <input type="text" id="newCourierName" class="input" placeholder="اسم المندوب الثلاثي" required>
+        <input type="text" id="newCourierPhone" class="input" placeholder="رقم الموبايل" inputmode="tel">
+        <button type="submit" class="btn btn-ok" id="addCourierBtn"><span class="spinner"></span><i data-ico="plus"></i><span class="label">حفظ المندوب</span></button>
       </form>
-
-      <div class="pt-3 border-t border-slate-700">
-        <h4 class="text-xs text-slate-400 mb-2">المناديب المسجلين حالياً:</h4>
-        <div id="couriersList" class="max-h-36 overflow-y-auto space-y-1 text-xs"></div>
+      <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
+        <h4 style="font-size:12px;color:var(--text-3);margin-bottom:10px" id="couriersCount">المناديب المسجلين</h4>
+        <div id="couriersList" style="max-height:230px;overflow-y:auto;display:grid;gap:8px"></div>
       </div>
     </div>
   </div>
 
   <script>
+    const $ = (id) => document.getElementById(id);
+    const STATUS_CLS = { 'اتحلت': 'ok', 'لازم تيجي المكتب': 'bad', 'يتم المراجعة': 'warn' };
+
     let allTickets = [];
+    let sig = null;
+    let prevIds = new Set();
+    let firstRender = true;
+    let pollTimer = null;
+    let filterCat = 'all';
+    let filterStatus = 'all';
+    let pendingFlash = new Set();
 
-    if (sessionStorage.getItem('das_admin_auth') === 'true') {
-      unlockDashboard();
-    }
+    // ---------- Auth ----------
+    try { if (sessionStorage.getItem('das_admin_auth') === 'true') unlockDashboard(); } catch (e) {}
 
-    document.getElementById('adminLoginForm').addEventListener('submit', async (e) => {
+    $('adminLoginForm').addEventListener('submit', async (e) => {
       e.preventDefault();
-      const password = document.getElementById('adminPass').value;
-      const res = await fetch('/api/admin/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password })
-      });
-      if (res.ok) {
-        sessionStorage.setItem('das_admin_auth', 'true');
-        unlockDashboard();
-      } else {
-        document.getElementById('adminErr').classList.remove('hidden');
-      }
+      const btn = $('adminLoginBtn');
+      DAS.busy(btn, true);
+      $('adminErr').textContent = '';
+      try {
+        const res = await fetch('/api/admin/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: $('adminPass').value })
+        });
+        if (res.ok) {
+          try { sessionStorage.setItem('das_admin_auth', 'true'); } catch (e) {}
+          unlockDashboard();
+        } else {
+          $('adminErr').textContent = 'كلمة المرور غير صحيحة';
+          const p = $('adminPass'); p.classList.remove('shake'); void p.offsetWidth; p.classList.add('shake');
+        }
+      } catch (err) {
+        $('adminErr').textContent = 'تعذر الاتصال بالسيرفر';
+      } finally { DAS.busy(btn, false); }
     });
 
     function unlockDashboard() {
-      document.getElementById('adminLoginBox').classList.add('hidden');
-      document.getElementById('dashboardContent').classList.remove('hidden');
-      fetchTickets();
-      setInterval(fetchTickets, 4000);
+      $('adminLoginBox').classList.add('hidden');
+      $('dashboardContent').classList.remove('hidden');
+      fetchTickets(true);
+      if (pollTimer) clearInterval(pollTimer);
+      pollTimer = setInterval(fetchTickets, 4000);
     }
 
-    async function fetchTickets() {
-      if (document.activeElement && document.activeElement.tagName === 'INPUT' && document.activeElement.id !== 'searchInput') {
-        return;
+    function adminLogout() {
+      try { sessionStorage.removeItem('das_admin_auth'); } catch (e) {}
+      location.reload();
+    }
+
+    // ---------- Data ----------
+    // مبنعملش ريفرش لو الأدمن بيكتب ملاحظة عشان الكتابة متتمسحش
+    function isEditingNote() {
+      const a = document.activeElement;
+      return a && a.classList && a.classList.contains('note-input');
+    }
+
+    async function fetchTickets(force) {
+      if (!force && isEditingNote()) return;
+      let data;
+      try {
+        const res = await fetch('/api/admin/tickets');
+        data = await res.json();
+      } catch (e) { return; }
+      const tickets = data.tickets || [];
+      const newSig = JSON.stringify(tickets.map(t => [t.id, t.status, t.admin_note]));
+      if (newSig === sig && !force) return;
+      sig = newSig;
+
+      // تذكير بالشكاوى الجديدة
+      if (!firstRender) {
+        const fresh = tickets.filter(t => !prevIds.has(t.id));
+        if (fresh.length) {
+          fresh.forEach(t => pendingFlash.add(t.id));
+          DAS.toast(fresh.length === 1 ? `شكوى جديدة من ${fresh[0].courier_name}` : `${fresh.length} شكاوى جديدة`);
+        }
       }
-      const res = await fetch('/api/admin/tickets');
-      const data = await res.json();
-      allTickets = data.tickets || [];
+      prevIds = new Set(tickets.map(t => t.id));
+      allTickets = tickets;
       updateStats();
       renderTickets();
     }
 
     function updateStats() {
-      document.getElementById('statTotal').textContent = allTickets.length;
-      document.getElementById('statReview').textContent = allTickets.filter(t => t.status === 'يتم المراجعة').length;
-      document.getElementById('statOffice').textContent = allTickets.filter(t => t.status === 'لازم تيجي المكتب').length;
-      document.getElementById('statResolved').textContent = allTickets.filter(t => t.status === 'اتحلت').length;
+      const n = (s) => allTickets.filter(t => t.status === s).length;
+      const total = allTickets.length, rev = n('يتم المراجعة'), off = n('لازم تيجي المكتب'), ok = n('اتحلت');
+      DAS.countUp($('statTotal'), total);
+      DAS.countUp($('statReview'), rev);
+      DAS.countUp($('statOffice'), off);
+      DAS.countUp($('statResolved'), ok);
+      const pct = (v) => total ? (v / total * 100) : 0;
+      $('dBarOk').style.width = pct(ok) + '%';
+      $('dBarBad').style.width = pct(off) + '%';
+      $('dBarWarn').style.width = pct(rev) + '%';
+      $('resolveRate').textContent = Math.round(pct(ok)) + '% اتحلت';
     }
 
     function renderTickets() {
-      const catFilter = document.getElementById('filterCategory').value;
-      const statusFilter = document.getElementById('filterStatus').value;
-      const q = document.getElementById('searchInput').value.trim().toLowerCase();
-
+      const q = $('searchInput').value.trim().toLowerCase();
       const filtered = allTickets.filter(t => {
-        const matchCat = catFilter === 'all' || t.category === catFilter;
-        const matchStatus = statusFilter === 'all' || t.status === statusFilter;
-        const matchQ = !q || t.das_code.toLowerCase().includes(q) || t.courier_name.toLowerCase().includes(q);
-        return matchCat && matchStatus && matchQ;
+        const mc = filterCat === 'all' || t.category === filterCat;
+        const ms = filterStatus === 'all' || t.status === filterStatus;
+        const mq = !q || t.das_code.toLowerCase().includes(q) || t.courier_name.toLowerCase().includes(q);
+        return mc && ms && mq;
       });
 
-      const tbody = document.getElementById('ticketsTableBody');
-      if (filtered.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="6" class="text-center py-8 text-slate-500">لا توجد شكاوى مطابقة</td></tr>`;
+      const tbody = $('ticketsTableBody');
+      if (!filtered.length) {
+        tbody.innerHTML = `<tr><td colspan="6"><div class="empty fade"><div class="eic">${DAS.icon('inbox', 'ico-lg')}</div><b>لا توجد شكاوى مطابقة</b>جرّب تغيير الفلاتر أو البحث</div></td></tr>`;
         return;
       }
 
-      tbody.innerHTML = filtered.map(t => {
-        const statusColor = t.status === 'اتحلت'
-          ? 'border-emerald-500 bg-emerald-950/40 text-emerald-300'
-          : t.status === 'لازم تيجي المكتب'
-          ? 'border-red-500 bg-red-950/40 text-red-300'
-          : 'border-amber-500 bg-amber-950/40 text-amber-300';
+      const animate = firstRender;
+      firstRender = false;
 
+      tbody.innerHTML = filtered.map((t, i) => {
+        const cls = STATUS_CLS[t.status] || 'warn';
+        const flash = pendingFlash.has(t.id) ? 'flash' : '';
+        const anim = animate ? '' : 'animation:none';
         return `
-          <tr class="hover:bg-slate-700/30 transition">
-            <td class="p-4 font-mono text-xs text-slate-400">#${t.id}</td>
-            <td class="p-4">
-              <div class="font-bold text-white">${t.courier_name}</div>
-              <div class="text-xs font-mono text-indigo-400">${t.das_code}</div>
-            </td>
-            <td class="p-4">
-              <span class="px-2.5 py-0.5 rounded text-xs font-bold ${t.category === 'الشيفت' ? 'bg-indigo-500/20 text-indigo-300' : 'bg-emerald-500/20 text-emerald-300'}">
-                ${t.category}
-              </span>
-              <div class="text-xs text-slate-400 mt-1">${t.sub_type}</div>
-              <div class="text-[11px] text-slate-500">بتاريخ: ${t.issue_date}</div>
-            </td>
-            <td class="p-4 max-w-xs">
-              <p class="text-slate-200 text-sm leading-relaxed">${t.description}</p>
-            </td>
-            <td class="p-4">
-              <input type="text" id="note-${t.id}" value="${t.admin_note || ''}" placeholder="اكتب رد للمندوب..."
-                onchange="updateTicket(${t.id})"
-                class="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs w-40 focus:border-indigo-500 focus:outline-none">
-            </td>
-            <td class="p-4">
-              <div class="flex items-center gap-2">
-                <select id="status-${t.id}" onchange="updateTicket(${t.id})"
-                  class="border rounded-xl px-2.5 py-2 text-xs font-bold focus:outline-none cursor-pointer ${statusColor}">
-                  <option value="يتم المراجعة" class="bg-slate-900 text-amber-300" ${t.status === 'يتم المراجعة' ? 'selected' : ''}>⏳ يتم المراجعة</option>
-                  <option value="اتحلت" class="bg-slate-900 text-emerald-300" ${t.status === 'اتحلت' ? 'selected' : ''}>✅ اتحلت</option>
-                  <option value="لازم تيجي المكتب" class="bg-slate-900 text-red-300" ${t.status === 'لازم تيجي المكتب' ? 'selected' : ''}>🏢 لازم تيجي المكتب</option>
-                </select>
-                <button onclick="deleteTicket(${t.id})" title="حذف الشكوى"
-                  class="bg-red-500/10 hover:bg-red-600 text-red-400 hover:text-white p-2 rounded-xl border border-red-500/30 transition">
-                  🗑️
-                </button>
-              </div>
-            </td>
-          </tr>
-        `;
+        <tr class="${flash}" style="--i:${Math.min(i, 14)};${anim}">
+          <td data-label="رقم الطلب" class="mono" style="color:var(--text-3);font-size:12px">#${t.id}</td>
+          <td data-label="المندوب">
+            <div class="cell-courier">
+              <div class="av" style="background:${DAS.gradient(t.das_code)}">${DAS.esc(DAS.initials(t.courier_name))}</div>
+              <div><b>${DAS.esc(t.courier_name)}</b><small class="mono">${DAS.esc(t.das_code)}</small></div>
+            </div>
+          </td>
+          <td data-label="القسم والنوع">
+            <span class="tag ${t.category === 'الشيفت' ? 'shift' : 'pay'}">${DAS.esc(t.category)}</span>
+            <div style="font-size:13px;color:var(--text-2);margin-top:6px">${DAS.esc(t.sub_type)}</div>
+            <div class="meta">بتاريخ: ${DAS.esc(t.issue_date)}</div>
+          </td>
+          <td data-label="الشكوى" class="desc-cell">${DAS.esc(t.description)}</td>
+          <td data-label="ملاحظة للمندوب">
+            <input type="text" id="note-${t.id}" class="input note-input" value="${DAS.esc(t.admin_note || '')}" placeholder="اكتب رد للمندوب..."
+              onchange="updateTicket(${t.id})" onkeydown="if(event.key==='Enter')this.blur()">
+          </td>
+          <td data-label="الحالة">
+            <select id="status-${t.id}" class="select status-select ${cls}" onchange="updateTicket(${t.id})">
+              <option value="يتم المراجعة" ${t.status === 'يتم المراجعة' ? 'selected' : ''}>⏳ يتم المراجعة</option>
+              <option value="اتحلت" ${t.status === 'اتحلت' ? 'selected' : ''}>✅ اتحلت</option>
+              <option value="لازم تيجي المكتب" ${t.status === 'لازم تيجي المكتب' ? 'selected' : ''}>🏢 لازم تيجي المكتب</option>
+            </select>
+            <span class="saved-tick" id="tick-${t.id}">${DAS.icon('check')}</span>
+          </td>
+        </tr>`;
       }).join('');
+      pendingFlash.clear();
     }
 
     async function updateTicket(id) {
-      const status = document.getElementById(`status-${id}`).value;
-      const admin_note = document.getElementById(`note-${id}`).value;
-
-      await fetch(`/api/admin/tickets/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status, admin_note })
-      });
-      fetchTickets();
-    }
-
-    async function deleteTicket(id) {
-      if (!confirm(`هل أنت متأكد من حذف الشكوى رقم #${id}؟`)) return;
-      const res = await fetch(`/api/admin/tickets/${id}`, { method: 'DELETE' });
-      if (res.ok) {
-        fetchTickets();
-      } else {
-        alert('فشل حذف الشكوى');
+      const sel = $(`status-${id}`);
+      const status = sel.value;
+      const admin_note = $(`note-${id}`).value;
+      sel.className = 'select status-select ' + (STATUS_CLS[status] || 'warn');
+      try {
+        const res = await fetch(`/api/admin/tickets/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status, admin_note })
+        });
+        if (!res.ok) throw new Error();
+        const tick = $(`tick-${id}`);
+        if (tick) { tick.classList.add('show'); setTimeout(() => tick.classList.remove('show'), 1800); }
+        DAS.toast('تم حفظ التحديث');
+        fetchTickets(true);
+      } catch (e) {
+        DAS.toast('فشل الحفظ، حاول مرة أخرى', 'err');
       }
     }
 
+    // ---------- Filters ----------
+    document.querySelectorAll('.kpi').forEach(k => k.addEventListener('click', () => {
+      filterStatus = k.dataset.status;
+      document.querySelectorAll('.kpi').forEach(x => x.classList.toggle('active', x === k));
+      renderTickets();
+    }));
+    document.querySelectorAll('#catChips .chip').forEach(c => c.addEventListener('click', () => {
+      filterCat = c.dataset.cat;
+      document.querySelectorAll('#catChips .chip').forEach(x => x.classList.toggle('active', x === c));
+      renderTickets();
+    }));
+    $('searchInput').addEventListener('input', renderTickets);
+
+    // ---------- Couriers ----------
     function toggleCourierModal() {
-      const modal = document.getElementById('courierModal');
-      modal.classList.toggle('hidden');
-      modal.classList.toggle('flex');
-      if (!modal.classList.contains('hidden')) loadCouriers();
+      const m = $('courierModal');
+      m.classList.toggle('open');
+      if (m.classList.contains('open')) loadCouriers();
     }
 
     async function loadCouriers() {
       const res = await fetch('/api/admin/couriers');
       const data = await res.json();
-      document.getElementById('couriersList').innerHTML = (data.couriers || []).map(c => `
-        <div class="flex justify-between bg-slate-900 px-3 py-1.5 rounded">
-          <span class="font-mono text-indigo-400 font-bold">${c.das_code}</span>
-          <span>${c.name}</span>
-        </div>
-      `).join('');
+      const list = data.couriers || [];
+      $('couriersCount').textContent = `المناديب المسجلين (${list.length})`;
+      $('couriersList').innerHTML = list.map((c, i) => `
+        <div class="courier-row" style="--i:${Math.min(i, 12)}">
+          <div class="cell-courier">
+            <div class="av" style="width:34px;height:34px;border-radius:11px;font-size:12px;background:${DAS.gradient(c.das_code)}">${DAS.esc(DAS.initials(c.name))}</div>
+            <div><span class="c mono">${DAS.esc(c.das_code)}</span><small>${DAS.esc(c.name)}</small></div>
+          </div>
+          <small class="mono">${DAS.esc(c.phone || '')}</small>
+        </div>`).join('');
     }
 
-    async function uploadCsvSheet() {
-      const fileInput = document.getElementById('csvFile');
-      const resultEl = document.getElementById('uploadResult');
-      
-      if (fileInput.files.length === 0) {
-        alert('يرجى اختيار ملف CSV أولاً');
-        return;
-      }
-
-      const file = fileInput.files[0];
-      const text = await file.text();
-
-      const res = await fetch('/api/admin/upload-couriers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain' },
-        body: text
-      });
-
-      const data = await res.json();
-      if (res.ok) {
-        resultEl.textContent = `✅ تم رفع وتحديث ${data.count} مندوب بنجاح!`;
-        resultEl.classList.remove('hidden');
-        loadCouriers();
-        fileInput.value = '';
-      } else {
-        alert(data.error || 'حدث خطأ أثناء الرفع');
-      }
-    }
-
-    document.getElementById('addCourierForm').addEventListener('submit', async (e) => {
+    $('addCourierForm').addEventListener('submit', async (e) => {
       e.preventDefault();
-      const das_code = document.getElementById('newDasCode').value;
-      const name = document.getElementById('newCourierName').value;
-      const phone = document.getElementById('newCourierPhone').value;
+      const btn = $('addCourierBtn');
+      DAS.busy(btn, true);
+      try {
+        const res = await fetch('/api/admin/couriers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            das_code: $('newDasCode').value,
+            name: $('newCourierName').value,
+            phone: $('newCourierPhone').value
+          })
+        });
+        if (!res.ok) throw new Error();
+        $('addCourierForm').reset();
+        DAS.toast('تم حفظ المندوب');
+        loadCouriers();
+      } catch (err) {
+        DAS.toast('فشل حفظ المندوب', 'err');
+      } finally { DAS.busy(btn, false); }
+    });
 
-      await fetch('/api/admin/couriers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ das_code, name, phone })
-      });
-      document.getElementById('addCourierForm').reset();
-      loadCouriers();
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && $('courierModal').classList.contains('open')) toggleCourierModal();
     });
   </script>
 </body>
