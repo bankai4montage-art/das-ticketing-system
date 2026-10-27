@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#060914">
   <title>بوابة المناديب - DAS Portal</title>
+  <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&family=JetBrains+Mono:wght@600;800&display=swap" rel="stylesheet">
@@ -407,8 +408,9 @@
 
       container.innerHTML = advances.map((a, i) => {
         const s = advSt(a.status);
+        const anim = (animate || changed.has(a.id)) ? '' : 'animation:none';
         return `
-        <article class="ticket s-${s.cls} ${changed.has(a.id) ? 'flash' : ''}" style="--i:${animate ? i : 0};${animate ? '' : 'animation:none'}">
+        <article class="ticket s-${s.cls} ${changed.has(a.id) ? 'flash' : ''}" style="--i:${animate ? i : 0};${anim}">
           <div class="ticket-top">
             <div class="l">
               <span class="tag adv">سلفة</span>
@@ -483,12 +485,20 @@
 
       // تحديد الشكاوى اللي اتغيرت من الإدارة عشان نعمل لها هايلايت
       const changed = new Set();
+      let solvedNow = 0;
       if (!firstLoad) {
         tickets.forEach(t => {
           const p = prevMap[t.id];
-          if (p && (p.status !== t.status || p.admin_note !== t.admin_note)) changed.add(t.id);
+          if (p && (p.status !== t.status || p.admin_note !== t.admin_note)) {
+            changed.add(t.id);
+            if (t.status === 'اتحلت' && p.status !== 'اتحلت') solvedNow++;
+          }
         });
         if (changed.size) DAS.toast('الإدارة حدّثت إحدى شكاواك');
+        if (solvedNow) {
+          DAS.confetti();
+          DAS.toast(solvedNow === 1 ? 'مبروك — شكواك اتحلت' : `مبروك — ${solvedNow} شكاوى اتحلت`);
+        }
       }
       prevMap = Object.fromEntries(tickets.map(t => [t.id, { status: t.status, admin_note: t.admin_note }]));
       const animate = firstLoad;
@@ -508,8 +518,9 @@
       container.innerHTML = tickets.map((t, i) => {
         const s = st(t.status);
         const catCls = t.category === 'الشيفت' ? 'shift' : 'pay';
+        const anim = (animate || changed.has(t.id)) ? '' : 'animation:none';
         return `
-        <article class="ticket s-${s.cls} ${changed.has(t.id) ? 'flash' : ''}" style="--i:${animate ? i : 0};${animate ? '' : 'animation:none'}">
+        <article class="ticket s-${s.cls} ${changed.has(t.id) ? 'flash' : ''}" style="--i:${animate ? i : 0};${anim}">
           <div class="ticket-top">
             <div class="l">
               <span class="tag ${catCls}">${DAS.esc(t.category)}</span>

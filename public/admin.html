@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#060914">
   <title>لوحة الإدارة - DAS Admin</title>
+  <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&family=JetBrains+Mono:wght@600;800&display=swap" rel="stylesheet">
@@ -66,7 +67,7 @@
         <button class="chip" id="tabAdvances" onclick="switchView('advances')"><i data-ico="banknote"></i> السلف</button>
       </section>
 
-      <div id="ticketsView">
+      <div id="ticketsView" class="view-panel">
 
       <!-- KPIs (بتشتغل كفلتر برضه) -->
       <section class="kpis stagger">
@@ -136,7 +137,7 @@
       </div>
 
       <!-- ============ عرض السلف ============ -->
-      <div id="advancesView" class="hidden">
+      <div id="advancesView" class="view-panel hidden">
         <section class="glass adv-head rise">
           <div>
             <b>طلبات السلف</b>
@@ -402,11 +403,12 @@
 
       const animate = firstRender;
       firstRender = false;
+      if (!animate && isEditing('ticketsTableBody')) { ticketsDeferred = true; return; }
 
       tbody.innerHTML = filtered.map((t, i) => {
         const cls = STATUS_CLS[t.status] || 'warn';
         const flash = pendingFlash.has(t.id) ? 'flash' : '';
-        const anim = animate ? '' : 'animation:none';
+        const anim = (animate || flash) ? '' : 'animation:none';
         const rowBtn = archiveMode
           ? `<button class="btn btn-ghost btn-icon" style="width:30px;height:30px;border-radius:9px" title="استرجاع الشكوى للجدول الرئيسي" aria-label="استرجاع الشكوى" onclick="restoreTicket(${t.id})">${DAS.icon('refresh')}</button>`
           : `<button class="btn btn-del btn-icon" title="مسح الشكوى" aria-label="مسح الشكوى" onclick="deleteTicket(${t.id})">${DAS.icon('trash')}</button>`;
@@ -603,11 +605,43 @@
     $('searchInput').addEventListener('input', renderTickets);
     $('advSearchInput').addEventListener('input', renderAdvances);
 
+    // ---------- سلاسة: متقاطعش كتابة الأدمن لو الداتا اتحدثت والهو لسه بيكتب ----------
+    let ticketsDeferred = false;
+    let advancesDeferred = false;
+    let advFlash = new Set();
+
+    function isEditing(tbodyId) {
+      const el = document.activeElement;
+      const tag = el && el.tagName;
+      return (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') && $(tbodyId).contains(el);
+    }
+
+    document.addEventListener('focusout', () => {
+      setTimeout(() => {
+        if (ticketsDeferred && !isEditing('ticketsTableBody')) { ticketsDeferred = false; renderTickets(); }
+        if (advancesDeferred && !isEditing('advTableBody')) { advancesDeferred = false; renderAdvances(); }
+      }, 60);
+    });
+
     // ---------- Couriers ----------
+    // افتح/اقفل المودال بأنيميشن خروج بدل ما يقفل في وشك
+    function closeModal(id) {
+      const m = $(id);
+      if (!m.classList.contains('open') || m.classList.contains('closing')) return;
+      m.classList.add('closing');
+      setTimeout(() => m.classList.remove('open', 'closing'), 210);
+    }
+
+    function toggleModal(id) {
+      const m = $(id);
+      if (m.classList.contains('open')) closeModal(id);
+      else if (!m.classList.contains('closing')) m.classList.add('open');
+    }
+
     function toggleCourierModal() {
-      const m = $('courierModal');
-      m.classList.toggle('open');
-      if (m.classList.contains('open')) loadCouriers();
+      const opening = !$('courierModal').classList.contains('open');
+      toggleModal('courierModal');
+      if (opening) loadCouriers();
     }
 
     async function loadCouriers() {
@@ -661,9 +695,9 @@
 
     // ---------- التقرير الشهري للسلف ----------
     function toggleReportModal() {
-      const m = $('reportModal');
-      m.classList.toggle('open');
-      if (m.classList.contains('open')) {
+      const opening = !$('reportModal').classList.contains('open');
+      toggleModal('reportModal');
+      if (opening) {
         buildReportMonths();
         renderReport();
       }
@@ -761,6 +795,12 @@
         if (fresh.length) {
           DAS.toast(fresh.length === 1 ? `طلب سلفة جديد من ${fresh[0].courier_name} بمبلغ ${fresh[0].amount} ج` : `${fresh.length} طلبات سلف جديدة`);
         }
+        // فلش للسلف اللي اتغيرت (حالة أو ملاحظة)
+        const prevStatus = new Map(allAdvances.map(a => [a.id, a.status + '|' + (a.admin_note || '')]));
+        advances.forEach(a => {
+          const p = prevStatus.get(a.id);
+          if (p && p !== a.status + '|' + (a.admin_note || '')) advFlash.add(a.id);
+        });
       }
       advPrevIds = new Set(advances.map(a => a.id));
       allAdvances = advances;
@@ -794,12 +834,14 @@
 
       const animate = advFirstRender;
       advFirstRender = false;
+      if (!animate && isEditing('advTableBody')) { advancesDeferred = true; return; }
 
       tbody.innerHTML = list.map((a, i) => {
         const cls = ADV_CLS[a.status] || 'warn';
-        const anim = animate ? '' : 'animation:none';
+        const flash = advFlash.has(a.id) ? 'flash' : '';
+        const anim = (animate || flash) ? '' : 'animation:none';
         return `
-        <tr style="--i:${Math.min(i, 14)};${anim}">
+        <tr class="${flash}" style="--i:${Math.min(i, 14)};${anim}">
           <td class="mono" style="color:var(--text-3);font-size:12px">#${a.id}</td>
           <td data-label="المندوب">
             <div class="cell-courier">
@@ -824,6 +866,7 @@
           </td>
         </tr>`;
       }).join('');
+      advFlash.clear();
     }
 
     function exportAdvances() {
@@ -857,9 +900,9 @@
     }
 
     function toggleAdvanceModal() {
-      const m = $('advanceModal');
-      m.classList.toggle('open');
-      if (m.classList.contains('open')) $('addAdvErr').textContent = '';
+      const opening = !$('advanceModal').classList.contains('open');
+      toggleModal('advanceModal');
+      if (opening) $('addAdvErr').textContent = '';
     }
 
     $('addAdvanceForm').addEventListener('submit', async (e) => {
