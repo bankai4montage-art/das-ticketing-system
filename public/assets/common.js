@@ -52,6 +52,25 @@
       });
     },
 
+    // سلاسة السكرول: أثناء السكرول بنوقف حركة خلفية الأوربس (عشان backdrop-filter يبقى رخيص)
+    // وبعد ما يقف بننادي onEnd عشان الرندر المؤجل يتعمل
+    scrollCalm(onEnd) {
+      let t = null;
+      const root = document.documentElement;
+      window.addEventListener('scroll', () => {
+        root.classList.add('scrolling');
+        clearTimeout(t);
+        t = setTimeout(() => {
+          root.classList.remove('scrolling');
+          if (onEnd) onEnd();
+        }, 180);
+      }, { passive: true });
+    },
+
+    isScrolling() {
+      return document.documentElement.classList.contains('scrolling');
+    },
+
     esc(v) {
       return String(v == null ? '' : v)
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')

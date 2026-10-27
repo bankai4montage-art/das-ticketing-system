@@ -424,12 +424,13 @@
 
       const animate = firstRender;
       firstRender = false;
-      if (!animate && isEditing('ticketsTableBody')) { ticketsDeferred = true; return; }
+      if (!animate && (isEditing('ticketsTableBody') || DAS.isScrolling())) { ticketsDeferred = true; return; }
 
       tbody.innerHTML = filtered.map((t, i) => {
         const cls = STATUS_CLS[t.status] || 'warn';
         const flash = pendingFlash.has(t.id) ? 'flash' : '';
-        const anim = (animate || flash) ? '' : 'animation:none';
+        // بنحرك أول ١٢ صف بس — الجدول الطويل من غير حركة، ده اللي بيخلي السكرول ناعم
+        const anim = (i < 12 && (animate || flash)) ? '' : (flash ? '' : 'animation:none');
         const rowBtn = archiveMode
           ? `<button class="btn btn-ghost btn-icon" style="width:30px;height:30px;border-radius:9px" title="استرجاع الشكوى للجدول الرئيسي" aria-label="استرجاع الشكوى" onclick="restoreTicket(${t.id})">${DAS.icon('refresh')}</button>`
           : `<button class="btn btn-del btn-icon" title="مسح الشكوى" aria-label="مسح الشكوى" onclick="deleteTicket(${t.id})">${DAS.icon('trash')}</button>`;
@@ -656,6 +657,12 @@
       }, 60);
     });
 
+    // أثناء السكرول الرندر بيتأجل — و أول ما يقف بنرسم آخر تحديث
+    DAS.scrollCalm(() => {
+      if (ticketsDeferred && !isEditing('ticketsTableBody')) { ticketsDeferred = false; renderTickets(); }
+      if (advancesDeferred && !isEditing('advTableBody')) { advancesDeferred = false; renderAdvances(); }
+    });
+
     // ---------- Couriers ----------
     // افتح/اقفل المودال بأنيميشن خروج بدل ما يقفل في وشك
     function closeModal(id) {
@@ -683,7 +690,7 @@
       const list = data.couriers || [];
       $('couriersCount').textContent = `المناديب المسجلين (${list.length})`;
       $('couriersList').innerHTML = list.map((c, i) => `
-        <div class="courier-row clickable-row" style="--i:${Math.min(i, 12)}" data-profile-code="${DAS.esc(c.das_code)}" title="فتح بروفايل المندوب">
+        <div class="courier-row clickable-row" style="--i:${Math.min(i, 12)};${i < 12 ? '' : 'animation:none'}" data-profile-code="${DAS.esc(c.das_code)}" title="فتح بروفايل المندوب">
           <div class="cell-courier">
             <div class="av" style="width:34px;height:34px;border-radius:11px;font-size:12px;background:${DAS.gradient(c.das_code)}">${DAS.esc(DAS.initials(c.name))}</div>
             <div><span class="c mono">${DAS.esc(c.das_code)}</span><small>${DAS.esc(c.name)}</small></div>
@@ -801,8 +808,8 @@
     }
 
     function profileTicketsTable(tickets) {
-      const rows = tickets.sort((a, b) => b.id - a.id).map(t => `
-        <tr>
+      const rows = tickets.sort((a, b) => b.id - a.id).map((t, i) => `
+        <tr style="--i:${Math.min(i, 12)};${i < 12 ? '' : 'animation:none'}">
           <td class="mono" style="color:var(--text-3);font-size:12px">#${t.id}</td>
           <td data-label="القسم"><span class="tag ${t.category === 'الشيفت' ? 'shift' : 'pay'}">${DAS.esc(t.category)}</span> <span style="font-size:12px;color:var(--text-2)">${DAS.esc(t.sub_type)}</span>${t.archived ? ' <span class="tag adv">مؤرشفة</span>' : ''}</td>
           <td data-label="الحالة"><span class="badge ${STATUS_CLS[t.status] || 'warn'}"><span class="dot"></span>${DAS.esc(t.status)}</span></td>
@@ -819,8 +826,8 @@
     }
 
     function profileAdvancesTable(advs) {
-      const rows = advs.sort((a, b) => b.id - a.id).map(a => `
-        <tr>
+      const rows = advs.sort((a, b) => b.id - a.id).map((a, i) => `
+        <tr style="--i:${Math.min(i, 12)};${i < 12 ? '' : 'animation:none'}">
           <td class="mono" style="color:var(--text-3);font-size:12px">#${a.id}</td>
           <td data-label="المبلغ"><span class="amt">${DAS.esc(a.amount)} ج</span></td>
           <td data-label="السبب" class="desc-cell">${DAS.esc(a.reason)}<div class="meta">${DAS.fmtDateTime(a.created_at)}</div></td>
@@ -915,10 +922,16 @@
 
     function switchView(v) {
       const adv = v === 'advances';
-      $('ticketsView').classList.toggle('hidden', adv);
-      $('advancesView').classList.toggle('hidden', !adv);
+      const show = adv ? $('advancesView') : $('ticketsView');
+      show.classList.remove('hidden');
+      (adv ? $('ticketsView') : $('advancesView')).classList.add('hidden');
+      // إعادة تشغيل أنيميشن الدخول مع كل تبديل
+      show.classList.remove('panel-in');
+      void show.offsetWidth;
+      show.classList.add('panel-in');
       $('tabTickets').classList.toggle('active', !adv);
       $('tabAdvances').classList.toggle('active', adv);
+      if (adv) fetchAdvances(true); else fetchTickets(true);
     }
 
     async function fetchAdvances(force) {
@@ -976,12 +989,12 @@
 
       const animate = advFirstRender;
       advFirstRender = false;
-      if (!animate && isEditing('advTableBody')) { advancesDeferred = true; return; }
+      if (!animate && (isEditing('advTableBody') || DAS.isScrolling())) { advancesDeferred = true; return; }
 
       tbody.innerHTML = list.map((a, i) => {
         const cls = ADV_CLS[a.status] || 'warn';
         const flash = advFlash.has(a.id) ? 'flash' : '';
-        const anim = (animate || flash) ? '' : 'animation:none';
+        const anim = (i < 12 && (animate || flash)) ? '' : (flash ? '' : 'animation:none');
         return `
         <tr class="${flash}" style="--i:${Math.min(i, 14)};${anim}">
           <td class="mono">
