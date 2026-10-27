@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>بوابة المناديب - DAS Portal</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Cairo', sans-serif; background-color: #0f172a; color: #f8fafc; }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col items-center p-4">
+
+  <!-- شاشة تسجيل الدخول بالكود (DAS Login) -->
+  <div id="loginScreen" class="w-full max-w-md mt-16 bg-slate-800/90 border border-slate-700 rounded-2xl p-6 shadow-2xl">
+    <div class="text-center mb-6">
+      <div class="w-16 h-16 bg-indigo-600/20 border border-indigo-500/40 text-indigo-400 rounded-2xl flex items-center justify-center mx-auto mb-3 text-2xl font-bold">
+        DAS
+      </div>
+      <h1 class="text-2xl font-extrabold text-white">بوابة دعم المناديب</h1>
+      <p class="text-slate-400 text-sm mt-1">سجل دخولك بكود الـ DAS الخاص بك</p>
+    </div>
+
+    <form id="loginForm" class="space-y-4">
+      <div>
+        <label class="block text-xs text-slate-400 mb-1">كود المندوب (مثال: DAS-101)</label>
+        <input type="text" id="dasInput" required placeholder="DAS-101" 
+          class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-center text-lg font-bold tracking-wider uppercase focus:outline-none focus:border-indigo-500">
+      </div>
+      <p id="loginError" class="text-red-400 text-xs text-center hidden"></p>
+      <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl transition">
+        دخول للسيستم
+      </button>
+    </form>
+
+    <div class="mt-6 pt-4 border-t border-slate-700/60 text-center">
+      <p class="text-xs text-slate-500">أكواد للتجربة السريعة: <span class="text-slate-300 font-mono">DAS-101</span> أو <span class="text-slate-300 font-mono">DAS-102</span></p>
+      <a href="/admin.html" class="inline-block mt-3 text-xs text-indigo-400 hover:underline">الدخول للوحة الإدارة (Admin) &larr;</a>
+    </div>
+  </div>
+
+  <!-- شاشة المندوب الرئيسية بعد الدخول -->
+  <div id="mainScreen" class="w-full max-w-xl hidden space-y-6 pb-12">
+    
+    <!-- Header -->
+    <div class="bg-slate-800 border border-slate-700 rounded-2xl p-4 flex items-center justify-between">
+      <div>
+        <span class="text-xs text-indigo-400 font-mono font-bold" id="courierCodeBadge">DAS-101</span>
+        <h2 class="text-lg font-bold text-white" id="courierName">أحمد محمد</h2>
+      </div>
+      <button onclick="logout()" class="text-xs bg-slate-700 hover:bg-red-600/80 text-slate-200 px-3 py-2 rounded-lg transition">
+        خروج
+      </button>
+    </div>
+
+    <!-- 2 Cards: الشيفت والقبض -->
+    <div>
+      <h3 class="text-sm text-slate-400 mb-3 font-semibold">اختر القسم لتسجيل شكوى أو طلب:</h3>
+      <div class="grid grid-cols-2 gap-4">
+        
+        <!-- Card 1: الشيفت -->
+        <div onclick="openForm('الشيفت')" id="cardShift"
+          class="cursor-pointer bg-slate-800 hover:bg-slate-750 border-2 border-slate-700 hover:border-indigo-500 rounded-2xl p-5 text-center transition group">
+          <div class="w-14 h-14 bg-indigo-500/10 text-indigo-400 rounded-2xl flex items-center justify-center mx-auto mb-3 text-3xl group-hover:scale-110 transition">
+            📅
+          </div>
+          <h4 class="text-lg font-extrabold text-white">1. الشيفت</h4>
+          <p class="text-xs text-slate-400 mt-1">تعديل شيفت، غياب، تبديل، حضور</p>
+        </div>
+
+        <!-- Card 2: القبض -->
+        <div onclick="openForm('القبض')" id="cardPayroll"
+          class="cursor-pointer bg-slate-800 hover:bg-slate-750 border-2 border-slate-700 hover:border-emerald-500 rounded-2xl p-5 text-center transition group">
+          <div class="w-14 h-14 bg-emerald-500/10 text-emerald-400 rounded-2xl flex items-center justify-center mx-auto mb-3 text-3xl group-hover:scale-110 transition">
+            💰
+          </div>
+          <h4 class="text-lg font-extrabold text-white">2. القبض</h4>
+          <p class="text-xs text-slate-400 mt-1">خصومات، بونص، تقفيل، حسابات</p>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- الفورم اللي بيظهر لما يختار كارت -->
+    <div id="ticketFormBox" class="hidden bg-slate-800 border border-indigo-500/50 rounded-2xl p-5 shadow-xl">
+      <div class="flex items-center justify-between mb-4 pb-2 border-b border-slate-700">
+        <h3 class="font-bold text-white" id="formTitle">تسجيل مشكلة</h3>
+        <button onclick="closeForm()" class="text-xs text-slate-400 hover:text-white">إغلاق ✕</button>
+      </div>
+
+      <form id="submitTicketForm" class="space-y-4">
+        <input type="hidden" id="selectedCategory">
+        
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">نوع المشكلة</label>
+            <select id="subTypeInput" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-500"></select>
+          </div>
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">تاريخ اليوم / الشيفت</label>
+            <input type="date" id="issueDateInput" required class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-500">
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">اشرح مشكلتك بالتفصيل</label>
+          <textarea id="descInput" rows="3" required placeholder="اكتب تفاصيل المشكلة هنا بوضوح..."
+            class="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-sm focus:outline-none focus:border-indigo-500"></textarea>
+        </div>
+
+        <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl transition">
+          إرسال الشكوى للإدارة (Submit)
+        </button>
+      </form>
+    </div>
+
+    <!-- قسم متابعة الشكاوى وحالتها اللحظية -->
+    <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="font-bold text-white text-base">متابعة شكاواك وحالتها</h3>
+        <span class="text-[11px] text-emerald-400 flex items-center gap-1">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> تحديث تلقائي
+        </span>
+      </div>
+
+      <div id="myTicketsList" class="space-y-3">
+        <!-- الشكاوى هتنزل هنا بالجافاسكريبت -->
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    let currentCourier = null;
+    let pollInterval = null;
+
+    // تعيين تاريخ اليوم كافتراضي
+    document.getElementById('issueDateInput').valueAsDate = new Date();
+
+    // فحص لو المندوب مسجل دخول قبل كده
+    const saved = localStorage.getItem('das_courier');
+    if (saved) {
+      currentCourier = JSON.parse(saved);
+      showMainScreen();
+    }
+
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const das_code = document.getElementById('dasInput').value;
+      const errEl = document.getElementById('loginError');
+      errEl.classList.add('hidden');
+
+      try {
+        const res = await fetch('/api/courier/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ das_code })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          errEl.textContent = data.error || 'خطأ في الدخول';
+          errEl.classList.remove('hidden');
+          return;
+        }
+        currentCourier = data.courier;
+        localStorage.setItem('das_courier', JSON.stringify(currentCourier));
+        showMainScreen();
+      } catch (err) {
+        errEl.textContent = 'تعذر الاتصال بالسيرفر';
+        errEl.classList.remove('hidden');
+      }
+    });
+
+    function showMainScreen() {
+      document.getElementById('loginScreen').classList.add('hidden');
+      document.getElementById('mainScreen').classList.remove('hidden');
+      document.getElementById('courierCodeBadge').textContent = currentCourier.das_code;
+      document.getElementById('courierName').textContent = currentCourier.name;
+      loadMyTickets();
+      if (pollInterval) clearInterval(pollInterval);
+      pollInterval = setInterval(loadMyTickets, 4000); // تحديث لحظي كل 4 ثواني
+    }
+
+    function logout() {
+      localStorage.removeItem('das_courier');
+      currentCourier = null;
+      if (pollInterval) clearInterval(pollInterval);
+      document.getElementById('mainScreen').classList.add('hidden');
+      document.getElementById('loginScreen').classList.remove('hidden');
+    }
+
+    function openForm(category) {
+      document.getElementById('selectedCategory').value = category;
+      document.getElementById('formTitle').textContent = `تسجيل شكوى بخصوص: ${category}`;
+      const subSelect = document.getElementById('subTypeInput');
+      subSelect.innerHTML = '';
+
+      const options = category === 'الشيفت'
+        ? ['غياب اتسجل غلط', 'طلب تعديل شيفت', 'مشكلة حضور وانصراف', 'تبديل شيفت', 'أخرى']
+        : ['خصم غير مبرر', 'بونص منزلش', 'مشكلة في التقفيل / عجز', 'تأخر نزول القبض', 'أخرى'];
+
+      options.forEach(opt => {
+        const el = document.createElement('option');
+        el.value = opt;
+        el.textContent = opt;
+        subSelect.appendChild(el);
+      });
+
+      document.getElementById('ticketFormBox').classList.remove('hidden');
+      document.getElementById('descInput').focus();
+    }
+
+    function closeForm() {
+      document.getElementById('ticketFormBox').classList.add('hidden');
+      document.getElementById('submitTicketForm').reset();
+      document.getElementById('issueDateInput').valueAsDate = new Date();
+    }
+
+    document.getElementById('submitTicketForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const payload = {
+        das_code: currentCourier.das_code,
+        courier_name: currentCourier.name,
+        category: document.getElementById('selectedCategory').value,
+        sub_type: document.getElementById('subTypeInput').value,
+        issue_date: document.getElementById('issueDateInput').value,
+        description: document.getElementById('descInput').value
+      };
+
+      const res = await fetch('/api/tickets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (res.ok) {
+        closeForm();
+        loadMyTickets();
+      }
+    });
+
+    function getStatusBadge(status) {
+      if (status === 'اتحلت') {
+        return `<span class="px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">✅ اتحلت</span>`;
+      }
+      if (status === 'لازم تيجي المكتب') {
+        return `<span class="px-3 py-1 rounded-full text-xs font-bold bg-red-500/20 text-red-300 border border-red-500/40 animate-pulse">🏢 لازم تيجي المكتب</span>`;
+      }
+      return `<span class="px-3 py-1 rounded-full text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">⏳ يتم المراجعة</span>`;
+    }
+
+    async function loadMyTickets() {
+      if (!currentCourier) return;
+      const res = await fetch(`/api/courier/tickets/${currentCourier.das_code}`);
+      const data = await res.json();
+      const container = document.getElementById('myTicketsList');
+
+      if (!data.tickets || data.tickets.length === 0) {
+        container.innerHTML = `<p class="text-center text-slate-500 text-sm py-6">لا توجد شكاوى مسجلة حتى الآن</p>`;
+        return;
+      }
+
+      container.innerHTML = data.tickets.map(t => `
+        <div class="bg-slate-900/90 border border-slate-700/80 rounded-xl p-4 space-y-2">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-bold px-2.5 py-0.5 rounded bg-slate-800 text-indigo-300 border border-slate-700">${t.category}</span>
+              <span class="text-xs text-slate-400">${t.sub_type}</span>
+            </div>
+            ${getStatusBadge(t.status)}
+          </div>
+          <p class="text-sm text-slate-200 leading-relaxed">${t.description}</p>
+          ${t.admin_note ? `
+            <div class="bg-indigo-950/50 border border-indigo-500/30 rounded-lg p-2.5 text-xs text-indigo-200">
+              <strong class="text-indigo-400">رد الإدارة:</strong> ${t.admin_note}
+            </div>
+          ` : ''}
+          <div class="text-[11px] text-slate-500 flex justify-between pt-1">
+            <span>تاريخ المشكلة: ${t.issue_date}</span>
+            <span>رقم الطلب: #${t.id}</span>
+          </div>
+        </div>
+      `).join('');
+    }
+  </script>
+</body>
+</html>
