@@ -63,6 +63,17 @@ setInterval(() => {
 const STATUSES = ['يتم المراجعة', 'اتحلت', 'لازم تيجي المكتب'];
 const ADV_STATUSES = ['قيد المراجعة', 'تمت الصرف', 'مرفوضة'];
 
+// الأرشفة التلقائية: الشكوى اللي اتحلت ومعدّش على حلها 30 يوم بتتأرشف (بتخرج من الجدول الرئيسي)
+let lastSweep = 0;
+function sweepArchive() {
+  const now = Date.now();
+  if (now - lastSweep < 60e3) return;
+  lastSweep = now;
+  db.run(
+    "UPDATE tickets SET archived = 1 WHERE archived = 0 AND status = 'اتحلت' AND updated_at <= datetime('now', '-30 days')"
+  );
+}
+
 // إنشاء الجداول وإضافة بيانات مبدئية (للتجربة المحلية فقط — مش في الإنتاج)
 db.serialize(() => {
   db.run(`
@@ -85,7 +96,8 @@ db.serialize(() => {
       status TEXT DEFAULT 'يتم المراجعة',
       admin_note TEXT DEFAULT '',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      archived INTEGER DEFAULT 0
     )
   `);
 
@@ -103,6 +115,14 @@ db.serialize(() => {
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
+
+  // قاعدة قديمة من غير عمود الأرشفة؟ نزوده تلقائي مرة واحدة (بعد إنشاء الجدول)
+  db.all("PRAGMA table_info(tickets)", (err, cols) => {
+    if (err || !cols) return;
+    if (!cols.some(c => c.name === 'archived')) {
+      db.run("ALTER TABLE tickets ADD COLUMN archived INTEGER DEFAULT 0");
+    }
+  });
 });
 
 // ================= API للمندوب =================
@@ -225,15 +245,26 @@ app.use('/api/admin', (req, res, next) => {
   res.status(401).json({ error: 'غير مصرح — سجل دخول الإدارة الأول' });
 });
 
-// 7. جلب كل الشكاوى للإدارة
+// 7. جلب كل الشكاوى للإدارة (بدون المؤرشفة)
 app.get('/api/admin/tickets', (req, res) => {
-  db.all("SELECT * FROM tickets ORDER BY id DESC", [], (err, rows) => {
+  sweepArchive();
+  db.all("SELECT * FROM tickets WHERE archived = 0 ORDER BY id DESC", [], (err, rows) => {
     if (err) return res.status(500).json({ error: 'خطأ في جلب الشكاوى' });
     res.json({ tickets: rows });
   });
 });
 
+// 7-ب. جلب الأرشيف (الشكاوى اللي اتحلت ومعدّي عليها 30 يوم)
+app.get('/api/admin/tickets/archived', (req, res) => {
+  sweepArchive();
+  db.all("SELECT * FROM tickets WHERE archived = 1 ORDER BY id DESC", [], (err, rows) => {
+    if (err) return res.status(500).json({ error: 'خطأ في جلب الأرشيف' });
+    res.json({ tickets: rows });
+  });
+});
+
 // 8. تحديث حالة الشكوى (Drop Menu) وملاحظة الإدارة — الحالة من مجموعة ثابتة بس
+// وإرجاع الشكوى من الأرشيف تلقائي لو الحالة بقت مش "اتحلت"
 app.put('/api/admin/tickets/:id', (req, res) => {
   const { status, admin_note } = req.body || {};
   const ticketId = req.params.id;
@@ -242,8 +273,10 @@ app.put('/api/admin/tickets/:id', (req, res) => {
   }
 
   db.run(
-    `UPDATE tickets SET status = ?, admin_note = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-    [status, String(admin_note || ''), ticketId],
+    `UPDATE tickets SET status = ?, admin_note = ?, updated_at = CURRENT_TIMESTAMP,
+       archived = CASE WHEN ? = 'اتحلت' THEN archived ELSE 0 END
+     WHERE id = ?`,
+    [status, String(admin_note || ''), status, ticketId],
     function (err) {
       if (err) return res.status(500).json({ error: 'فشل تحديث الحالة' });
       res.json({ success: true });

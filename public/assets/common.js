@@ -33,7 +33,8 @@
     refresh: '<path d="M21 12a9 9 0 0 0-15-6.7L3 8"/><path d="M3 3v5h5M3 12a9 9 0 0 0 15 6.7l3-2.7"/><path d="M16 16h5v5"/>',
     trash: '<path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14"/><path d="M10 11v6M14 11v6"/>',
     upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5M12 3v12"/>',
-    banknote: '<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01M18 12h.01"/>'
+    banknote: '<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01M18 12h.01"/>',
+    download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5M12 15V3"/>'
   };
 
   window.DAS = {
@@ -52,6 +53,47 @@
       return String(v == null ? '' : v)
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    },
+
+    // الداتابيز بتخزن UTC — العرض دايماً بتوقيت القاهرة (بيظبط التوقيت الصيفي لوحده)
+    parseUtc(s) {
+      const d = new Date(String(s || '').replace(' ', 'T') + 'Z');
+      return isNaN(d) ? null : d;
+    },
+
+    fmtDateTime(s) {
+      const d = this.parseUtc(s);
+      if (!d) return String(s || '');
+      return d.toLocaleString('ar-EG', { timeZone: 'Africa/Cairo', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    },
+
+    fmtMonthKey(s) {
+      const d = this.parseUtc(s);
+      if (!d) return '';
+      return d.toLocaleString('en-CA', { timeZone: 'Africa/Cairo', year: 'numeric', month: '2-digit' });
+    },
+
+    fmtMonthLabel(key) {
+      const parts = String(key || '').split('-').map(Number);
+      if (parts.length !== 2 || parts.some(isNaN)) return key;
+      return new Date(Date.UTC(parts[0], parts[1] - 1, 15)).toLocaleDateString('ar-EG', { timeZone: 'Africa/Cairo', month: 'long', year: 'numeric' });
+    },
+
+    // CSV بمحارف معلّمة عشان Excel يفتحه عربي صح
+    csvCell(v) {
+      return '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+    },
+
+    downloadCsv(filename, rows) {
+      const csv = '\uFEFF' + rows.map(r => r.map(this.csvCell).join(',')).join('\r\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
     },
 
     initials(name) {

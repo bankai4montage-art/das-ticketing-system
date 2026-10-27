@@ -441,6 +441,15 @@ a { color: inherit; text-decoration: none; }
 .row-head .btn-del.btn-icon { width: 30px; height: 30px; border-radius: 9px; flex-shrink: 0; }
 .row-head .btn-del .ico { width: 15px; height: 15px; }
 
+/* الأرشيف: صفوف باهتة ومقفولة */
+.tbl tr.archived { opacity: .62; }
+.tbl tr.archived:hover { background: transparent; }
+
+/* ملخص التقرير الشهري */
+.report-sum { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 16px 0 6px; }
+@media (min-width: 640px) { .report-sum { grid-template-columns: repeat(4, 1fr); } }
+.report-sum .mini-stat b { font-size: 20px; }
+
 /* Mobile: table -> cards */
 @media (max-width: 860px) {
   .tbl thead { display: none; }

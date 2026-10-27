@@ -100,6 +100,16 @@
           <button class="chip" data-cat="الشيفت">الشيفت</button>
           <button class="chip" data-cat="القبض">القبض</button>
         </div>
+        <div class="chips" id="periodChips">
+          <button class="chip active" data-period="all">كل الفترات</button>
+          <button class="chip" data-period="today">اليوم</button>
+          <button class="chip" data-period="week">آخر 7 أيام</button>
+          <button class="chip" data-period="month">هذا الشهر</button>
+        </div>
+        <div class="chips">
+          <button class="chip" id="archiveChip" onclick="toggleArchive()"><i data-ico="inbox"></i> الأرشيف</button>
+          <button class="chip" onclick="exportTickets()"><i data-ico="download"></i> تصدير CSV</button>
+        </div>
         <div class="search">
           <input type="text" id="searchInput" class="input" placeholder="ابحث بكود DAS أو اسم المندوب..." aria-label="بحث">
           <i data-ico="search"></i>
@@ -132,7 +142,15 @@
             <b>طلبات السلف</b>
             <div class="adv-summary" id="advSummary">—</div>
           </div>
-          <button class="btn btn-ok btn-sm" onclick="toggleAdvanceModal()"><i data-ico="plus"></i> تسجيل سلفة مصروفة</button>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <div class="search">
+              <input type="text" id="advSearchInput" class="input" placeholder="ابحث بكود/اسم/سبب/محفظة..." aria-label="بحث في السلف">
+              <i data-ico="search"></i>
+            </div>
+            <button class="btn btn-ghost btn-sm" onclick="exportAdvances()"><i data-ico="download"></i> تصدير</button>
+            <button class="btn btn-ghost btn-sm" onclick="toggleReportModal()"><i data-ico="layers"></i> التقرير الشهري</button>
+            <button class="btn btn-ok btn-sm" onclick="toggleAdvanceModal()"><i data-ico="plus"></i> تسجيل سلفة مصروفة</button>
+          </div>
         </section>
 
         <section class="glass table-wrap rise">
@@ -205,6 +223,22 @@
     </div>
   </div>
 
+  <!-- ============ نافذة التقرير الشهري للسلف ============ -->
+  <div id="reportModal" class="modal-back" onclick="if(event.target===this)toggleReportModal()">
+    <div class="modal" style="max-width:680px">
+      <div class="form-head">
+        <h3 id="reportTitle">التقرير الشهري للسلف</h3>
+        <button class="btn btn-ghost btn-icon" onclick="toggleReportModal()" aria-label="إغلاق"><i data-ico="close"></i></button>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+        <select id="reportMonth" class="select" style="min-width:180px" onchange="renderReport()"></select>
+        <button class="btn btn-ghost btn-sm" onclick="exportReport()"><i data-ico="download"></i> تصدير التقرير</button>
+      </div>
+      <div class="report-sum" id="reportSummary"></div>
+      <div id="reportTable"></div>
+    </div>
+  </div>
+
   <script>
     const $ = (id) => document.getElementById(id);
     const STATUS_CLS = { 'اتحلت': 'ok', 'لازم تيجي المكتب': 'bad', 'يتم المراجعة': 'warn' };
@@ -220,6 +254,9 @@
     let pollTimer = null;
     let filterCat = 'all';
     let filterStatus = 'all';
+    let filterPeriod = 'all';
+    let archiveMode = false;
+    let archiveTickets = [];
     let pendingFlash = new Set();
 
     // ---------- Auth ----------
@@ -282,7 +319,11 @@
       fetchTickets(true);
       fetchAdvances(true);
       if (pollTimer) clearInterval(pollTimer);
-      pollTimer = setInterval(() => { fetchTickets(); fetchAdvances(); }, 4000);
+      pollTimer = setInterval(() => {
+        fetchTickets();
+        if (archiveMode) fetchArchiveTickets();
+        fetchAdvances();
+      }, 4000);
     }
 
     function adminLogout() {
@@ -323,7 +364,7 @@
       prevIds = new Set(tickets.map(t => t.id));
       allTickets = tickets;
       updateStats();
-      renderTickets();
+      if (!archiveMode) renderTickets();
     }
 
     function updateStats() {
@@ -342,16 +383,20 @@
 
     function renderTickets() {
       const q = $('searchInput').value.trim().toLowerCase();
-      const filtered = allTickets.filter(t => {
-        const mc = filterCat === 'all' || t.category === filterCat;
-        const ms = filterStatus === 'all' || t.status === filterStatus;
+      const source = archiveMode ? archiveTickets : allTickets;
+      const start = archiveMode ? null : periodStart();
+      const filtered = source.filter(t => {
+        const mc = archiveMode || filterCat === 'all' || t.category === filterCat;
+        const ms = archiveMode || filterStatus === 'all' || t.status === filterStatus;
+        const created = DAS.parseUtc(t.created_at);
+        const mp = !start || (created && created >= start);
         const mq = !q || t.das_code.toLowerCase().includes(q) || t.courier_name.toLowerCase().includes(q);
-        return mc && ms && mq;
+        return mc && ms && mp && mq;
       });
 
       const tbody = $('ticketsTableBody');
       if (!filtered.length) {
-        tbody.innerHTML = `<tr><td colspan="6"><div class="empty fade"><div class="eic">${DAS.icon('inbox', 'ico-lg')}</div><b>لا توجد شكاوى مطابقة</b>جرّب تغيير الفلاتر أو البحث</div></td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="6"><div class="empty fade"><div class="eic">${DAS.icon('inbox', 'ico-lg')}</div><b>${archiveMode ? 'الأرشيف فاضي' : 'لا توجد شكاوى مطابقة'}</b>${archiveMode ? 'الشكاوى اللي اتحلت ومعدّي عليها 30 يوم بتنقل هنا تلقائي' : 'جرّب تغيير الفلاتر أو البحث'}</div></td></tr>`;
         return;
       }
 
@@ -362,12 +407,27 @@
         const cls = STATUS_CLS[t.status] || 'warn';
         const flash = pendingFlash.has(t.id) ? 'flash' : '';
         const anim = animate ? '' : 'animation:none';
+        const rowBtn = archiveMode
+          ? `<button class="btn btn-ghost btn-icon" style="width:30px;height:30px;border-radius:9px" title="استرجاع الشكوى للجدول الرئيسي" aria-label="استرجاع الشكوى" onclick="restoreTicket(${t.id})">${DAS.icon('refresh')}</button>`
+          : `<button class="btn btn-del btn-icon" title="مسح الشكوى" aria-label="مسح الشكوى" onclick="deleteTicket(${t.id})">${DAS.icon('trash')}</button>`;
+        const statusCell = archiveMode
+          ? `<span class="badge ${cls}"><span class="dot"></span>${DAS.esc(t.status)}</span>`
+          : `<select id="status-${t.id}" class="select status-select ${cls}" onchange="updateTicket(${t.id})">
+              <option value="يتم المراجعة" ${t.status === 'يتم المراجعة' ? 'selected' : ''}>⏳ يتم المراجعة</option>
+              <option value="اتحلت" ${t.status === 'اتحلت' ? 'selected' : ''}>✅ اتحلت</option>
+              <option value="لازم تيجي المكتب" ${t.status === 'لازم تيجي المكتب' ? 'selected' : ''}>🏢 لازم تيجي المكتب</option>
+            </select>
+            <span class="saved-tick" id="tick-${t.id}">${DAS.icon('check')}</span>`;
+        const noteCell = archiveMode
+          ? `<span style="font-size:13px;color:var(--text-2)">${DAS.esc(t.admin_note || '—')}</span>`
+          : `<input type="text" id="note-${t.id}" class="input note-input" value="${DAS.esc(t.admin_note || '')}" placeholder="اكتب رد للمندوب..."
+              onchange="updateTicket(${t.id})" onkeydown="if(event.key==='Enter')this.blur()">`;
         return `
-        <tr class="${flash}" style="--i:${Math.min(i, 14)};${anim}">
+        <tr class="${flash} ${archiveMode ? 'archived' : ''}" style="--i:${Math.min(i, 14)};${anim}">
           <td data-label="رقم الطلب" class="mono">
             <div class="row-head">
               <span style="color:var(--text-3);font-size:12px">#${t.id}</span>
-              <button class="btn btn-del btn-icon" title="مسح الشكوى" aria-label="مسح الشكوى" onclick="deleteTicket(${t.id})">${DAS.icon('trash')}</button>
+              ${rowBtn}
             </div>
           </td>
           <td data-label="المندوب">
@@ -382,21 +442,73 @@
             <div class="meta">بتاريخ: ${DAS.esc(t.issue_date)}</div>
           </td>
           <td data-label="الشكوى" class="desc-cell">${DAS.esc(t.description)}</td>
-          <td data-label="ملاحظة للمندوب">
-            <input type="text" id="note-${t.id}" class="input note-input" value="${DAS.esc(t.admin_note || '')}" placeholder="اكتب رد للمندوب..."
-              onchange="updateTicket(${t.id})" onkeydown="if(event.key==='Enter')this.blur()">
-          </td>
-          <td data-label="الحالة">
-            <select id="status-${t.id}" class="select status-select ${cls}" onchange="updateTicket(${t.id})">
-              <option value="يتم المراجعة" ${t.status === 'يتم المراجعة' ? 'selected' : ''}>⏳ يتم المراجعة</option>
-              <option value="اتحلت" ${t.status === 'اتحلت' ? 'selected' : ''}>✅ اتحلت</option>
-              <option value="لازم تيجي المكتب" ${t.status === 'لازم تيجي المكتب' ? 'selected' : ''}>🏢 لازم تيجي المكتب</option>
-            </select>
-            <span class="saved-tick" id="tick-${t.id}">${DAS.icon('check')}</span>
-          </td>
+          <td data-label="ملاحظة للمندوب">${noteCell}</td>
+          <td data-label="الحالة">${statusCell}</td>
         </tr>`;
       }).join('');
       pendingFlash.clear();
+    }
+
+    // ---------- الفلاتر الزمنية والأرشيف ----------
+    function periodStart() {
+      const n = new Date();
+      if (filterPeriod === 'today') return new Date(n.getFullYear(), n.getMonth(), n.getDate());
+      if (filterPeriod === 'week') return new Date(Date.now() - 7 * 864e5);
+      if (filterPeriod === 'month') return new Date(n.getFullYear(), n.getMonth(), 1);
+      return null;
+    }
+
+    function toggleArchive() {
+      archiveMode = !archiveMode;
+      $('archiveChip').classList.toggle('active', archiveMode);
+      if (archiveMode) fetchArchiveTickets();
+      else renderTickets();
+    }
+
+    async function fetchArchiveTickets() {
+      try {
+        const res = await adminFetch('/api/admin/tickets/archived');
+        const data = await res.json();
+        archiveTickets = data.tickets || [];
+        if (archiveMode) renderTickets();
+      } catch (e) {}
+    }
+
+    async function restoreTicket(id) {
+      const t = archiveTickets.find(x => x.id === id);
+      if (!t) return;
+      try {
+        const res = await adminFetch(`/api/admin/tickets/${id}`, {
+          method: 'PUT',
+          body: JSON.stringify({ status: 'يتم المراجعة', admin_note: t.admin_note || '' })
+        });
+        if (!res.ok) throw new Error();
+        DAS.toast('رجعت الشكوى للجدول الرئيسي');
+        fetchArchiveTickets();
+        fetchTickets(true);
+      } catch (e) {
+        DAS.toast('فشل الاسترجاع، حاول مرة أخرى', 'err');
+      }
+    }
+
+    function exportTickets() {
+      const source = archiveMode ? archiveTickets : allTickets;
+      const start = archiveMode ? null : periodStart();
+      const q = $('searchInput').value.trim().toLowerCase();
+      const rows = source.filter(t => {
+        const mc = archiveMode || filterCat === 'all' || t.category === filterCat;
+        const ms = archiveMode || filterStatus === 'all' || t.status === filterStatus;
+        const created = DAS.parseUtc(t.created_at);
+        const mp = !start || (created && created >= start);
+        const mq = !q || t.das_code.toLowerCase().includes(q) || t.courier_name.toLowerCase().includes(q);
+        return mc && ms && mp && mq;
+      }).map(t => [t.id, t.das_code, t.courier_name, t.category, t.sub_type, t.issue_date, t.status, t.admin_note || '', t.description, DAS.fmtDateTime(t.created_at)]);
+      if (!rows.length) { DAS.toast('مفيش شكاوى للتصدير بالفلاتر الحالية', 'err'); return; }
+      DAS.downloadCsv(`das-tickets-${new Date().toISOString().slice(0, 10)}.csv`, [
+        ['#', 'الكود', 'الاسم', 'القسم', 'النوع', 'تاريخ المشكلة', 'الحالة', 'ملاحظة الإدارة', 'نص الشكوى', 'وقت التسجيل'],
+        ...rows
+      ]);
+      DAS.toast('تم تنزيل ملف الشكاوى');
     }
 
     async function updateTicket(id) {
@@ -483,7 +595,13 @@
       document.querySelectorAll('#catChips .chip').forEach(x => x.classList.toggle('active', x === c));
       renderTickets();
     }));
+    document.querySelectorAll('#periodChips [data-period]').forEach(c => c.addEventListener('click', () => {
+      filterPeriod = c.dataset.period;
+      document.querySelectorAll('#periodChips [data-period]').forEach(x => x.classList.toggle('active', x === c));
+      renderTickets();
+    }));
     $('searchInput').addEventListener('input', renderTickets);
+    $('advSearchInput').addEventListener('input', renderAdvances);
 
     // ---------- Couriers ----------
     function toggleCourierModal() {
@@ -537,8 +655,84 @@
       if (e.key === 'Escape') {
         if ($('courierModal').classList.contains('open')) toggleCourierModal();
         if ($('advanceModal').classList.contains('open')) toggleAdvanceModal();
+        if ($('reportModal').classList.contains('open')) toggleReportModal();
       }
     });
+
+    // ---------- التقرير الشهري للسلف ----------
+    function toggleReportModal() {
+      const m = $('reportModal');
+      m.classList.toggle('open');
+      if (m.classList.contains('open')) {
+        buildReportMonths();
+        renderReport();
+      }
+    }
+
+    function buildReportMonths() {
+      const keys = [...new Set(allAdvances.map(a => DAS.fmtMonthKey(a.created_at)).filter(Boolean))].sort().reverse();
+      const sel = $('reportMonth');
+      const prev = sel.value;
+      sel.innerHTML = keys.length
+        ? keys.map(k => `<option value="${k}">${DAS.fmtMonthLabel(k)}</option>`).join('')
+        : '<option value="">— مفيش سلف لسه —</option>';
+      sel.value = keys.includes(prev) ? prev : (keys[0] || '');
+    }
+
+    function reportData() {
+      const key = $('reportMonth').value;
+      const monthAdv = key ? allAdvances.filter(a => DAS.fmtMonthKey(a.created_at) === key) : [];
+      const byCourier = new Map();
+      monthAdv.forEach(a => {
+        const rec = byCourier.get(a.das_code) || { das_code: a.das_code, name: a.courier_name, count: 0, paid: 0, pending: 0, rejected: 0 };
+        rec.count++;
+        const amt = Number(a.amount) || 0;
+        if (a.status === 'تمت الصرف') rec.paid += amt;
+        else if (a.status === 'قيد المراجعة') rec.pending += amt;
+        else rec.rejected += amt;
+        byCourier.set(a.das_code, rec);
+      });
+      const couriers = [...byCourier.values()].sort((x, y) => (y.paid + y.pending) - (x.paid + x.pending));
+      return { key, monthAdv, couriers };
+    }
+
+    function renderReport() {
+      const { key, monthAdv, couriers } = reportData();
+      $('reportTitle').textContent = 'التقرير الشهري للسلف — ' + (key ? DAS.fmtMonthLabel(key) : '—');
+      const sumBy = (st) => monthAdv.filter(a => a.status === st).reduce((t, a) => t + (Number(a.amount) || 0), 0);
+      $('reportSummary').innerHTML = `
+        <div class="mini-stat warn"><b>${monthAdv.length}</b><span>عدد السلف</span></div>
+        <div class="mini-stat ok"><b>${sumBy('تمت الصرف')}</b><span>إجمالي المصروف (ج)</span></div>
+        <div class="mini-stat warn"><b>${sumBy('قيد المراجعة')}</b><span>قيد المراجعة (ج)</span></div>
+        <div class="mini-stat bad"><b>${sumBy('مرفوضة')}</b><span>المرفوض (ج)</span></div>`;
+      $('reportTable').innerHTML = couriers.length ? `
+        <div class="table-wrap" style="border:none;box-shadow:none;background:transparent;padding:0">
+          <table class="tbl">
+            <thead><tr><th>المندوب</th><th>عدد السلف</th><th>مصروف (ج)</th><th>قيد المراجعة (ج)</th><th>مرفوض (ج)</th></tr></thead>
+            <tbody>${couriers.map(c => `
+              <tr>
+                <td data-label="المندوب"><div class="cell-courier"><div class="av" style="background:${DAS.gradient(c.das_code)}">${DAS.esc(DAS.initials(c.name))}</div><div><b>${DAS.esc(c.name)}</b><small class="mono">${DAS.esc(c.das_code)}</small></div></div></td>
+                <td data-label="عدد السلف">${c.count}</td>
+                <td data-label="مصروف (ج)"><span class="amt">${c.paid}</span></td>
+                <td data-label="قيد المراجعة (ج)" style="color:var(--warn);font-weight:700">${c.pending}</td>
+                <td data-label="مرفوض (ج)" style="color:var(--bad);font-weight:700">${c.rejected}</td>
+              </tr>`).join('')}</tbody>
+          </table>
+        </div>` : `<div class="empty fade"><div class="eic">${DAS.icon('banknote', 'ico-lg')}</div><b>مفيش سلف في الشهر ده</b>اختار شهر تاني أو سجل سلف جديدة</div>`;
+    }
+
+    function exportReport() {
+      const { key, couriers } = reportData();
+      if (!key || !couriers.length) { DAS.toast('مفيش داتا للتصدير', 'err'); return; }
+      const total = couriers.reduce((t, c) => ({ count: t.count + c.count, paid: t.paid + c.paid, pending: t.pending + c.pending, rejected: t.rejected + c.rejected }), { count: 0, paid: 0, pending: 0, rejected: 0 });
+      DAS.downloadCsv(`das-advances-report-${key}.csv`, [
+        [`التقرير الشهري للسلف — ${DAS.fmtMonthLabel(key)}`],
+        ['الكود', 'الاسم', 'عدد السلف', 'مصروف (ج)', 'قيد المراجعة (ج)', 'مرفوض (ج)'],
+        ...couriers.map(c => [c.das_code, c.name, c.count, c.paid, c.pending, c.rejected]),
+        ['الإجمالي', '', total.count, total.paid, total.pending, total.rejected]
+      ]);
+      DAS.toast('تم تنزيل التقرير');
+    }
 
     // ---------- عرض السلف ----------
     const ADV_CLS = { 'تمت الصرف': 'ok', 'مرفوضة': 'bad', 'قيد المراجعة': 'warn' };
@@ -573,16 +767,28 @@
       renderAdvances();
     }
 
-    function renderAdvances() {
-      const list = allAdvances;
-      const pending = list.filter(a => a.status === 'قيد المراجعة');
-      const paid = list.filter(a => a.status === 'تمت الصرف');
-      const sum = (arr) => arr.reduce((t, a) => t + (Number(a.amount) || 0), 0);
-      $('advSummary').textContent = `${list.length} سلفة — قيد المراجعة: ${pending.length} (${sum(pending)} ج) — مصروفة: ${paid.length} (${sum(paid)} ج)`;
+    function advSearchList() {
+      const q = $('advSearchInput').value.trim().toLowerCase();
+      if (!q) return allAdvances;
+      return allAdvances.filter(a =>
+        [a.das_code, a.courier_name, a.reason, a.wallet].some(v => String(v || '').toLowerCase().includes(q))
+      );
+    }
 
+    function renderAdvances() {
+      const pending = allAdvances.filter(a => a.status === 'قيد المراجعة');
+      const paid = allAdvances.filter(a => a.status === 'تمت الصرف');
+      const sum = (arr) => arr.reduce((t, a) => t + (Number(a.amount) || 0), 0);
+      $('advSummary').textContent = `${allAdvances.length} سلفة — قيد المراجعة: ${pending.length} (${sum(pending)} ج) — مصروفة: ${paid.length} (${sum(paid)} ج)`;
+
+      const list = advSearchList();
       const tbody = $('advTableBody');
-      if (!list.length) {
+      if (!allAdvances.length) {
         tbody.innerHTML = `<tr><td colspan="7"><div class="empty fade"><div class="eic">${DAS.icon('banknote', 'ico-lg')}</div><b>لا توجد سلف</b>طلبات المناديب هتظهر هنا، أو سجل سلفة صرفتها بنفسك</div></td></tr>`;
+        return;
+      }
+      if (!list.length) {
+        tbody.innerHTML = `<tr><td colspan="7"><div class="empty fade"><div class="eic">${DAS.icon('search', 'ico-lg')}</div><b>مفيش نتائج مطابقة</b>جرّب كلمة بحث مختلفة</div></td></tr>`;
         return;
       }
 
@@ -602,7 +808,7 @@
             </div>
           </td>
           <td data-label="المبلغ"><span class="amt">${DAS.esc(a.amount)} ج</span></td>
-          <td data-label="السبب" class="desc-cell">${DAS.esc(a.reason)}</td>
+          <td data-label="السبب" class="desc-cell">${DAS.esc(a.reason)}<div class="meta">${DAS.fmtDateTime(a.created_at)}</div></td>
           <td data-label="المحفظة" class="mono">${DAS.esc(a.wallet || '—')}</td>
           <td data-label="الحالة">
             <select id="advstatus-${a.id}" class="select status-select ${cls}" onchange="updateAdvance(${a.id})">
@@ -618,6 +824,16 @@
           </td>
         </tr>`;
       }).join('');
+    }
+
+    function exportAdvances() {
+      const list = advSearchList();
+      if (!list.length) { DAS.toast('مفيش سلف للتصدير', 'err'); return; }
+      DAS.downloadCsv(`das-advances-${new Date().toISOString().slice(0, 10)}.csv`, [
+        ['#', 'الكود', 'الاسم', 'المبلغ (ج)', 'السبب', 'المحفظة', 'الحالة', 'ملاحظة الإدارة', 'التاريخ'],
+        ...list.map(a => [a.id, a.das_code, a.courier_name, a.amount, a.reason, a.wallet || '', a.status, a.admin_note || '', DAS.fmtDateTime(a.created_at)])
+      ]);
+      DAS.toast('تم تنزيل ملف السلف');
     }
 
     async function updateAdvance(id) {
