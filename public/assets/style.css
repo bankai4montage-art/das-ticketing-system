@@ -388,7 +388,7 @@ html.scrolling .orb, html.scrolling .bg-fx::before { animation-play-state: pause
 .kpi {
   --c: var(--accent); --c-soft: var(--accent-soft);
   position: relative; overflow: hidden; padding: 18px; border-radius: 20px; background: var(--surface); border: 1px solid var(--border);
-  text-align: right; cursor: pointer; transition: transform .35s var(--ease), border-color .3s, box-shadow .35s;
+  text-align: right; cursor: pointer; transition: transform .35s var(--ease), border-color .3s, box-shadow .35s, background .35s var(--ease);
   backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
 }
 .kpi.warn { --c: var(--warn); --c-soft: var(--warn-soft); }
@@ -397,7 +397,9 @@ html.scrolling .orb, html.scrolling .bg-fx::before { animation-play-state: pause
 .kpi::after { content: ""; position: absolute; width: 140px; height: 140px; left: -50px; top: -60px; border-radius: 50%; background: var(--c-soft); filter: blur(10px); transition: transform .6s var(--ease); }
 .kpi:hover { transform: translateY(-5px); border-color: var(--c); box-shadow: 0 20px 44px -22px var(--c); }
 .kpi:hover::after { transform: scale(1.4); }
-.kpi.active { border-color: var(--c); box-shadow: 0 20px 44px -22px var(--c); }
+.kpi:active { transform: translateY(-1px) scale(.97); }
+.kpi.active { transform: translateY(-5px); border-color: var(--c); box-shadow: 0 20px 44px -22px var(--c); background: color-mix(in srgb, var(--c-soft) 30%, var(--surface)); }
+.kpi.active::after { transform: scale(1.4); }
 .kpi .top { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; }
 .kpi .top span { font-size: 13px; font-weight: 700; color: var(--text-2); }
 .kpi .top .ki { width: 38px; height: 38px; border-radius: 13px; display: grid; place-items: center; color: var(--c); background: var(--c-soft); }
@@ -457,6 +459,10 @@ html.scrolling .orb, html.scrolling .bg-fx::before { animation-play-state: pause
 .view-panel { animation: none; }
 .view-panel.panel-in { animation: panelIn .45s var(--ease) both; }
 @keyframes panelIn { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+
+/* fade ناعم للجدول مع كل تغيير فلتر */
+.soft-in { animation: softIn .35s var(--ease) both; }
+@keyframes softIn { from { opacity: .25; } to { opacity: 1; } }
 
 /* ---------- تقييم الحل ---------- */
 .rate-box { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 12px; padding: 12px 14px; border-radius: 14px; background: var(--surface); border: 1px dashed var(--border-strong); }
