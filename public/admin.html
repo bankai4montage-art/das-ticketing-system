@@ -368,7 +368,7 @@
         data = await res.json();
       } catch (e) { return; }
       const tickets = data.tickets || [];
-      const newSig = JSON.stringify(tickets.map(t => [t.id, t.status, t.admin_note, t.rating]));
+      const newSig = JSON.stringify(tickets.map(t => [t.id, t.status, t.admin_note, t.rating, t.seen_note]));
       if (newSig === sig && !force) return;
       sig = newSig;
 
@@ -441,10 +441,13 @@
               <option value="لازم تيجي المكتب" ${t.status === 'لازم تيجي المكتب' ? 'selected' : ''}>🏢 لازم تيجي المكتب</option>
             </select>
             <span class="saved-tick" id="tick-${t.id}">${DAS.icon('check')}</span>`;
+        const seenFlag = archiveMode || !t.admin_note ? '' : (t.seen_note === t.admin_note
+          ? `<span class="seen-flag ok" title="المندوب فتح الشكوى بعد آخر رد">${DAS.icon('check')} شافها</span>`
+          : `<span class="seen-flag wait" title="الرد لسه وصلش للمندوب">${DAS.icon('clock')} مش شافها</span>`);
         const noteCell = archiveMode
           ? `<span style="font-size:13px;color:var(--text-2)">${DAS.esc(t.admin_note || '—')}</span>`
-          : `<input type="text" id="note-${t.id}" class="input note-input" value="${DAS.esc(t.admin_note || '')}" placeholder="اكتب رد للمندوب..."
-              onchange="updateTicket(${t.id})" onkeydown="if(event.key==='Enter')this.blur()">`;
+          : `<div class="note-wrap"><input type="text" id="note-${t.id}" class="input note-input" value="${DAS.esc(t.admin_note || '')}" placeholder="اكتب رد للمندوب..."
+              onchange="updateTicket(${t.id})" onkeydown="if(event.key==='Enter')this.blur()">${seenFlag}</div>`;
         return `
         <tr class="${flash} ${archiveMode ? 'archived' : ''}" style="--i:${Math.min(i, 14)};${anim}">
           <td data-label="رقم الطلب" class="mono">
@@ -726,6 +729,15 @@
 
     // ---------- بروفايل المندوب (دوس على الاسم في أي جدول) ----------
     let couriersCache = null;
+    let profileCode = null;
+
+    function newAdvanceFromProfile() {
+      toggleAdvanceModal();
+      if ($('advanceModal').classList.contains('open')) {
+        $('advNewCode').value = profileCode || '';
+        $('advNewAmount').focus();
+      }
+    }
 
     document.addEventListener('click', (e) => {
       const el = e.target.closest('[data-profile-code]');
@@ -733,6 +745,7 @@
     });
 
     async function openProfile(code) {
+      profileCode = code;
       $('profileModal').classList.add('open');
       $('profileBody').innerHTML = '<div class="skeleton" style="height:140px"></div>';
 
@@ -768,6 +781,7 @@
             <div class="mono" style="color:var(--accent);font-size:13px">${DAS.esc(code)}</div>
             ${courier && courier.phone ? `<div style="font-size:13px;color:var(--text-2)">${DAS.esc(courier.phone)}</div>` : ''}
           </div>
+          <button class="btn btn-ok btn-sm" style="margin-inline-start:auto" onclick="newAdvanceFromProfile()"><i data-ico="plus"></i> سلفة جديدة</button>
         </div>
         <div class="profile-sum">
           <div class="mini-stat"><b>${tickets.length}</b><span>إجمالي الشكاوى (شامل الأرشيف)</span></div>
@@ -970,7 +984,12 @@
         const anim = (animate || flash) ? '' : 'animation:none';
         return `
         <tr class="${flash}" style="--i:${Math.min(i, 14)};${anim}">
-          <td class="mono" style="color:var(--text-3);font-size:12px">#${a.id}</td>
+          <td class="mono">
+            <div class="row-head">
+              <span style="color:var(--text-3);font-size:12px">#${a.id}</span>
+              <button class="btn btn-del btn-icon" title="مسح السلفة" aria-label="مسح السلفة" onclick="deleteAdvance(${a.id})">${DAS.icon('trash')}</button>
+            </div>
+          </td>
           <td data-label="المندوب">
             <div class="cell-courier clickable" data-profile-code="${DAS.esc(a.das_code)}" title="فتح بروفايل المندوب">
               <div class="av" style="background:${DAS.gradient(a.das_code)}">${DAS.esc(DAS.initials(a.courier_name))}</div>
@@ -1005,6 +1024,19 @@
         ...list.map(a => [a.id, a.das_code, a.courier_name, a.amount, a.reason, a.wallet || '', a.status, a.admin_note || '', DAS.fmtDateTime(a.created_at)])
       ]);
       DAS.toast('تم تنزيل ملف السلف');
+    }
+
+    async function deleteAdvance(id) {
+      if (!confirm('متأكد من مسح السلفة دي نهائياً؟')) return;
+      try {
+        const res = await adminFetch(`/api/admin/advances/${id}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error();
+        DAS.toast('تم مسح السلفة');
+        fetchAdvances(true);
+        if ($('profileModal').classList.contains('open') && profileCode) openProfile(profileCode);
+      } catch (e) {
+        DAS.toast('فشل المسح، حاول مرة أخرى', 'err');
+      }
     }
 
     async function updateAdvance(id) {

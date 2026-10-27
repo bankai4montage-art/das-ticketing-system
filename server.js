@@ -100,7 +100,9 @@ db.serialize(() => {
       archived INTEGER DEFAULT 0,
       rating INTEGER,
       rating_note TEXT DEFAULT '',
-      rated_at DATETIME
+      rated_at DATETIME,
+      seen_note TEXT DEFAULT '',
+      seen_at DATETIME
     )
   `);
 
@@ -130,6 +132,10 @@ db.serialize(() => {
       db.run("ALTER TABLE tickets ADD COLUMN rating_note TEXT DEFAULT ''");
       db.run("ALTER TABLE tickets ADD COLUMN rated_at DATETIME");
     }
+    if (!cols.some(c => c.name === 'seen_note')) {
+      db.run("ALTER TABLE tickets ADD COLUMN seen_note TEXT DEFAULT ''");
+      db.run("ALTER TABLE tickets ADD COLUMN seen_at DATETIME");
+    }
   });
 });
 
@@ -149,15 +155,23 @@ app.post('/api/courier/login', (req, res) => {
   });
 });
 
-// 2. جلب شكاوى المندوب الخاصة به
+// 2. جلب شكاوى المندوب الخاصة به — وبتسجل معاها إنه شاف آخر رد من الإدارة
+// (لو الرد اتغير بعدها، وصلته "مش شافها" تاني لحد ما يفتح التاب)
 app.get('/api/courier/tickets/:das_code', (req, res) => {
   const cleanCode = String(req.params.das_code || '').trim().toUpperCase();
-  db.all(
-    "SELECT * FROM tickets WHERE UPPER(das_code) = ? ORDER BY id DESC",
+  db.run(
+    `UPDATE tickets SET seen_note = admin_note, seen_at = CURRENT_TIMESTAMP
+     WHERE UPPER(das_code) = ? AND admin_note != '' AND (seen_note IS NULL OR seen_note != admin_note)`,
     [cleanCode],
-    (err, rows) => {
-      if (err) return res.status(500).json({ error: 'خطأ في جلب البيانات' });
-      res.json({ tickets: rows });
+    () => {
+      db.all(
+        "SELECT * FROM tickets WHERE UPPER(das_code) = ? ORDER BY id DESC",
+        [cleanCode],
+        (err, rows) => {
+          if (err) return res.status(500).json({ error: 'خطأ في جلب البيانات' });
+          res.json({ tickets: rows });
+        }
+      );
     }
   );
 });
@@ -439,6 +453,14 @@ app.put('/api/admin/advances/:id', (req, res) => {
       res.json({ success: true });
     }
   );
+});
+
+// 16. مسح سلفة (لو اتسجلت بالغلط)
+app.delete('/api/admin/advances/:id', (req, res) => {
+  db.run("DELETE FROM advances WHERE id = ?", [req.params.id], function (err) {
+    if (err) return res.status(500).json({ error: 'فشل مسح السلفة' });
+    res.json({ success: true });
+  });
 });
 
 app.listen(PORT, () => {
