@@ -33,12 +33,6 @@
             <span class="spinner"></span><span class="label">دخول للسيستم</span>
           </button>
         </form>
-
-        <div class="hint">
-          أكواد للتجربة: <code onclick="fillCode('DAS-101')">DAS-101</code> <code onclick="fillCode('DAS-102')">DAS-102</code>
-          <br>
-          <a href="/admin.html" class="link-soft">الدخول للوحة الإدارة <i data-ico="arrow"></i></a>
-        </div>
       </div>
     </div>
 
@@ -296,6 +290,7 @@
       let data;
       try {
         const res = await fetch(`/api/courier/tickets/${encodeURIComponent(currentCourier.das_code)}`);
+        if (!res.ok) return; // فشل مؤقت — الاستبيان التالي هيجرب تاني
         data = await res.json();
       } catch (e) { return; }
 

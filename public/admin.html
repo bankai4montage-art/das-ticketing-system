@@ -152,7 +152,31 @@
     let pendingFlash = new Set();
 
     // ---------- Auth ----------
-    try { if (sessionStorage.getItem('das_admin_auth') === 'true') unlockDashboard(); } catch (e) {}
+    // كل نداءات الأدمن بتمر من هنا: بتبعت التوكن، ولو اترفض (401) بترجّع للوجين بدل ما الداشبورد تفضل مكسورة
+    async function adminFetch(url, opts = {}) {
+      const res = await fetch(url, {
+        ...opts,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Admin-Token': sessionStorage.getItem('das_admin_token') || '',
+          ...(opts.headers || {})
+        }
+      });
+      if (res.status === 401) {
+        try {
+          sessionStorage.removeItem('das_admin_auth');
+          sessionStorage.removeItem('das_admin_token');
+        } catch (e) {}
+        location.reload();
+        throw new Error('unauthorized');
+      }
+      return res;
+    }
+
+    // منفتحش الداشبورد من غير علامة الدخول والتوكن مع بعض — لو التوكن قديم/مفقود نرجع للوجين
+    try {
+      if (sessionStorage.getItem('das_admin_auth') === 'true' && sessionStorage.getItem('das_admin_token')) unlockDashboard();
+    } catch (e) {}
 
     $('adminLoginForm').addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -165,11 +189,15 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ password: $('adminPass').value })
         });
-        if (res.ok) {
-          try { sessionStorage.setItem('das_admin_auth', 'true'); } catch (e) {}
+        const data = await res.json();
+        if (res.ok && data.token) {
+          try {
+            sessionStorage.setItem('das_admin_auth', 'true');
+            sessionStorage.setItem('das_admin_token', data.token);
+          } catch (e) {}
           unlockDashboard();
         } else {
-          $('adminErr').textContent = 'كلمة المرور غير صحيحة';
+          $('adminErr').textContent = data.error || 'كلمة المرور غير صحيحة';
           const p = $('adminPass'); p.classList.remove('shake'); void p.offsetWidth; p.classList.add('shake');
         }
       } catch (err) {
@@ -186,7 +214,10 @@
     }
 
     function adminLogout() {
-      try { sessionStorage.removeItem('das_admin_auth'); } catch (e) {}
+      try {
+        sessionStorage.removeItem('das_admin_auth');
+        sessionStorage.removeItem('das_admin_token');
+      } catch (e) {}
       location.reload();
     }
 
@@ -201,7 +232,7 @@
       if (!force && isEditingNote()) return;
       let data;
       try {
-        const res = await fetch('/api/admin/tickets');
+        const res = await adminFetch('/api/admin/tickets');
         data = await res.json();
       } catch (e) { return; }
       const tickets = data.tickets || [];
@@ -297,9 +328,8 @@
       const admin_note = $(`note-${id}`).value;
       sel.className = 'select status-select ' + (STATUS_CLS[status] || 'warn');
       try {
-        const res = await fetch(`/api/admin/tickets/${id}`, {
+        const res = await adminFetch(`/api/admin/tickets/${id}`, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ status, admin_note })
         });
         if (!res.ok) throw new Error();
@@ -333,7 +363,7 @@
     }
 
     async function loadCouriers() {
-      const res = await fetch('/api/admin/couriers');
+      const res = await adminFetch('/api/admin/couriers');
       const data = await res.json();
       const list = data.couriers || [];
       $('couriersCount').textContent = `المناديب المسجلين (${list.length})`;
@@ -352,16 +382,19 @@
       const btn = $('addCourierBtn');
       DAS.busy(btn, true);
       try {
-        const res = await fetch('/api/admin/couriers', {
+        const res = await adminFetch('/api/admin/couriers', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             das_code: $('newDasCode').value,
             name: $('newCourierName').value,
             phone: $('newCourierPhone').value
           })
         });
-        if (!res.ok) throw new Error();
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          DAS.toast(errData.error || 'فشل حفظ المندوب', 'err');
+          return;
+        }
         $('addCourierForm').reset();
         DAS.toast('تم حفظ المندوب');
         loadCouriers();
