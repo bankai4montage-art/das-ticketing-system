@@ -93,8 +93,8 @@
           <input type="hidden" id="selectedCategory">
           <div class="form-grid">
             <div class="field">
-              <label for="subTypeInput">نوع المشكلة</label>
-              <select id="subTypeInput" class="select"></select>
+              <label for="dd-subType">نوع المشكلة</label>
+              <div id="ddSubTypeWrap"></div>
             </div>
             <div class="field">
               <label for="issueDateInput">تاريخ اليوم / الشيفت</label>
@@ -347,8 +347,7 @@
       closeAdvanceForm();
       $('selectedCategory').value = category;
       $('formTitle').textContent = `تسجيل شكوى بخصوص: ${category}`;
-      const sel = $('subTypeInput');
-      sel.innerHTML = OPTIONS[category].map(o => `<option value="${DAS.esc(o)}">${DAS.esc(o)}</option>`).join('');
+      $('ddSubTypeWrap').innerHTML = DAS.ddHtml('dd-subType', OPTIONS[category][0], OPTIONS[category], null);
       $('cardShift').classList.toggle('active', category === 'الشيفت');
       $('cardPayroll').classList.toggle('active', category === 'القبض');
 
@@ -382,7 +381,7 @@
             das_code: currentCourier.das_code,
             courier_name: currentCourier.name,
             category: $('selectedCategory').value,
-            sub_type: $('subTypeInput').value,
+            sub_type: $('dd-subType').dataset.value,
             issue_date: $('issueDateInput').value,
             description: $('descInput').value
           })

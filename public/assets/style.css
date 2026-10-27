@@ -438,10 +438,40 @@ html.scrolling .orb, html.scrolling .bg-fx::before { animation-play-state: pause
 .desc-cell { max-width: 340px; line-height: 1.75; word-break: break-word; }
 .meta { font-size: 11.5px; color: var(--text-3); margin-top: 6px; }
 .note-input { min-width: 190px; }
-.status-select { padding: 9px 12px; padding-inline-end: 34px; font-size: 13px; font-weight: 700; border-radius: 12px; min-width: 168px; }
-.status-select.warn { color: var(--warn); background-color: var(--warn-soft); border-color: color-mix(in srgb, var(--warn) 35%, transparent); }
-.status-select.ok { color: var(--ok); background-color: var(--ok-soft); border-color: color-mix(in srgb, var(--ok) 35%, transparent); }
-.status-select.bad { color: var(--bad); background-color: var(--bad-soft); border-color: color-mix(in srgb, var(--bad) 35%, transparent); }
+/* ===== Dropdown مخصوص بديل select الوندوز ===== */
+.dd { position: relative; display: inline-block; }
+.dd-btn {
+  display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px;
+  border-radius: 12px; border: 1px solid var(--border); background: var(--surface-2);
+  color: var(--text); font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap;
+  font-family: inherit; transition: border-color .2s, background .2s;
+}
+.dd-btn:hover { border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.dd-btn .dd-chev { width: 13px; height: 13px; color: var(--text-3); transition: transform .2s; }
+.dd.open .dd-chev { transform: rotate(180deg); }
+.dd-btn.ok { color: var(--ok); background: var(--ok-soft); border-color: color-mix(in srgb, var(--ok) 35%, transparent); }
+.dd-btn.warn { color: var(--warn); background: var(--warn-soft); border-color: color-mix(in srgb, var(--warn) 35%, transparent); }
+.dd-btn.bad { color: var(--bad); background: var(--bad-soft); border-color: color-mix(in srgb, var(--bad) 35%, transparent); }
+.dd-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-3); flex: none; }
+.dd-dot.ok { background: var(--ok); }
+.dd-dot.warn { background: var(--warn); }
+.dd-dot.bad { background: var(--bad); }
+.dd-list {
+  position: absolute; top: calc(100% + 6px); inset-inline-start: 0; min-width: 190px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 6px;
+  display: none; z-index: 80; box-shadow: 0 18px 40px -18px rgba(2, 6, 23, .45);
+  animation: popIn .18s var(--ease-spring) both;
+}
+.dd.open .dd-list { display: block; }
+.dd-list.dd-floating { display: block; }
+.dd-item {
+  display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 12px;
+  border-radius: 10px; background: transparent; border: none; color: var(--text);
+  font-size: 13px; font-weight: 600; cursor: pointer; text-align: right;
+  font-family: inherit; transition: background .15s;
+}
+.dd-item:hover { background: var(--surface-2); }
+.dd-item.active { background: var(--accent-soft); }
 .saved-tick { display: inline-flex; color: var(--ok); opacity: 0; transform: scale(.5); transition: all .4s var(--ease-spring); margin-inline-start: 6px; vertical-align: middle; }
 .saved-tick.show { opacity: 1; transform: scale(1); }
 .btn-del { background: var(--bad-soft); color: var(--bad); border: 1px solid transparent; }
@@ -522,7 +552,7 @@ html.scrolling .orb, html.scrolling .bg-fx::before { animation-play-state: pause
   .tbl tbody td { padding: 8px 0; border: 0; }
   .tbl tbody td[data-label]::before { content: attr(data-label); display: block; font-size: 11px; font-weight: 700; color: var(--text-3); margin-bottom: 4px; }
   .desc-cell { max-width: none; }
-  .note-input, .status-select { width: 100%; }
+  .note-input, .dd { width: 100%; }
 }
 
 .courier-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; border-radius: 14px; background: var(--surface); border: 1px solid var(--border); font-size: 13px; animation: riseIn .4s var(--ease) both; animation-delay: calc(var(--i, 0) * 35ms); }

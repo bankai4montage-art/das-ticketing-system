@@ -238,7 +238,7 @@
         <button class="btn btn-ghost btn-icon" onclick="toggleReportModal()" aria-label="إغلاق"><i data-ico="close"></i></button>
       </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-        <select id="reportMonth" class="select" style="min-width:180px" onchange="renderReport()"></select>
+        <span id="reportMonthWrap"></span>
         <button class="btn btn-ghost btn-sm" onclick="exportReport()"><i data-ico="download"></i> تصدير التقرير</button>
       </div>
       <div class="report-sum" id="reportSummary"></div>
@@ -260,6 +260,7 @@
   <script>
     const $ = (id) => document.getElementById(id);
     const STATUS_CLS = { 'اتحلت': 'ok', 'لازم تيجي المكتب': 'bad', 'يتم المراجعة': 'warn' };
+    const STATUS_OPTS = ['يتم المراجعة', 'اتحلت', 'لازم تيجي المكتب'];
 
     let allTickets = [];
     let allAdvances = [];
@@ -436,12 +437,8 @@
           : `<button class="btn btn-del btn-icon" title="مسح الشكوى" aria-label="مسح الشكوى" onclick="deleteTicket(${t.id})">${DAS.icon('trash')}</button>`;
         const statusCell = archiveMode
           ? `<span class="badge ${cls}"><span class="dot"></span>${DAS.esc(t.status)}</span>`
-          : `<select id="status-${t.id}" class="select status-select ${cls}" onchange="updateTicket(${t.id})">
-              <option value="يتم المراجعة" ${t.status === 'يتم المراجعة' ? 'selected' : ''}>⏳ يتم المراجعة</option>
-              <option value="اتحلت" ${t.status === 'اتحلت' ? 'selected' : ''}>✅ اتحلت</option>
-              <option value="لازم تيجي المكتب" ${t.status === 'لازم تيجي المكتب' ? 'selected' : ''}>🏢 لازم تيجي المكتب</option>
-            </select>
-            <span class="saved-tick" id="tick-${t.id}">${DAS.icon('check')}</span>`;
+          : DAS.ddHtml(`dd-status-${t.id}`, t.status, STATUS_OPTS, STATUS_CLS) +
+            `<span class="saved-tick" id="tick-${t.id}">${DAS.icon('check')}</span>`;
         const seenFlag = archiveMode || !t.admin_note ? '' : (t.seen_note === t.admin_note
           ? `<span class="seen-flag ok" title="المندوب فتح الشكوى بعد آخر رد">${DAS.icon('check')} شافها</span>`
           : `<span class="seen-flag wait" title="الرد لسه وصلش للمندوب">${DAS.icon('clock')} مش شافها</span>`);
@@ -548,10 +545,10 @@
     }
 
     async function updateTicket(id) {
-      const sel = $(`status-${id}`);
-      const status = sel.value;
+      const dd = $(`dd-status-${id}`);
+      if (!dd) return;
+      const status = dd.dataset.value;
       const admin_note = $(`note-${id}`).value;
-      sel.className = 'select status-select ' + (STATUS_CLS[status] || 'warn');
       try {
         const res = await adminFetch(`/api/admin/tickets/${id}`, {
           method: 'PUT',
@@ -621,6 +618,13 @@
     });
 
     // ---------- Filters ----------
+    // الاختيار من دروب داون الحالة → نفس منطق الحفظ القديم
+    DAS.ddChanged = (id) => {
+      if (id.startsWith('dd-status-')) updateTicket(Number(id.slice(10)));
+      else if (id.startsWith('dd-advstatus-')) updateAdvance(Number(id.slice(13)));
+      else if (id === 'dd-reportMonth') renderReport();
+    };
+
     document.querySelectorAll('.kpi').forEach(k => k.addEventListener('click', () => {
       filterStatus = k.dataset.status;
       document.querySelectorAll('.kpi').forEach(x => x.classList.toggle('active', x === k));
@@ -858,16 +862,15 @@
 
     function buildReportMonths() {
       const keys = [...new Set(allAdvances.map(a => DAS.fmtMonthKey(a.created_at)).filter(Boolean))].sort().reverse();
-      const sel = $('reportMonth');
-      const prev = sel.value;
-      sel.innerHTML = keys.length
-        ? keys.map(k => `<option value="${k}">${DAS.fmtMonthLabel(k)}</option>`).join('')
-        : '<option value="">— مفيش سلف لسه —</option>';
-      sel.value = keys.includes(prev) ? prev : (keys[0] || '');
+      $('reportMonthWrap').innerHTML = keys.length
+        ? DAS.ddHtml('dd-reportMonth', keys[0], keys, null, (k) => DAS.fmtMonthLabel(k))
+        : '<span style="font-size:13px;color:var(--text-3)">— مفيش سلف لسه —</span>';
+      $('dd-reportMonth').setAttribute('data-inline', '');
     }
 
     function reportData() {
-      const key = $('reportMonth').value;
+      const ddEl = $('dd-reportMonth');
+      const key = ddEl ? ddEl.dataset.value : '';
       const monthAdv = key ? allAdvances.filter(a => DAS.fmtMonthKey(a.created_at) === key) : [];
       const byCourier = new Map();
       monthAdv.forEach(a => {
@@ -923,6 +926,7 @@
 
     // ---------- عرض السلف ----------
     const ADV_CLS = { 'تمت الصرف': 'ok', 'مرفوضة': 'bad', 'قيد المراجعة': 'warn' };
+    const ADV_OPTS = ['قيد المراجعة', 'تمت الصرف', 'مرفوضة'];
 
     function switchView(v) {
       const adv = v === 'advances';
@@ -1017,11 +1021,7 @@
           <td data-label="السبب" class="desc-cell">${DAS.esc(a.reason)}<div class="meta">${DAS.fmtDateTime(a.created_at)}</div></td>
           <td data-label="المحفظة" class="mono">${DAS.esc(a.wallet || '—')}</td>
           <td data-label="الحالة">
-            <select id="advstatus-${a.id}" class="select status-select ${cls}" onchange="updateAdvance(${a.id})">
-              <option value="قيد المراجعة" ${a.status === 'قيد المراجعة' ? 'selected' : ''}>⏳ قيد المراجعة</option>
-              <option value="تمت الصرف" ${a.status === 'تمت الصرف' ? 'selected' : ''}>✅ تمت الصرف</option>
-              <option value="مرفوضة" ${a.status === 'مرفوضة' ? 'selected' : ''}>❌ مرفوضة</option>
-            </select>
+            ${DAS.ddHtml(`dd-advstatus-${a.id}`, a.status, ADV_OPTS, ADV_CLS)}
             <span class="saved-tick" id="advtick-${a.id}">${DAS.icon('check')}</span>
           </td>
           <td data-label="ملاحظة">
@@ -1057,10 +1057,10 @@
     }
 
     async function updateAdvance(id) {
-      const sel = $(`advstatus-${id}`);
-      const status = sel.value;
+      const dd = $(`dd-advstatus-${id}`);
+      if (!dd) return;
+      const status = dd.dataset.value;
       const admin_note = $(`advnote-${id}`).value;
-      sel.className = 'select status-select ' + (ADV_CLS[status] || 'warn');
       try {
         const res = await adminFetch(`/api/admin/advances/${id}`, {
           method: 'PUT',

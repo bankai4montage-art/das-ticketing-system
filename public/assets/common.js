@@ -37,7 +37,8 @@
     star: '<path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z"/>',
     bell: '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>',
     bellOff: '<path d="M13.73 21a2 2 0 0 1-3.46 0"/><path d="M18.63 13A17.89 17.89 0 0 1 18 8"/><path d="M6.26 6.26A5.86 5.86 0 0 0 6 8c0 7-3 9-3 9h14"/><path d="M18 8a6 6 0 0 0-9.33-5"/><path d="M1 1l22 22"/>',
-    download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5M12 15V3"/>'
+    download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5M12 15V3"/>',
+    chev: '<path d="M6 9l6 6 6-6"/>'
   };
 
   window.DAS = {
@@ -69,6 +70,94 @@
 
     isScrolling() {
       return document.documentElement.classList.contains('scrolling');
+    },
+
+    // ===== Dropdown مخصوص بديل الـ select الأصلي (شكل الوندوز القديم) =====
+    // البيج بيسابد ddChanged(id, value) لو عايز يتصرف عند الاختيار
+    ddChanged: null,
+    _dd: null, // { dd, list } — القايمة المفتوحة (المزروعة في body)
+
+    ddOpen() { return !!this._dd; },
+
+    closeDd() {
+      if (!this._dd) return;
+      const dd = this._dd.dd, list = this._dd.list;
+      dd.classList.remove('open');
+      list.classList.remove('dd-floating');
+      if (list.parentNode !== dd) dd.appendChild(list);
+      list.style.cssText = '';
+      this._dd = null;
+    },
+
+    ddHtml(id, value, options, clsMap, labelFn) {
+      const cls = (o) => (clsMap && clsMap[o] ? ' ' + clsMap[o] : '');
+      const lbl = (o) => this.esc(labelFn ? labelFn(o) : o);
+      const items = options.map(o =>
+        `<button type="button" class="dd-item${cls(o)}${o === value ? ' active' : ''}" data-value="${this.esc(o)}"
+          onclick="DAS.ddPick(event, '${id}', this.dataset.value)"><span class="dd-dot${cls(o)}"></span>${lbl(o)}</button>`
+      ).join('');
+      return `<div class="dd" id="${id}" data-value="${this.esc(value)}">
+        <button type="button" class="dd-btn${cls(value)}" onclick="DAS.ddToggle(event, '${id}')">
+          <span class="dd-dot${cls(value)}"></span><span class="dd-label">${lbl(value)}</span>${this.icon('chev', 'dd-chev')}
+        </button>
+        <div class="dd-list" role="listbox">${items}</div>
+      </div>`;
+    },
+
+    ddToggle(ev, id) {
+      ev.stopPropagation();
+      const dd = document.getElementById(id);
+      if (!dd) return;
+      if (this._dd) {
+        const same = this._dd.dd === dd;
+        this.closeDd();
+        if (same) return;
+      } else if (dd.classList.contains('open')) {
+        dd.classList.remove('open');
+        return;
+      }
+      dd.classList.add('open');
+      const list = dd.querySelector('.dd-list');
+      if (dd.hasAttribute('data-inline')) return; // جوا مودال — absolute عادي
+      // بنزرع القايمة في body بمكان ثابت عشان ما تتقصش مع overflow بتاع الجدول
+      document.body.appendChild(list);
+      list.classList.add('dd-floating');
+      list.style.position = 'fixed';
+      list.style.visibility = 'hidden';
+      const r = dd.querySelector('.dd-btn').getBoundingClientRect();
+      const lw = list.offsetWidth, lh = list.offsetHeight;
+      let top = r.bottom + 6;
+      if (top + lh > window.innerHeight - 8) top = Math.max(8, r.top - lh - 6);
+      let right = window.innerWidth - r.right;
+      if (right + lw > window.innerWidth - 8) right = Math.max(8, window.innerWidth - lw - 8);
+      list.style.top = top + 'px';
+      list.style.right = right + 'px';
+      list.style.left = 'auto';
+      list.style.visibility = '';
+      this._dd = { dd, list };
+    },
+
+    ddPick(ev, id, value) {
+      ev.stopPropagation();
+      const dd = document.getElementById(id);
+      if (!dd) return;
+      dd.dataset.value = value;
+      const item = dd.querySelector('.dd-item[data-value="' + value + '"]');
+      if (item) {
+        dd.querySelectorAll('.dd-item').forEach(x => x.classList.toggle('active', x.dataset.value === value));
+        const dot = dd.querySelector('.dd-btn .dd-dot');
+        const btn = dd.querySelector('.dd-btn');
+        ['ok', 'warn', 'bad'].forEach(c => {
+          if (item.classList.contains(c)) { dot.classList.add(c); btn.classList.add(c); }
+          else { dot.classList.remove(c); btn.classList.remove(c); }
+        });
+        // الليبل من نص العنصر نفسه (عشان يعرض الاسم المنسق مش المفتاح)
+        dd.querySelector('.dd-btn .dd-label').textContent = item.textContent.trim();
+      } else {
+        dd.querySelector('.dd-btn .dd-label').textContent = value;
+      }
+      this.closeDd();
+      if (typeof this.ddChanged === 'function') this.ddChanged(id, value);
     },
 
     esc(v) {
@@ -200,4 +289,17 @@
   };
 
   document.addEventListener('DOMContentLoaded', () => DAS.hydrateIcons());
+
+  // قفل الـ dropdown لما تدوس بره / resize / scroll / Escape
+  document.addEventListener('click', (e) => {
+    if (DAS.ddOpen() && !DAS._dd.list.contains(e.target)) DAS.closeDd();
+  });
+  window.addEventListener('resize', () => DAS.closeDd());
+  window.addEventListener('scroll', () => DAS.closeDd(), { passive: true });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && DAS.ddOpen()) {
+      e.stopImmediatePropagation();
+      DAS.closeDd();
+    }
+  });
 })();
