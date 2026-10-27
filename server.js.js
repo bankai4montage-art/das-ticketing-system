@@ -167,3 +167,36 @@ app.get('/api/admin/couriers', (req, res) => {
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
+const { parse } = require('csv-parse');
+
+// 9. API لرفع شيت المناديب (CSV يحتوي على Code و Name)
+app.post('/api/admin/upload-couriers', express.text({ type: '*/*' }), (req, res) => {
+  const csvData = req.body;
+  if (!csvData) return res.status(400).json({ error: 'الملف فارغ' });
+
+  parse(csvData, { columns: true, skip_empty_lines: true, trim: true }, (err, records) => {
+    if (err) return res.status(400).json({ error: 'فشل قراءة الملف. تأكد أنه ملف CSV بترميز صحيح' });
+
+    let count = 0;
+    const stmt = db.prepare("INSERT OR REPLACE INTO couriers (das_code, name) VALUES (?, ?)");
+
+    db.serialize(() => {
+      db.run("BEGIN TRANSACTION");
+      records.forEach(row => {
+        // بنحاول نلقط أسماء الأعمدة بغض النظر عن الحروف الكبيرة/الصغيرة أو المسافات
+        const code = row.Code || row.code || row.CODE || Object.values(row)[0];
+        const name = row.Name || row.name || row.NAME || Object.values(row)[1];
+
+        if (code && name) {
+          stmt.run(code.trim().toUpperCase(), name.trim());
+          count++;
+        }
+      });
+      stmt.finalize();
+      db.run("COMMIT", (err) => {
+        if (err) return res.status(500).json({ error: 'خطأ في حفظ المناديب' });
+        res.json({ success: true, count: count });
+      });
+    });
+  });
+});
