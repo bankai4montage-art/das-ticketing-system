@@ -35,7 +35,7 @@
       </div>
       <div class="flex items-center gap-3">
         <button onclick="toggleCourierModal()" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition">
-          + إضافة / عرض المناديب
+          + إدارة ورفع شيت المناديب
         </button>
         <a href="/" class="bg-slate-700 hover:bg-slate-600 text-xs px-4 py-2.5 rounded-xl">صفحة المندوب &larr;</a>
       </div>
@@ -101,43 +101,50 @@
 
   </div>
 
-  <!-- نافذة إضافة وعرض المناديب -->
+  <!-- نافذة إدارة ورفع المناديب والشيت -->
   <div id="courierModal" class="fixed inset-0 bg-black/75 hidden items-center justify-center p-4 z-50">
-    <div class="bg-slate-800 border border-slate-700 rounded-2xl max-w-md w-full p-5 space-y-4">
+    <div class="bg-slate-800 border border-slate-700 rounded-2xl max-w-lg w-full p-5 space-y-4 max-h-[90vh] overflow-y-auto">
       <div class="flex justify-between items-center border-b border-slate-700 pb-3">
-        <h3 class="font-bold">إضافة كود مندوب جديد</h3>
+        <h3 class="font-bold">إدارة المناديب (إضافة أو رفع شيت)</h3>
         <button onclick="toggleCourierModal()" class="text-slate-400 hover:text-white">✕</button>
       </div>
-      <form id="addCourierForm" class="space-y-3">
-        <input type="text" id="newDasCode" placeholder="كود المندوب (مثال: DAS-105)" required
-          class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm uppercase">
+
+      <!-- رفع شيت CSV -->
+      <div class="bg-slate-900/60 border border-slate-700 p-3.5 rounded-xl space-y-2">
+        <h4 class="text-xs font-bold text-indigo-300">📁 رفع شيت المناديب (CSV)</h4>
+        <p class="text-[11px] text-slate-400">يجب أن يحتوي الشيت على عمودين رئيسيين: <span class="text-white font-mono">Code</span> و <span class="text-white font-mono">Name</span></p>
+        <div class="flex items-center gap-2 pt-1">
+          <input type="file" id="csvFile" accept=".csv" 
+            class="w-full text-xs text-slate-400 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-indigo-600 file:text-white hover:file:bg-indigo-500 cursor-pointer bg-slate-900 border border-slate-700 rounded-xl">
+          <button onclick="uploadCsvSheet()" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-3.5 py-2 rounded-xl transition whitespace-nowrap">
+            رفع الشيت
+          </button>
+        </div>
+        <p id="uploadResult" class="text-xs mt-1 text-emerald-400 hidden"></p>
+      </div>
+
+      <!-- إضافة مندوب يدوي -->
+      <form id="addCourierForm" class="space-y-3 pt-2 border-t border-slate-700">
+        <h4 class="text-xs font-bold text-slate-300">إضافة مندوب فردي يدوياً:</h4>
+        <div class="grid grid-cols-2 gap-2">
+          <input type="text" id="newDasCode" placeholder="كود (مثال: DAS-105)" required
+            class="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs uppercase">
+          <input type="text" id="newCourierPhone" placeholder="رقم الموبايل"
+            class="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs">
+        </div>
         <input type="text" id="newCourierName" placeholder="اسم المندوب الثلاثي" required
-          class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm">
-        <input type="text" id="newCourierPhone" placeholder="رقم الموبايل"
-          class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm">
-        <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-500 py-2.5 rounded-xl font-bold text-sm">حفظ المندوب</button>
+          class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs">
+        <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-500 py-2 rounded-xl font-bold text-xs">حفظ المندوب</button>
       </form>
+
       <div class="pt-3 border-t border-slate-700">
         <h4 class="text-xs text-slate-400 mb-2">المناديب المسجلين حالياً:</h4>
-        <div id="couriersList" class="max-h-40 overflow-y-auto space-y-1 text-xs"></div>
+        <div id="couriersList" class="max-h-36 overflow-y-auto space-y-1 text-xs"></div>
       </div>
     </div>
   </div>
- <!-- أضف الجزء ده جوه الـ Modal بتاع المناديب في admin.html -->
- <div class="mt-4 pt-4 border-t border-slate-700 bg-slate-900/50 p-3 rounded-xl">
-   <h4 class="text-xs font-bold text-indigo-300 mb-2">📁 رفع شيت المناديب (ملف CSV)</h4>
-   <p class="text-[11px] text-slate-400 mb-2">الشيت يجب أن يحتوي على عمودين رئيسيين: <span class="text-white font-mono">Code</span> و <span class="text-white font-mono">Name</span></p>
-  
-   <div class="flex items-center gap-2">
-     <input type="file" id="csvFile" accept=".csv" 
-       class="w-full text-xs text-slate-400 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-indigo-600 file:text-white hover:file:bg-indigo-500 cursor-pointer bg-slate-900 border border-slate-700 rounded-xl">
-     <button onclick="uploadCsvSheet()" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-4 py-2 rounded-xl transition whitespace-nowrap">
-       رفع الشيت
-     </button>
-   </div>
-   <p id="uploadResult" class="text-xs mt-2 text-emerald-400 hidden"></p>
- </div>
-   <script>
+
+  <script>
     let allTickets = [];
 
     if (sessionStorage.getItem('das_admin_auth') === 'true') {
@@ -168,7 +175,6 @@
     }
 
     async function fetchTickets() {
-      // لو الأدمن واقف بيكتب ملاحظة جوه input منعملش ريفرش للجدول عشان الكتابة متتمسحش
       if (document.activeElement && document.activeElement.tagName === 'INPUT' && document.activeElement.id !== 'searchInput') {
         return;
       }
@@ -278,6 +284,35 @@
       `).join('');
     }
 
+    async function uploadCsvSheet() {
+      const fileInput = document.getElementById('csvFile');
+      const resultEl = document.getElementById('uploadResult');
+      
+      if (fileInput.files.length === 0) {
+        alert('يرجى اختيار ملف CSV أولاً');
+        return;
+      }
+
+      const file = fileInput.files[0];
+      const text = await file.text();
+
+      const res = await fetch('/api/admin/upload-couriers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: text
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        resultEl.textContent = `✅ تم رفع وتحديث ${data.count} مندوب بنجاح!`;
+        resultEl.classList.remove('hidden');
+        loadCouriers();
+        fileInput.value = '';
+      } else {
+        alert(data.error || 'حدث خطأ أثناء الرفع');
+      }
+    }
+
     document.getElementById('addCourierForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const das_code = document.getElementById('newDasCode').value;
@@ -292,35 +327,6 @@
       document.getElementById('addCourierForm').reset();
       loadCouriers();
     });
-     async function uploadCsvSheet() {
-  const fileInput = document.getElementById('csvFile');
-  const resultEl = document.getElementById('uploadResult');
-  
-  if (fileInput.files.length === 0) {
-    alert('يرجى اختيار ملف CSV أولاً');
-    return;
-  }
-
-  const file = fileInput.files[0];
-  const text = await file.text();
-
-  const res = await fetch('/api/admin/upload-couriers', {
-    post: 'POST',
-    method: 'POST',
-    headers: { 'Content-Type': 'text/plain' },
-    body: text
-  });
-
-  const data = await res.json();
-  if (res.ok) {
-    resultEl.textContent = `✅ تم رفع وتحديث ${data.count} مندوب بنجاح!`;
-    resultEl.classList.remove('hidden');
-    loadCouriers(); // تحديث قائمة المناديب الظاهرة
-    fileInput.value = '';
-  } else {
-    alert(data.error || 'حدث خطأ أثناء الرفع');
-  }
-}
   </script>
 </body>
 </html>
