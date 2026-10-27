@@ -15,7 +15,7 @@
   <!-- شاشة باسورد الأدمن -->
   <div id="adminLoginBox" class="max-w-sm mx-auto mt-20 bg-slate-800 border border-slate-700 rounded-2xl p-6 shadow-2xl">
     <h1 class="text-xl font-extrabold text-center mb-2">لوحة تحكم الإدارة</h1>
-    <p class="text-xs text-slate-400 text-center mb-5">أدخل كلمة مرور الإدارة للمتابعة (الافتراضية: admin123)</p>
+    <p class="text-xs text-slate-400 text-center mb-5">أدخل كلمة مرور الإدارة الخاصة بك للمتابعة</p>
     <form id="adminLoginForm" class="space-y-4">
       <input type="password" id="adminPass" placeholder="كلمة المرور" required
         class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-center focus:outline-none focus:border-indigo-500">
@@ -90,8 +90,8 @@
               <th class="p-4">المندوب (DAS)</th>
               <th class="p-4">القسم والنوع</th>
               <th class="p-4">الشكوى والتفاصيل</th>
-              <th class="p-4">ملاحظة للمندوب (اختياري)</th>
-              <th class="p-4">الحالة (Drop Menu)</th>
+              <th class="p-4">ملاحظة للمندوب</th>
+              <th class="p-4">الحالة والتحكم</th>
             </tr>
           </thead>
           <tbody id="ticketsTableBody" class="divide-y divide-slate-700/60"></tbody>
@@ -235,19 +235,23 @@
               <p class="text-slate-200 text-sm leading-relaxed">${t.description}</p>
             </td>
             <td class="p-4">
-              <div class="flex gap-1">
-                <input type="text" id="note-${t.id}" value="${t.admin_note || ''}" placeholder="اكتب رد للمندوب..."
-                  onchange="updateTicket(${t.id})"
-                  class="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs w-44 focus:border-indigo-500 focus:outline-none">
-              </div>
+              <input type="text" id="note-${t.id}" value="${t.admin_note || ''}" placeholder="اكتب رد للمندوب..."
+                onchange="updateTicket(${t.id})"
+                class="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs w-40 focus:border-indigo-500 focus:outline-none">
             </td>
             <td class="p-4">
-              <select id="status-${t.id}" onchange="updateTicket(${t.id})"
-                class="border rounded-xl px-3 py-2 text-xs font-bold focus:outline-none cursor-pointer ${statusColor}">
-                <option value="يتم المراجعة" class="bg-slate-900 text-amber-300" ${t.status === 'يتم المراجعة' ? 'selected' : ''}>⏳ يتم المراجعة</option>
-                <option value="اتحلت" class="bg-slate-900 text-emerald-300" ${t.status === 'اتحلت' ? 'selected' : ''}>✅ اتحلت</option>
-                <option value="لازم تيجي المكتب" class="bg-slate-900 text-red-300" ${t.status === 'لازم تيجي المكتب' ? 'selected' : ''}>🏢 لازم تيجي المكتب</option>
-              </select>
+              <div class="flex items-center gap-2">
+                <select id="status-${t.id}" onchange="updateTicket(${t.id})"
+                  class="border rounded-xl px-2.5 py-2 text-xs font-bold focus:outline-none cursor-pointer ${statusColor}">
+                  <option value="يتم المراجعة" class="bg-slate-900 text-amber-300" ${t.status === 'يتم المراجعة' ? 'selected' : ''}>⏳ يتم المراجعة</option>
+                  <option value="اتحلت" class="bg-slate-900 text-emerald-300" ${t.status === 'اتحلت' ? 'selected' : ''}>✅ اتحلت</option>
+                  <option value="لازم تيجي المكتب" class="bg-slate-900 text-red-300" ${t.status === 'لازم تيجي المكتب' ? 'selected' : ''}>🏢 لازم تيجي المكتب</option>
+                </select>
+                <button onclick="deleteTicket(${t.id})" title="حذف الشكوى"
+                  class="bg-red-500/10 hover:bg-red-600 text-red-400 hover:text-white p-2 rounded-xl border border-red-500/30 transition">
+                  🗑️
+                </button>
+              </div>
             </td>
           </tr>
         `;
@@ -264,6 +268,16 @@
         body: JSON.stringify({ status, admin_note })
       });
       fetchTickets();
+    }
+
+    async function deleteTicket(id) {
+      if (!confirm(`هل أنت متأكد من حذف الشكوى رقم #${id}؟`)) return;
+      const res = await fetch(`/api/admin/tickets/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        fetchTickets();
+      } else {
+        alert('فشل حذف الشكوى');
+      }
     }
 
     function toggleCourierModal() {
