@@ -12,6 +12,7 @@
   "dependencies": {
     "csv-parse": "^5.5.3",
     "express": "^4.19.2",
-    "sqlite3": "^5.1.7"
+    "sqlite3": "^5.1.7",
+    "web-push": "^3.6.7"
   }
 }

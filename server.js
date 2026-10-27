@@ -3,6 +3,7 @@ const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const crypto = require('crypto');
 const { parse } = require('csv-parse');
+const webpush = require('web-push');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -19,6 +20,15 @@ if (!ADMIN_PASS) {
   console.warn('[DAS] WARNING: ADMIN_PASS is not set — falling back to admin123 (local dev only)');
 }
 const adminPass = ADMIN_PASS || 'admin123';
+
+// مفاتيح Web Push (VAPID) — من Variables على Railway أو بيئة محلية
+// لو ناقصة، الإشعارات بتقفل بنفسها وواجهة المندوب بتخفي الزرار
+const PUSH_PUBLIC_KEY = process.env.PUSH_PUBLIC_KEY || '';
+const PUSH_PRIVATE_KEY = process.env.PUSH_PRIVATE_KEY || '';
+const pushEnabled = Boolean(PUSH_PUBLIC_KEY && PUSH_PRIVATE_KEY);
+if (pushEnabled) {
+  webpush.setVapidDetails('mailto:admin@das-portal', PUSH_PUBLIC_KEY, PUSH_PRIVATE_KEY);
+}
 
 // توكن إدمن عشوائي لكل تشغيل — بيتسلم بعد نجاح اللوجين وبيتفحص على كل مسار أدمن
 const ADMIN_TOKEN = crypto.randomBytes(24).toString('hex');
@@ -121,6 +131,17 @@ db.serialize(() => {
     )
   `);
 
+  db.run(`
+    CREATE TABLE IF NOT EXISTS push_subs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      das_code TEXT NOT NULL,
+      endpoint TEXT UNIQUE NOT NULL,
+      p256dh TEXT NOT NULL,
+      auth TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
   // قاعدة قديمة؟ نزود الأعمدة الناقصة تلقائي (بعد إنشاء الجدول)
   db.all("PRAGMA table_info(tickets)", (err, cols) => {
     if (err || !cols) return;
@@ -138,6 +159,23 @@ db.serialize(() => {
     }
   });
 });
+
+// إرسال إشعار لكل أجهزة مندوب معين — فشل الاشتراك القديم (404/410) بيتمسح لوحده
+function sendPush(dasCode, title, body) {
+  if (!pushEnabled || !dasCode) return;
+  db.all("SELECT id, endpoint, p256dh, auth FROM push_subs WHERE das_code = ?", [String(dasCode).toUpperCase()], (err, subs) => {
+    if (err || !subs || !subs.length) return;
+    const payload = JSON.stringify({ title: String(title || 'DAS Portal'), body: String(body || '').slice(0, 200), url: '/index.html' });
+    subs.forEach((s) => {
+      webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, payload)
+        .catch((e) => {
+          if (e && (e.statusCode === 404 || e.statusCode === 410)) {
+            db.run("DELETE FROM push_subs WHERE id = ?", [s.id]);
+          }
+        });
+    });
+  });
+}
 
 // ================= API للمندوب =================
 
@@ -323,16 +361,34 @@ app.put('/api/admin/tickets/:id', (req, res) => {
     return res.status(400).json({ error: 'حالة غير معروفة' });
   }
 
-  db.run(
-    `UPDATE tickets SET status = ?, admin_note = ?, updated_at = CURRENT_TIMESTAMP,
-       archived = CASE WHEN ? = 'اتحلت' THEN archived ELSE 0 END
-     WHERE id = ?`,
-    [status, String(admin_note || ''), status, ticketId],
-    function (err) {
-      if (err) return res.status(500).json({ error: 'فشل تحديث الحالة' });
-      res.json({ success: true });
-    }
-  );
+  // قبل التحديث بنجيب السطر القديم عشان نعرف إيه اللي اتغير ونقعد إشعار للمندوب
+  db.get("SELECT * FROM tickets WHERE id = ?", [ticketId], (errB, before) => {
+    if (errB || !before) return res.status(404).json({ error: 'الشكوى غير موجودة' });
+
+    db.run(
+      `UPDATE tickets SET status = ?, admin_note = ?, updated_at = CURRENT_TIMESTAMP,
+         archived = CASE WHEN ? = 'اتحلت' THEN archived ELSE 0 END
+       WHERE id = ?`,
+      [status, String(admin_note || ''), status, ticketId],
+      function (err) {
+        if (err) return res.status(500).json({ error: 'فشل تحديث الحالة' });
+        res.json({ success: true });
+
+        const noteChanged = String(admin_note || '') !== String(before.admin_note || '');
+        const statusChanged = status !== before.status;
+        if (!noteChanged && !statusChanged) return;
+        const note = String(admin_note || '').slice(0, 140);
+        let title = 'تحديث على شكواك';
+        if (statusChanged) {
+          if (status === 'اتحلت') title = 'مبروك — شكواك اتحلت';
+          else if (status === 'لازم تيجي المكتب') title = 'لازم تيجي المكتب بخصوص شكواك';
+        } else if (noteChanged && note) {
+          title = 'الإدارة ردت على شكواك';
+        }
+        sendPush(before.das_code, title, note);
+      }
+    );
+  });
 });
 
 // 9. مسح شكوى معينة من الإدارة
@@ -433,6 +489,7 @@ app.post('/api/admin/advances', (req, res) => {
       function (err2) {
         if (err2) return res.status(500).json({ error: 'فشل حفظ السلفة' });
         res.json({ success: true, advance_id: this.lastID });
+        sendPush(cleanCode, 'اتسجلت سلفة ليك', 'مبلغ ' + amt + ' ج — ' + String(reason).slice(0, 120));
       }
     );
   });
@@ -445,20 +502,68 @@ app.put('/api/admin/advances/:id', (req, res) => {
     return res.status(400).json({ error: 'حالة غير معروفة' });
   }
 
-  db.run(
-    `UPDATE advances SET status = ?, admin_note = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-    [status, String(admin_note || ''), req.params.id],
-    function (err) {
-      if (err) return res.status(500).json({ error: 'فشل تحديث السلفة' });
-      res.json({ success: true });
-    }
-  );
+  db.get("SELECT * FROM advances WHERE id = ?", [req.params.id], (errB, before) => {
+    if (errB || !before) return res.status(404).json({ error: 'السلفة غير موجودة' });
+
+    db.run(
+      `UPDATE advances SET status = ?, admin_note = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      [status, String(admin_note || ''), req.params.id],
+      function (err) {
+        if (err) return res.status(500).json({ error: 'فشل تحديث السلفة' });
+        res.json({ success: true });
+
+        if (status === before.status) return;
+        let title = 'تحديث على سلفتك';
+        if (status === 'تمت الصرف') title = 'تم صرف سلفتك — ' + before.amount + ' ج';
+        else if (status === 'مرفوضة') title = 'سلفتك مرفوضة';
+        else if (status === 'قيد المراجعة') title = 'سلفتك قيد المراجعة';
+        sendPush(before.das_code, title, String(admin_note || '').slice(0, 140));
+      }
+    );
+  });
 });
 
 // 16. مسح سلفة (لو اتسجلت بالغلط)
 app.delete('/api/admin/advances/:id', (req, res) => {
   db.run("DELETE FROM advances WHERE id = ?", [req.params.id], function (err) {
     if (err) return res.status(500).json({ error: 'فشل مسح السلفة' });
+    res.json({ success: true });
+  });
+});
+
+// 17. المفتاح العام للإشعارات — المتصفح محتاجه عشان يعمل اشتراك
+app.get('/api/push/key', (req, res) => {
+  if (!pushEnabled) return res.json({ enabled: false });
+  res.json({ enabled: true, public_key: PUSH_PUBLIC_KEY });
+});
+
+// 18. تسجيل جهاز المندوب للإشعارات — نفس endpoint بيتحدث لو الجهاز جدد الاشتراك
+app.post('/api/push/subscribe', (req, res) => {
+  if (rateLimited(req, 'push-sub', 10, 60e3)) return res.status(429).json({ error: 'محاولات كتير — استنى دقيقة وجرب تاني' });
+  if (!pushEnabled) return res.status(503).json({ error: 'الإشعارات مش متفعلة على السيرفر' });
+  const { das_code, endpoint, keys } = req.body || {};
+  if (!das_code || !endpoint || !keys || !keys.p256dh || !keys.auth) {
+    return res.status(400).json({ error: 'بيانات الاشتراك ناقصة' });
+  }
+
+  const cleanCode = String(das_code).trim().toUpperCase();
+  db.run(
+    `INSERT INTO push_subs (das_code, endpoint, p256dh, auth) VALUES (?, ?, ?, ?)
+     ON CONFLICT(endpoint) DO UPDATE SET das_code = excluded.das_code, p256dh = excluded.p256dh, auth = excluded.auth`,
+    [cleanCode, String(endpoint), String(keys.p256dh), String(keys.auth)],
+    (err) => {
+      if (err) return res.status(500).json({ error: 'فشل تسجيل الاشتراك' });
+      res.json({ success: true });
+    }
+  );
+});
+
+// 19. إلغاء اشتراك جهاز (لو المندوب قفل الإشعارات من الزرار)
+app.post('/api/push/unsubscribe', (req, res) => {
+  const { endpoint } = req.body || {};
+  if (!endpoint) return res.status(400).json({ error: 'endpoint مطلوب' });
+  db.run("DELETE FROM push_subs WHERE endpoint = ?", [String(endpoint)], (err) => {
+    if (err) return res.status(500).json({ error: 'فشل الإلغاء' });
     res.json({ success: true });
   });
 });
