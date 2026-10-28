@@ -270,6 +270,41 @@
       try { localStorage.setItem('das_theme', cur); } catch (e) {}
     },
 
+    toggleLang() {
+      const cur = localStorage.getItem('das_lang') === 'en' ? 'ar' : 'en';
+      localStorage.setItem('das_lang', cur);
+      document.documentElement.lang = cur;
+      document.documentElement.dir = cur === 'ar' ? 'rtl' : 'ltr';
+      // Simple translation for key UI elements
+      const dict = {
+        ar: {
+          'Overview': 'نظرة عامة', 'Daily Attendance': 'الحضور اليومي', 'Schedule': 'الجدول', 'Employees': 'الموظفون', 'Reports': 'التقارير', 'Fines': 'الغرامات', 'Settings': 'الإعدادات',
+          'Search employee...': 'ابحث عن موظف...', 'Previous week': 'الأسبوع السابق', 'Next week': 'الأسبوع التالي', 'Current week': 'الأسبوع الحالي',
+          'Saturday': 'السبت', 'Sunday': 'الأحد', 'Monday': 'الاثنين', 'Tuesday': 'الثلاثاء', 'Wednesday': 'الأربعاء', 'Thursday': 'الخميس', 'Friday': 'الجمعة',
+          'Present': 'حاضر', 'Late': 'متأخر', 'Absent': 'غائب', 'Excused': 'بعذر', 'Not marked': 'لم يُسجل',
+          'Overview': 'نظرة عامة', 'Daily Attendance': 'الحضور اليومي', 'Schedule': 'الجدول', 'Employees': 'الموظفون', 'Reports': 'التقارير', 'Fines': 'الغرامات', 'Settings': 'الإعدادات',
+        },
+        en: {
+          'نظرة عامة': 'Overview', 'الحضور اليومي': 'Daily Attendance', 'الجدول': 'Schedule', 'الموظفون': 'Employees', 'التقارير': 'Reports', 'الغرامات': 'Fines', 'الإعدادات': 'Settings',
+          'ابحث عن موظف...': 'Search employee...', 'الأسبوع السابق': 'Previous week', 'الأسبوع التالي': 'Next week', 'الأسبوع الحالي': 'Current week',
+          'السبت': 'Saturday', 'الأحد': 'Sunday', 'الاثنين': 'Monday', 'الثلاثاء': 'Tuesday', 'الأربعاء': 'Wednesday', 'الخميس': 'Thursday', 'الجمعة': 'Friday',
+          'حاضر': 'Present', 'متأخر': 'Late', 'غائب': 'Absent', 'بعذر': 'Excused', 'لم يُسجل': 'Not marked',
+          'نظرة عامة': 'Overview', 'الحضور اليومي': 'Daily Attendance', 'الجدول': 'Schedule', 'الموظفون': 'Employees', 'التقارير': 'Reports', 'الغرامات': 'Fines', 'الإعدادات': 'Settings',
+        }
+      };
+      const t = dict[cur] || dict.ar;
+      document.querySelectorAll('[data-i18n]').forEach(el => {
+        const key = el.getAttribute('data-i18n');
+        if (t[key]) el.textContent = t[key];
+      });
+      document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+        const key = el.getAttribute('data-i18n-placeholder');
+        if (t[key]) el.placeholder = t[key];
+      });
+      document.documentElement.lang = cur;
+      document.documentElement.dir = cur === 'ar' ? 'rtl' : 'ltr';
+    },
+
     // Button loading helper
     busy(btn, on) {
       btn.classList.toggle('loading', !!on);

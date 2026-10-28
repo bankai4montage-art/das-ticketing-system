@@ -45,26 +45,29 @@
         <div class="brand">
           <img class="rawa7el-logo" src="assets/rawa7el-logo.svg" alt="Rawa7el powered by Bankai" style="width:140px;height:36px" />
           <div>
-            <h1>إدارة شكاوى المناديب</h1>
-            <p>متابعة لحظية لشكاوى الشيفت والقبض</p>
+            <h1 data-i18n="إدارة شكاوى المناديب">إدارة شكاوى المناديب</h1>
+            <p data-i18n="متابعة لحظية لشكاوى الشيفت والقبض">متابعة لحظية لشكاوى الشيفت والقبض</p>
           </div>
         </div>
         <div class="top-actions">
-          <span class="live"><i></i> مباشر</span>
-          <button class="btn btn-ok btn-sm" onclick="toggleCourierModal()"><i data-ico="users"></i> المناديب</button>
-          <a href="/" class="btn btn-ghost btn-sm">صفحة المندوب <i data-ico="arrow"></i></a>
+          <span class="live"><i></i> <span data-i18n="مباشر">مباشر</span></span>
+          <button class="btn btn-ok btn-sm" onclick="toggleCourierModal()"><i data-ico="users"></i> <span data-i18n="المناديب">المناديب</span></button>
+          <a href="/" class="btn btn-ghost btn-sm"><span data-i18n="صفحة المندوب">صفحة المندوب</span> <i data-ico="arrow"></i></a>
           <button class="btn btn-ghost btn-icon theme-toggle" onclick="DAS.toggleTheme()" aria-label="تغيير المظهر">
             <svg class="ico moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
             <svg class="ico sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
           </button>
-          <button class="btn btn-ghost btn-icon" onclick="adminLogout()" aria-label="خروج" title="خروج"><i data-ico="logout"></i></button>
+          <button class="btn btn-ghost btn-icon lang-btn" onclick="DAS.toggleLang()" aria-label="تغيير اللغة" title="English / عربي">
+            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 0 20"/><path d="M12 2a15.3 15.3 0 0 0 0 20"/></svg>
+          </button>
+          <button class="btn btn-ghost btn-icon" onclick="adminLogout()" aria-label="خروج" title="خروج" data-i18n-aria="خروج"><i data-ico="logout"></i></button>
         </div>
       </header>
 
       <!-- تبويبات العرض: الشكاوى / السلف -->
       <section class="view-tabs rise">
-        <button class="chip active" id="tabTickets" onclick="switchView('tickets')"><i data-ico="layers"></i> الشكاوى</button>
-        <button class="chip" id="tabAdvances" onclick="switchView('advances')"><i data-ico="banknote"></i> السلف</button>
+        <button class="chip active" id="tabTickets" onclick="switchView('tickets')"><i data-ico="layers"></i> <span data-i18n="الشكاوى">الشكاوى</span></button>
+        <button class="chip" id="tabAdvances" onclick="switchView('advances')"><i data-ico="banknote"></i> <span data-i18n="السلف">السلف</span></button>
       </section>
 
       <div id="ticketsView" class="view-panel">
@@ -72,44 +75,44 @@
       <!-- KPIs (بتشتغل كفلتر برضه) -->
       <section class="kpis stagger">
         <button class="kpi active" style="--i:1" data-status="all">
-          <div class="top"><span>إجمالي الشكاوى</span><div class="ki"><i data-ico="layers"></i></div></div>
+          <div class="top"><span data-i18n="إجمالي الشكاوى">إجمالي الشكاوى</span><div class="ki"><i data-ico="layers"></i></div></div>
           <b id="statTotal">0</b>
         </button>
         <button class="kpi warn" style="--i:2" data-status="يتم المراجعة">
-          <div class="top"><span>يتم المراجعة</span><div class="ki"><i data-ico="clock"></i></div></div>
+          <div class="top"><span data-i18n="يتم المراجعة">يتم المراجعة</span><div class="ki"><i data-ico="clock"></i></div></div>
           <b id="statReview">0</b>
         </button>
         <button class="kpi bad" style="--i:3" data-status="لازم تيجي المكتب">
-          <div class="top"><span>لازم تيجي المكتب</span><div class="ki"><i data-ico="building"></i></div></div>
+          <div class="top"><span data-i18n="لازم تيجي المكتب">لازم تيجي المكتب</span><div class="ki"><i data-ico="building"></i></div></div>
           <b id="statOffice">0</b>
         </button>
         <button class="kpi ok" style="--i:4" data-status="اتحلت">
-          <div class="top"><span>اتحلت</span><div class="ki"><i data-ico="checkCircle"></i></div></div>
+          <div class="top"><span data-i18n="اتحلت">اتحلت</span><div class="ki"><i data-ico="checkCircle"></i></div></div>
           <b id="statResolved">0</b>
         </button>
         <div class="kpi rate" style="--i:5" title="متوسط تقييمات المناديب للحلول">
-          <div class="top"><span>رضا التيم</span><div class="ki"><i data-ico="star"></i></div></div>
+          <div class="top"><span data-i18n="رضا التيم">رضا التيم</span><div class="ki"><i data-ico="star"></i></div></div>
           <b id="statRate">—</b>
         </div>
       </section>
 
       <section class="glass dist rise" style="animation-delay:.3s">
-        <div class="dist-head"><span>نسبة الإنجاز</span><span id="resolveRate">0%</span></div>
+        <div class="dist-head"><span data-i18n="نسبة الإنجاز">نسبة الإنجاز</span><span id="resolveRate">0%</span></div>
         <div class="dist-bar"><i class="c" id="dBarOk"></i><i class="b" id="dBarBad"></i><i class="a" id="dBarWarn"></i></div>
       </section>
 
       <!-- فلاتر -->
       <section class="glass toolbar rise" style="animation-delay:.38s">
         <div class="chips" id="catChips">
-          <button class="chip active" data-cat="all">الكل</button>
-          <button class="chip" data-cat="الشيفت">الشيفت</button>
-          <button class="chip" data-cat="القبض">القبض</button>
+          <button class="chip active" data-cat="all" data-i18n="الكل">الكل</button>
+          <button class="chip" data-cat="الشيفت" data-i18n="الشيفت">الشيفت</button>
+          <button class="chip" data-cat="القبض" data-i18n="القبض">القبض</button>
         </div>
         <div class="chips" id="periodChips">
-          <button class="chip active" data-period="all">كل الفترات</button>
-          <button class="chip" data-period="today">اليوم</button>
-          <button class="chip" data-period="week">آخر 7 أيام</button>
-          <button class="chip" data-period="month">هذا الشهر</button>
+          <button class="chip active" data-period="all" data-i18n="كل الفترات">كل الفترات</button>
+          <button class="chip" data-period="today" data-i18n="اليوم">اليوم</button>
+          <button class="chip" data-period="week" data-i18n="آخر 7 أيام">آخر 7 أيام</button>
+          <button class="chip" data-period="month" data-i18n="هذا الشهر">هذا الشهر</button>
         </div>
         <div class="chips">
           <button class="chip" id="weakChip" onclick="toggleWeak()"><i data-ico="star"></i> تقييم ضعيف</button>
