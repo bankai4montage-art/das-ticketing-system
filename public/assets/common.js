@@ -270,8 +270,8 @@
       try { localStorage.setItem('das_theme', cur); } catch (e) {}
     },
 
-    toggleLang() {
-      const cur = localStorage.getItem('das_lang') === 'en' ? 'ar' : 'en';
+    toggleLang(lang) {
+      const cur = lang || (localStorage.getItem('das_lang') === 'en' ? 'ar' : 'en');
       localStorage.setItem('das_lang', cur);
       document.documentElement.lang = cur;
       document.documentElement.dir = cur === 'ar' ? 'rtl' : 'ltr';
@@ -323,7 +323,7 @@
     }
   };
 
-  document.addEventListener('DOMContentLoaded', () => DAS.hydrateIcons());
+  document.addEventListener('DOMContentLoaded', () => { DAS.hydrateIcons(); const l = localStorage.getItem('das_lang'); if (l === 'en') DAS.toggleLang('en'); });
 
   // قفل الـ dropdown لما تدوس بره / resize / scroll / Escape
   document.addEventListener('click', (e) => {

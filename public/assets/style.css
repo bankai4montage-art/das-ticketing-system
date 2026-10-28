@@ -270,17 +270,17 @@ html.scrolling .orb, html.scrolling .bg-fx::before { animation-play-state: pause
    ========================================================== */
 .center-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px 16px; }
 .login-card { width: 100%; max-width: 420px; padding: 36px 28px 28px; text-align: center; }
-/* ===== Rawa7el Brand Logo ===== */
-.rawa7el-logo {
+/* ===== Rawahel Brand Logo ===== */
+.rawahel-logo {
   width: 160px; height: 41px; display: block;
   filter: drop-shadow(0 4px 16px rgba(124,58,237,0.25));
 }
-.rawa7el-logo svg { width: 100%; height: 100%; }
+.rawahel-logo svg { width: 100%; height: 100%; }
 @media (prefers-color-scheme: dark) {
-  .rawa7el-logo { filter: drop-shadow(0 4px 16px rgba(167,139,250,0.35)); }
+  .rawahel-logo { filter: drop-shadow(0 4px 16px rgba(167,139,250,0.35)); }
 }
 
-.rawa7el-badge {
+.rawahel-badge {
   display: inline-flex; align-items: center; gap: 8px;
   padding: 6px 12px; border-radius: 999px;
   background: linear-gradient(135deg, rgba(124,58,237,0.12), rgba(236,72,153,0.12));
@@ -289,7 +289,7 @@ html.scrolling .orb, html.scrolling .bg-fx::before { animation-play-state: pause
   font-size: 12px; font-weight: 700; color: var(--accent);
   white-space: nowrap;
 }
-.rawa7el-badge .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: pulseDot 2s ease-in-out infinite; }
+.rawahel-badge .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: pulseDot 2s ease-in-out infinite; }
 
 .logo {
   position: relative; width: 78px; height: 78px; margin: 0 auto 20px; border-radius: 24px;
