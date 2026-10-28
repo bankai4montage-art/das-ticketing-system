@@ -383,7 +383,8 @@ app.get('/api/courier/cards/:das_code', async (req, res) => {
     const today = new Date().toISOString().slice(0, 10);
     let visible = cards.filter(c => (!c.start_date || today >= c.start_date) && (!c.end_date || today <= c.end_date));
 
-    const needRoster = visible.some(c => c.audience === 'branch' || c.audience === 'type');
+    // branch_type (فرع + نوع دوام) محتاج الروست كمان — وكل الفلاتر اللي بتعتمد على بيانات المندوب
+    const needRoster = visible.some(c => ['branch', 'type', 'branch_type'].includes(c.audience));
     let emp = null;
     if (needRoster && rosterConfigured()) {
       try {
@@ -393,17 +394,19 @@ app.get('/api/courier/cards/:das_code', async (req, res) => {
               (name ? emps.find(x => String(x.name || '').trim() === name) : null);
       } catch (e) { emp = null; }
     }
+    // التطبيع: المقارنة مش حساسة لحالة الحروف ولا المسافات الزيادة (بيانات الروست بتنزل بصيغ مختلفة)
+    const norm = (v) => String(v || '').trim().toUpperCase();
 
     visible = visible.filter(c => {
       if (c.audience === 'all') return true;
-      if (c.audience === 'code') return String(c.audience_value || '').split(',').includes(code);
-      if (c.audience === 'branch') return !!emp && emp.branch === c.audience_value;
-      if (c.audience === 'type') return !!emp && emp.employment_type === c.audience_value;
+      if (c.audience === 'code') return String(c.audience_value || '').split(',').map(x => x.trim().toUpperCase()).includes(code);
+      if (c.audience === 'branch') return !!emp && norm(emp.branch) === norm(c.audience_value);
+      if (c.audience === 'type') return !!emp && norm(emp.employment_type) === norm(c.audience_value);
       if (c.audience === 'branch_type') {
         // لازم الفرع ونوع الدوام يتطابقوا مع الروستر مع بعض
         if (!emp) return false;
         const parts = String(c.audience_value || '').split('|');
-        return emp.branch === parts[0] && emp.employment_type === parts[1];
+        return norm(emp.branch) === norm(parts[0]) && norm(emp.employment_type) === norm(parts[1]);
       }
       return false;
     });
