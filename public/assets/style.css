@@ -269,7 +269,7 @@ html.scrolling .orb, html.scrolling .bg-fx::before { animation-play-state: pause
 .login-card { width: 100%; max-width: 420px; padding: 36px 28px 28px; text-align: center; }
 /* ===== Rawa7el Brand Logo ===== */
 .rawa7el-logo {
-  width: 180px; height: 46px; display: block;
+  width: 160px; height: 41px; display: block;
   filter: drop-shadow(0 4px 16px rgba(124,58,237,0.25));
 }
 .rawa7el-logo svg { width: 100%; height: 100%; }
