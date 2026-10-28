@@ -273,6 +273,13 @@
       try { const p = JSON.parse(c.choices || '[]'); return Array.isArray(p) ? p : []; } catch (e) { return []; }
     }
 
+    function pickStateHTML(c, opts) {
+      if (c.my_pick != null && opts[c.my_pick]) {
+        return `<div class="pick-done" dir="auto"><span class="pd-ic">${DAS.icon('check')}</span><span>${DAS.t('تسجل اختيارك')}:</span><b data-i18n-raw dir="auto">${DAS.esc(opts[c.my_pick])}</b></div>`;
+      }
+      return `<span class="pick-hint">${DAS.t('دوس على اختيارك')}</span>`;
+    }
+
     function renderCardsRail(cards) {
       const rail = $('cardsRail');
       rail.innerHTML = cards.map((c, i) => {
@@ -286,7 +293,7 @@
               <div class="c-opts" data-card="${c.id}">
                 ${opts.map((o, oi) => `<button type="button" class="pick-opt ${c.my_pick === oi ? 'sel' : ''}" dir="auto" onclick="pickCard(${c.id},${oi},this)" data-i18n-raw>${DAS.esc(o)}</button>`).join('')}
               </div>
-              <div class="pick-state" data-pick="${c.id}">${c.my_pick != null && opts[c.my_pick] ? `<span class="pick-done">${DAS.icon('check')} ${DAS.t('تسجل اختيارك')} — <b data-i18n-raw>${DAS.esc(opts[c.my_pick])}</b></span>` : `<span class="pick-hint">${DAS.t('دوس على اختيارك')}</span>`}</div>` : ''}
+              <div class="pick-state" data-pick="${c.id}">${pickStateHTML(c, opts)}</div>` : ''}
             ${c.button_url ? `<a class="btn btn-primary btn-sm c-btn" href="${DAS.esc(c.button_url)}" target="_blank" rel="noopener" data-i18n-raw dir="auto">${DAS.esc(c.button_text || DAS.t('فتح'))} ${DAS.icon('arrow')}</a>` : ''}
           </div>`;
       }).join('');
@@ -307,9 +314,8 @@
         const wrap = btn.closest('.c-opts');
         if (wrap) wrap.querySelectorAll('.pick-opt').forEach(b => b.classList.remove('sel'));
         btn.classList.add('sel');
-        const opts = c ? cardChoiceLabels(c) : [];
         const st = document.querySelector(`[data-pick="${cardId}"]`);
-        if (st) st.innerHTML = `<span class="pick-done">${DAS.icon('check')} ${DAS.t('تسجل اختيارك')} — <b dir="auto">${DAS.esc(opts[ch] || '')}</b></span>`;
+        if (st && c) st.innerHTML = pickStateHTML(c, cardChoiceLabels(c));
         DAS.toast(DAS.t('تسجل اختيارك'));
         DAS.confetti();
       } catch (e) {
