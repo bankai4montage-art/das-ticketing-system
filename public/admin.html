@@ -195,21 +195,9 @@
           </div>
         </section>
 
-        <section class="glass table-wrap rise">
-          <table class="tbl">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>الكارت</th>
-                <th>الجمهور</th>
-                <th>الفترة</th>
-                <th>الحالة</th>
-                <th>تحكم</th>
-              </tr>
-            </thead>
-            <tbody id="cardsTableBody"></tbody>
-          </table>
-        </section>
+        <div class="hint" style="margin-bottom:12px;display:flex;align-items:center;gap:8px" data-i18n="اسحب الكارت من أي مكان وارميه مكانه عشان تترتيب طريقة ظهورهم للمندوب"><i data-ico="arrow"></i> اسحب الكارت من أي مكان وارميه مكانه عشان تترتيب طريقة ظهورهم للمندوب</div>
+
+        <section class="glass table-wrap rise" id="cardsDeck" style="padding:14px;display:grid;gap:10px"></section>
       </div>
 
     </div>
@@ -266,47 +254,62 @@
 
   <!-- ============ نافذة كارت صفحة المندوب ============ -->
   <div id="cardModal" class="modal-back" onclick="if(event.target===this)toggleCardModal()">
-    <div class="modal">
+    <div class="modal" style="max-width:640px">
       <div class="form-head">
         <h3 id="cardModalTitle">كارت جديد</h3>
         <button class="btn btn-ghost btn-icon" onclick="toggleCardModal()" aria-label="إغلاق"><i data-ico="close"></i></button>
       </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+        <span style="font-size:12px;font-weight:700;color:var(--text-3)">قوالب جاهزة:</span>
+        <span id="cardTemplateChips" style="display:flex;gap:6px;flex-wrap:wrap"></span>
+      </div>
       <form id="cardForm" style="display:grid;gap:12px">
         <input type="text" id="cardTitle" class="input" maxlength="120" placeholder="عنوان الكارت (مثال: ملاحظات التصريح)" required>
         <textarea id="cardBody" class="textarea" rows="3" maxlength="800" placeholder="نص الكارت... (اختياري)"></textarea>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-          <input type="text" id="cardBtnText" class="input" maxlength="60" placeholder="نص الزرار (اختياري)">
-          <input type="text" id="cardBtnUrl" class="input" dir="ltr" placeholder="رابط الزرار (اختياري)">
+        <div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+            <span style="font-size:12px;font-weight:700;color:var(--text-3)">زرار جاهز:</span>
+            <span id="cardBtnChips" style="display:flex;gap:6px;flex-wrap:wrap"></span>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <input type="text" id="cardBtnText" class="input" maxlength="60" placeholder="نص الزرار (اختياري)">
+            <input type="text" id="cardBtnUrl" class="input" dir="ltr" placeholder="رابط الزرار (اختياري)">
+          </div>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
           <div class="field" style="margin:0">
-            <label for="cardAudience">مين يشوف الكارت؟</label>
+            <label for="cardAudience" data-i18n="مين يشوف الكارت؟">مين يشوف الكارت؟</label>
             <select id="cardAudience" class="input" onchange="renderCardAudienceValue()">
-              <option value="all">كل المناديب</option>
-              <option value="branch">فرع معين (QCD 1 / QCD 2)</option>
-              <option value="type">نوع الدوام (Full / Part time)</option>
-              <option value="code">مناديب معينين بالكود</option>
+              <option value="all" data-i18n="كل المناديب">كل المناديب</option>
+              <option value="branch" data-i18n="فرع معين (QCD 1 / QCD 2)">فرع معين (QCD 1 / QCD 2)</option>
+              <option value="type" data-i18n="نوع الدوام (Full / Part time)">نوع الدوام (Full / Part time)</option>
+              <option value="code" data-i18n="مناديب معينين بالكود">مناديب معينين بالكود</option>
             </select>
           </div>
           <div class="field" style="margin:0" id="cardAudienceValueWrap"></div>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
           <div class="field" style="margin:0">
-            <label for="cardStart">يظهر من (اختياري)</label>
+            <label for="cardStart" data-i18n="يظهر من (اختياري)">يظهر من (اختياري)</label>
             <input type="date" id="cardStart" class="input">
           </div>
           <div class="field" style="margin:0">
-            <label for="cardEnd">لحد (اختياري)</label>
+            <label for="cardEnd" data-i18n="لحد (اختياري)">لحد (اختياري)</label>
             <input type="date" id="cardEnd" class="input">
           </div>
         </div>
         <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-2);cursor:pointer">
-          <input type="checkbox" id="cardActive" checked style="width:16px;height:16px;accent-color:var(--ok)"> الكارت نشط (ظاهر للمندوبين)
+          <input type="checkbox" id="cardActive" checked style="width:16px;height:16px;accent-color:var(--accent)"> <span data-i18n="الكارت نشط (ظاهر للمندوبين)">الكارت نشط (ظاهر للمندوبين)</span>
         </label>
         <p id="cardErr" class="err-text" role="alert" style="min-height:0;margin:0"></p>
         <button type="submit" class="btn btn-ok"><span class="spinner"></span><i data-ico="checkCircle"></i><span class="label" id="cardSubmitLabel">حفظ الكارت</span></button>
-        <div class="hint">الكارت بيهيأ مع أسبوعه: بيبان في بداية صفحة المندوب بس لو كان نشط وفي فترته ومطابق للجمهور (الفرع ونوع الدوام بيتحددوا من الروستر)</div>
+        <div class="hint" data-i18n="الكارت هيظهر في بداية صفحة المندوب بس لو كان نشط وفي فترته ومطابق للجمهور — الفرع ونوع الدوام بيتحددوا من الروستر">الكارت هيظهر في بداية صفحة المندوب بس لو كان نشط وفي فترته ومطابق للجمهور — الفرع ونوع الدوام بيتحددوا من الروستر</div>
       </form>
+
+      <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border)">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><span class="live"><i></i></span> <b style="font-size:13px" data-i18n="معاينة — كذا الكارت هيظهر للمندوب">معاينة — كذا الكارت هيظهر للمندوب</b></div>
+        <div id="cardPreview" style="pointer-events:none"></div>
+      </div>
     </div>
   </div>
 
@@ -1166,33 +1169,136 @@
       renderCards();
     }
 
+    function cardPreviewHTML(title, body, btnText, btnUrl) {
+      return `<div class="c-card" style="--i:0">
+        <span class="c-badge">${DAS.icon('msg')} إعلان</span>
+        <b>${DAS.esc(title || 'عنوان الكارت')}</b>
+        ${body ? `<p>${DAS.esc(body)}</p>` : ''}
+        ${btnUrl ? `<span class="btn btn-primary btn-sm c-btn">${DAS.esc(btnText || 'فتح')} ${DAS.icon('arrow')}</span>` : ''}
+      </div>`;
+    }
+
+    function updateCardPreview() {
+      $('cardPreview').innerHTML = cardPreviewHTML($('cardTitle').value.trim(), $('cardBody').value.trim(),
+        $('cardBtnText').value.trim(), $('cardBtnUrl').value.trim());
+    }
+
+    // قوالب جاهزة: ملا كامل العنوان والنص، والأدمن يعدل بعدها زي ما يحب
+    const CARD_TEMPLATES = [
+      { icon: '⏰', title: 'بريك جديد', body: 'البريك اليوم من ... لـ ...' },
+      { icon: '⚠️', title: 'عطل مؤقت', body: 'فيه عطل في ... — بنشتغل عليه حالًا ونبلغكم بالتحديث' },
+      { icon: '📢', title: 'تنبيه عام', body: 'لازم كل المناديب ...' },
+      { icon: '📌', title: 'ملاحظة مهمة', body: 'اتفضل اقرأ الملاحظة دي كويس قبل الشيفت' }
+    ];
+
+    // زراير جاهزة: ملا نص الزرار ورابطه من نمط معروف (رقم الوات/التليفون مكانه)
+    const CARD_BTN_PRESETS = [
+      { icon: '💬', text: 'واتساب', url: 'https://wa.me/20xxxxxxxxxx' },
+      { icon: '📞', text: 'اتصل بنا', url: 'tel:+2010xxxxxxx' },
+      { icon: '🗓️', text: 'الاوقات', url: '' },
+      { icon: '⏱️', text: 'الجدول', url: '' },
+      { icon: '🔗', text: 'افتح', url: 'https://' }
+    ];
+
+    function chip(label, onclick) {
+      return `<button type="button" class="chip card-chip" onclick="${onclick}">${DAS.esc(label)}</button>`;
+    }
+
+    function renderCardChips() {
+      $('cardTemplateChips').innerHTML = CARD_TEMPLATES.map((t, i) =>
+        chip(`${t.icon} ${t.title}`, `applyCardTemplate(${i})`)).join('');
+      $('cardBtnChips').innerHTML = CARD_BTN_PRESETS.map((b, i) =>
+        chip(`${b.icon} ${b.text}`, `applyCardBtnPreset(${i})`)).join('');
+    }
+
+    function applyCardTemplate(i) {
+      const t = CARD_TEMPLATES[i];
+      if (!t) return;
+      $('cardTitle').value = t.title;
+      $('cardBody').value = t.body;
+      updateCardPreview();
+      $('cardTitle').focus();
+    }
+
+    function applyCardBtnPreset(i) {
+      const b = CARD_BTN_PRESETS[i];
+      if (!b) return;
+      $('cardBtnText').value = b.text;
+      $('cardBtnUrl').value = b.url;
+      updateCardPreview();
+      if (b.url.endsWith('x') || b.url === 'https://') $('cardBtnUrl').focus();
+    }
+
     function renderCards() {
       const activeCount = allCards.filter(c => c.active).length;
-      $('cardsSummary').textContent = `${allCards.length} ${allCards.length === 1 ? 'كارت' : 'كارت'} — النشط فيهم: ${activeCount}`;
-      $('cardsTableBody').innerHTML = allCards.length ? allCards.map((c, i) => `
-        <tr style="--i:${Math.min(i, 12)};${i < 12 ? '' : 'animation:none'}">
-          <td class="mono" style="color:var(--text-3);font-size:12px">#${c.id}</td>
-          <td data-label="الكارت">
-            <div style="display:flex;align-items:center;gap:8px"><span class="tag shift"><i data-ico="msg"></i></span> <b>${DAS.esc(c.title)}</b></div>
+      $('cardsSummary').textContent = `${allCards.length} ${allCards.length === 1 ? DAS.t('كارت') : DAS.t('كروت')} — ${DAS.t('النشط فيهم')}: ${activeCount}`;
+      $('cardsDeck').innerHTML = allCards.length ? allCards.map((c, i) => `
+        <div class="card-item ${c.active ? '' : 'off'}" draggable="true" data-id="${c.id}" data-idx="${i}" style="--i:${Math.min(i, 12)};${i < 12 ? '' : 'animation:none'}">
+          <span class="grip" title="${DAS.t('اسحب الكارت من أي مكان وارميه مكانه عشان تترتيب طريقة ظهورهم للمندوب')}">⠿</span>
+          <div class="ci-main">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span class="pos mono">#${i + 1}</span> <b>${DAS.esc(c.title)}</b></div>
             ${c.body ? `<div class="desc-cell" style="font-size:12px;color:var(--text-2);white-space:pre-line" data-i18n-raw>${DAS.esc(c.body)}</div>` : ''}
-            ${c.button_url ? `<div style="font-size:12px;color:var(--accent)">${DAS.esc(c.button_text)} — ${DAS.esc(c.button_url)}</div>` : ''}
-          </td>
-          <td data-label="الجمهور"><span class="badge info">${cardAudienceLabel(c)}</span></td>
-          <td data-label="الفترة" style="font-size:12px">${DAS.esc(cardPeriodLabel(c))}</td>
-          <td data-label="الحالة">
-            ${c.active
-              ? `<span class="badge ok"><span class="dot"></span>نشط</span>`
-              : `<span class="badge bad"><span class="dot"></span>متوقف</span>`}
-          </td>
-          <td data-label="تحكم">
-            <div style="display:flex;gap:6px;flex-wrap:wrap">
-              <button class="btn btn-ghost btn-sm" onclick="openCardEdit(${c.id})"><i data-ico="refresh"></i> تعديل</button>
-              <button class="btn btn-ghost btn-sm" onclick="cardToggle(${c.id}, ${c.active ? 0 : 1})">${c.active ? 'إيقاف' : 'تشغيل'}</button>
-              <button class="btn btn-ghost btn-sm" style="color:var(--bad)" onclick="cardDelete(${c.id})"><i data-ico="trash"></i></button>
+            ${c.button_url ? `<div style="font-size:12px;color:var(--accent);display:flex;align-items:center;gap:5px">${DAS.icon('msg')} ${DAS.esc(c.button_text || DAS.t('فتح'))} — ${DAS.esc(c.button_url)}</div>` : ''}
+            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
+              <span class="badge info">${cardAudienceLabel(c)}</span>
+              <span class="badge">${cardPeriodLabel(c)}</span>
             </div>
-          </td>
-        </tr>`).join('')
-        : `<tr><td colspan="6"><div class="empty fade"><div class="eic">${DAS.icon('msg', 'ico-lg')}</div><b>مفيش كروت</b>اضغط "كارت جديد" وازود أول كارت لصفحة المندوب</div></td></tr>`;
+          </div>
+          <div class="ci-acts">
+            ${c.active
+              ? `<span class="badge ok"><span class="dot"></span>${DAS.t('نشط')}</span>`
+              : `<span class="badge bad"><span class="dot"></span>${DAS.t('متوقف')}</span>`}
+            <button class="btn btn-ghost btn-sm" onclick="cardToggle(${c.id}, ${c.active ? 0 : 1})">${c.active ? DAS.t('إيقاف') : DAS.t('تشغيل')}</button>
+            <button class="btn btn-ghost btn-sm" onclick="openCardEdit(${c.id})">${DAS.icon('refresh')} ${DAS.t('تعديل')}</button>
+            <button class="btn btn-ghost btn-sm" style="color:var(--bad)" onclick="cardDelete(${c.id})">${DAS.icon('trash')}</button>
+          </div>
+        </div>`).join('')
+        : `<div class="empty fade"><div class="eic">${DAS.icon('msg', 'ico-lg')}</div><b>مفيش كروت</b>اضغط "كارت جديد" وازود أول كارت لصفحة المندوب</div>`;
+      setupCardsDnD();
+    }
+
+    // ---------- السحب والإفلات لترتيب الكروت ----------
+    let dragId = null;
+    function setupCardsDnD() {
+      const deck = $('cardsDeck');
+      deck.querySelectorAll('.card-item').forEach(el => {
+        el.addEventListener('dragstart', (e) => {
+          dragId = el.dataset.id;
+          el.classList.add('dragging');
+          try { e.dataTransfer.setData('text/plain', dragId); } catch (err) {}
+          e.dataTransfer.effectAllowed = 'move';
+        });
+        el.addEventListener('dragend', () => { el.classList.remove('dragging'); deck.querySelectorAll('.card-item').forEach(x => x.classList.remove('drag-over')); });
+        el.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+          const over = el.dataset.id !== dragId;
+          deck.querySelectorAll('.card-item').forEach(x => x.classList.toggle('drag-over', over && x === el));
+        });
+        el.addEventListener('dragleave', () => el.classList.remove('drag-over'));
+        el.addEventListener('drop', (e) => {
+          e.preventDefault();
+          const targetId = el.dataset.id;
+          deck.querySelectorAll('.card-item').forEach(x => x.classList.remove('drag-over'));
+          if (!dragId || targetId === dragId) { dragId = null; return; }
+          const from = allCards.findIndex(c => String(c.id) === dragId);
+          let to = allCards.findIndex(c => String(c.id) === targetId);
+          if (from < 0 || to < 0) { dragId = null; return; }
+          const [moved] = allCards.splice(from, 1);
+          allCards.splice(to, 0, moved);
+          dragId = null;
+          renderCards();
+          persistCardsOrder();
+        });
+      });
+    }
+
+    async function persistCardsOrder() {
+      try {
+        const res = await adminFetch('/api/admin/cards/reorder', { method: 'POST', body: JSON.stringify({ ids: allCards.map(c => c.id) }) });
+        if (!res.ok) throw new Error();
+        DAS.toast(DAS.t('الترتيب اتحدث'));
+      } catch (e) { DAS.toast(DAS.t('فشل حفظ ترتيب الكروت'), 'err'); }
     }
 
     function renderCardAudienceValue(sel) {
@@ -1215,8 +1321,8 @@
 
     function openCardModalEmpty() {
       editingCardId = null;
-      $('cardModalTitle').textContent = 'كارت جديد';
-      $('cardSubmitLabel').textContent = 'حفظ الكارت';
+      $('cardModalTitle').textContent = DAS.t('كارت جديد');
+      $('cardSubmitLabel').textContent = DAS.t('حفظ الكارت');
       $('cardTitle').value = '';
       $('cardBody').value = '';
       $('cardBtnText').value = '';
@@ -1227,6 +1333,8 @@
       $('cardEnd').value = '';
       $('cardActive').checked = true;
       $('cardErr').textContent = '';
+      renderCardChips();
+      updateCardPreview();
     }
 
     function toggleCardModal() {
@@ -1239,8 +1347,8 @@
       const c = allCards.find(x => x.id === id);
       if (!c) return;
       editingCardId = id;
-      $('cardModalTitle').textContent = 'تعديل الكارت #' + id;
-      $('cardSubmitLabel').textContent = 'حفظ التعديل';
+      $('cardModalTitle').textContent = DAS.t('تعديل الكارت') + ' #' + id;
+      $('cardSubmitLabel').textContent = DAS.t('حفظ التعديل');
       $('cardTitle').value = c.title || '';
       $('cardBody').value = c.body || '';
       $('cardBtnText').value = c.button_text || '';
@@ -1251,6 +1359,8 @@
       $('cardEnd').value = c.end_date || '';
       $('cardActive').checked = !!c.active;
       $('cardErr').textContent = '';
+      renderCardChips();
+      updateCardPreview();
       toggleModal('cardModal');
     }
 

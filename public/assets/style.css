@@ -182,8 +182,8 @@ html.scrolling .orb, html.scrolling .bg-fx::before { animation-play-state: pause
 .btn-primary:hover::after { left: 130%; }
 .btn-ghost { background: var(--surface); border: 1px solid var(--border); color: var(--text-2); }
 .btn-ghost:hover { background: var(--surface-2); color: var(--text); border-color: var(--border-strong); transform: translateY(-1px); }
-.btn-ok { background: linear-gradient(135deg, #059669, #10b981); color: #fff; box-shadow: 0 10px 30px -10px rgba(16, 185, 129, 0.6); }
-.btn-ok:hover { transform: translateY(-2px); }
+.btn-ok { background: var(--accent-grad); color: #fff; box-shadow: var(--shadow-glow); }
+.btn-ok:hover { transform: translateY(-2px); box-shadow: 0 16px 44px -10px var(--shadow-glow-c, rgba(37, 99, 235, 0.55)); }
 .btn-sm { padding: 8px 14px; font-size: 12.5px; border-radius: 12px; }
 .btn-icon { width: 40px; height: 40px; padding: 0; border-radius: 12px; }
 .btn[disabled] { opacity: 0.7; pointer-events: none; }
@@ -244,9 +244,9 @@ html.scrolling .orb, html.scrolling .bg-fx::before { animation-play-state: pause
 .tag.adv { color: var(--warn); background: var(--warn-soft); }
 
 /* ---------- Live indicator ---------- */
-.live { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--ok); font-weight: 600; }
-.live i { position: relative; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }
-.live i::after { content: ""; position: absolute; inset: 0; border-radius: 50%; background: var(--ok); animation: ping 1.8s cubic-bezier(0,0,0.2,1) infinite; }
+.live { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--accent); font-weight: 600; }
+.live i { position: relative; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+.live i::after { content: ""; position: absolute; inset: 0; border-radius: 50%; background: var(--accent); animation: ping 1.8s cubic-bezier(0,0,0.2,1) infinite; }
 @keyframes ping { 75%,100% { transform: scale(3); opacity: 0; } }
 
 /* ---------- Toasts ---------- */
@@ -358,7 +358,7 @@ html.scrolling .orb, html.scrolling .bg-fx::before { animation-play-state: pause
 .section-title { font-size: 13px; font-weight: 700; color: var(--text-2); margin: 0 4px 12px; display: flex; align-items: center; justify-content: space-between; }
 
 .cat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 18px; }
-.cat-card.adv { --c: var(--warn); --c-soft: var(--warn-soft); }
+.cat-card.adv { --c: var(--accent); --c-soft: var(--accent-soft); }
 .cat-card.span { grid-column: 1 / -1; }
 .cat-card {
   --c: var(--accent); --c-soft: var(--accent-soft);
@@ -367,7 +367,7 @@ html.scrolling .orb, html.scrolling .bg-fx::before { animation-play-state: pause
   transition: transform .35s var(--ease), border-color .3s, box-shadow .35s var(--ease);
   transform-style: preserve-3d;
 }
-.cat-card.pay { --c: var(--ok); --c-soft: var(--ok-soft); }
+.cat-card.pay { --c: #3b82f6; --c-soft: rgba(96, 165, 250, 0.16); }
 .cat-card::before { content: ""; position: absolute; inset: 0; background: radial-gradient(circle at var(--mx, 50%) var(--my, 0%), var(--c-soft), transparent 60%); opacity: 0; transition: opacity .35s; }
 .cat-card:hover::before, .cat-card.active::before { opacity: 1; }
 .cat-card:hover { transform: translateY(-6px); border-color: var(--c); box-shadow: 0 22px 50px -22px var(--c); }
@@ -654,3 +654,37 @@ input[type="file"].visually-hidden { position: absolute; width: 1px; height: 1px
 .c-card b { font-size: 14.5px; font-weight: 800; line-height: 1.4; }
 .c-card p { margin: 0; font-size: 12.5px; line-height: 1.6; color: var(--text-2); white-space: pre-line; }
 .c-btn { align-self: flex-start; margin-top: 2px; }
+#cardPreview .c-card { min-width: 0; max-width: 360px; animation: none; }
+
+/* ---------- كروت الإدارة: deck + drag & drop ---------- */
+.card-item {
+  display: flex; align-items: flex-start; gap: 12px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 14px; padding: 12px 14px;
+  transition: border-color .2s, box-shadow .2s, transform .2s var(--ease), opacity .2s;
+  animation: riseIn .5s var(--ease) both; animation-delay: calc(var(--i, 0) * 50ms);
+}
+.card-item:hover { border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); box-shadow: 0 12px 30px -18px var(--accent); }
+.card-item.off { opacity: 0.65; }
+.card-item .grip {
+  cursor: grab; user-select: none; flex-shrink: 0;
+  width: 30px; height: 44px; display: grid; place-items: center;
+  color: var(--text-3); font-size: 17px; border-radius: 10px;
+  transition: background .2s, color .2s;
+}
+.card-item .grip:hover { background: var(--accent-soft); color: var(--accent); }
+.card-item:active .grip { cursor: grabbing; }
+.card-item .pos { font-size: 11px; color: var(--text-3); background: var(--surface-2); border: 1px solid var(--border); padding: 1px 7px; border-radius: 7px; }
+.card-item .ci-main { flex: 1 1 auto; display: grid; gap: 4px; min-width: 0; }
+.card-item .ci-acts { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; justify-content: flex-end; flex-shrink: 0; }
+.card-item.dragging { opacity: 0.45; transform: scale(0.98); box-shadow: var(--shadow-glow); }
+.card-item.drag-over { border-style: dashed; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.card-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 11px; border-radius: 999px; font-size: 12px; font-weight: 700;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+  background: var(--accent-soft); color: var(--accent);
+  transition: transform .18s var(--ease), box-shadow .18s, background .18s;
+}
+.card-chip:hover { transform: translateY(-2px); box-shadow: 0 10px 22px -12px var(--accent); }
+@media (max-width: 720px) { .card-item { flex-wrap: wrap; } .card-item .ci-acts { width: 100%; justify-content: flex-start; } }

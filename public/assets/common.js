@@ -225,11 +225,12 @@
       return ((p[0] || '')[0] || '?') + ((p[1] || '')[0] || '');
     },
 
-    // Stable gradient from a string
+    // Stable gradient from a string — العائلة الزرقاء (ثيم البوابة) بدل ألوان هي عشوائية
     gradient(seed) {
       let h = 0;
       for (const c of String(seed)) h = (h * 31 + c.charCodeAt(0)) % 360;
-      return `linear-gradient(135deg, hsl(${h} 75% 58%), hsl(${(h + 50) % 360} 75% 52%))`;
+      const base = 205 + (h % 38);
+      return `linear-gradient(135deg, hsl(${base} 75% 58%), hsl(${base + 14} 70% 48%))`;
     },
 
     toast(msg, type) {

@@ -263,11 +263,11 @@
         const box = $('cardsBox'), rail = $('cardsRail');
         if (!cards.length) { box.classList.add('hidden'); rail.innerHTML = ''; return; }
         rail.innerHTML = cards.map((c, i) => `
-          <div class="c-card" style="--i:${Math.min(i, 8)}" data-i18n-raw>
-            <span class="c-badge"><i data-ico="msg"></i> إعلان</span>
-            <b>${DAS.esc(c.title)}</b>
-            ${c.body ? `<p>${DAS.esc(c.body)}</p>` : ''}
-            ${c.button_url ? `<a class="btn btn-primary btn-sm c-btn" href="${DAS.esc(c.button_url)}" target="_blank" rel="noopener">${DAS.esc(c.button_text || 'فتح')} <i data-ico="arrow"></i></a>` : ''}
+          <div class="c-card" style="--i:${Math.min(i, 8)}">
+            <span class="c-badge">${DAS.icon('msg')} إعلان</span>
+            <b data-i18n-raw>${DAS.esc(c.title)}</b>
+            ${c.body ? `<p data-i18n-raw>${DAS.esc(c.body)}</p>` : ''}
+            ${c.button_url ? `<a class="btn btn-primary btn-sm c-btn" href="${DAS.esc(c.button_url)}" target="_blank" rel="noopener" data-i18n-raw>${DAS.esc(c.button_text || DAS.t('فتح'))} ${DAS.icon('arrow')}</a>` : ''}
           </div>`).join('');
         box.classList.remove('hidden');
       } catch (e) { /* تجاهل — جولة البولل الجاية هتعيد المحاولة */ }
@@ -758,6 +758,8 @@
     // تغيير اللغة: بنعيد رندر الكروت والتواريخ بلغة العرض الجديدة
     document.addEventListener('das:lang', () => {
       if (!currentCourier) return;
+      cardsCache = null;          // عشان الشارة وزرار "فتح" يتترجموا بعد التغيير
+      loadMyCards(true);
       loadMyTickets(true);
       loadMyAdvances(true);
     });

@@ -155,11 +155,31 @@ db.serialize(() => {
       start_date TEXT DEFAULT '',
       end_date TEXT DEFAULT '',
       active INTEGER DEFAULT 1,
+      sort_order INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
 
   // قاعدة قديمة؟ نزود الأعمدة الناقصة تلقائي (بعد إنشاء الجدول)
+  // الكروت: sort_order للترتيب بالسحب والإفلات — الموجودين قبل التحديث بنرتّبهم
+  // بنفس ترتيب العرض القديم (الأحدث أولان) عشان ما يتغيّرش شكل الصفحة فجأة.
+  db.all("PRAGMA table_info(cards)", (cErr, cCols) => {
+    if (cErr || !cCols) return;
+    if (!cCols.some(c => c.name === 'sort_order')) {
+      db.run("ALTER TABLE cards ADD COLUMN sort_order INTEGER DEFAULT 0", (aErr) => {
+        if (aErr) return;
+        db.all("SELECT id FROM cards ORDER BY id DESC", [], (rErr, rows) => {
+          if (rErr || !rows) return;
+          let i = 0;
+          const step = () => {
+            if (i >= rows.length) return;
+            db.run("UPDATE cards SET sort_order = ? WHERE id = ?", [i, rows[i].id], () => { i++; step(); });
+          };
+          step();
+        });
+      });
+    }
+  });
   db.all("PRAGMA table_info(tickets)", (err, cols) => {
     if (err || !cols) return;
     if (!cols.some(c => c.name === 'archived')) {
@@ -334,11 +354,14 @@ app.get('/api/courier/advances/:das_code', (req, res) => {
 
 // 5-ب. الكروت المخصصة الظاهرة للمندوب — فلترة بالجمهور (الكل/الفرع/نوع الدوام/أكواد) وبفترة السريان
 // جمهور الفرع/النوع محتاج بيانات المندوب من الروستر — لو الروستر مش مربوط أو الكود مش متطابق الكروت دي بتتخفي
+// ترتيب الكروت في العرض: حسب sort_order ثم الأحدث أولاً
+const CARDS_ORDER = "ORDER BY sort_order ASC, id ASC";
+
 app.get('/api/courier/cards/:das_code', async (req, res) => {
   const code = String(req.params.das_code || '').trim().toUpperCase();
   try {
     const cards = await new Promise((resolve, reject) => {
-      db.all("SELECT * FROM cards WHERE active = 1 ORDER BY id DESC", [], (err, rows) => err ? reject(err) : resolve(rows));
+      db.all(`SELECT * FROM cards WHERE active = 1 ${CARDS_ORDER}`, [], (err, rows) => err ? reject(err) : resolve(rows));
     });
     const today = new Date().toISOString().slice(0, 10);
     let visible = cards.filter(c => (!c.start_date || today >= c.start_date) && (!c.end_date || today <= c.end_date));
@@ -621,28 +644,51 @@ function cardPayload(b) {
   return { title, body, btnText, btnUrl, audience, audienceValue, startDate, endDate };
 }
 
-// 19-ب. جلب كل الكروت (شاملة المتوقفة والمستحقة تواريخها) للإدارة
+// 19-ب. جلب كل الكروت (شاملة المتوقفة والمستحقة تواريخها) للإدارة — بنفس ترتيب السحب والإفلات
 app.get('/api/admin/cards', (req, res) => {
-  db.all("SELECT * FROM cards ORDER BY id DESC", [], (err, rows) => {
+  db.all(`SELECT * FROM cards ${CARDS_ORDER}`, [], (err, rows) => {
     if (err) return res.status(500).json({ error: 'خطأ في جلب الكروت' });
     res.json({ cards: rows });
   });
 });
 
-// 19-ج. إنشاء كارت جديد
+// 19-ب-2. حفظ ترتيب الكروت بعد السحب والإفلات — بنستلم كل الـ IDs بالترتيب الجديد
+app.post('/api/admin/cards/reorder', (req, res) => {
+  const ids = Array.isArray(req.body && req.body.ids) ? req.body.ids.map(Number).filter(Number.isFinite) : [];
+  if (!ids.length) return res.status(400).json({ error: 'قائمة الترتيب فاضية' });
+  done(0);
+  function done(i) {
+    if (i >= ids.length) {
+      db.all(`SELECT id FROM cards ${CARDS_ORDER}`, [], (err, rows) => {
+        if (err) return res.status(500).json({ error: 'فشل حفظ الترتيب' });
+        res.json({ success: true, order: rows.map(r => r.id) });
+      });
+      return;
+    }
+    db.run("UPDATE cards SET sort_order = ? WHERE id = ?", [i, ids[i]], (err) => {
+      if (err) return res.status(500).json({ error: 'فشل حفظ الترتيب' });
+      done(i + 1);
+    });
+  }
+});
+
+// 19-ج. إنشاء كارت جديد — بيروح آخر القايمة (والأدمن يقدر يسحبه ومكان عادي)
 app.post('/api/admin/cards', (req, res) => {
   const p = cardPayload(req.body || {});
   if (p.error) return res.status(400).json({ error: p.error });
   const active = (req.body && req.body.active === false) ? 0 : 1;
-  db.run(
-    `INSERT INTO cards (title, body, button_text, button_url, audience, audience_value, start_date, end_date, active)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [p.title, p.body, p.btnText, p.btnUrl, p.audience, p.audienceValue, p.startDate, p.endDate, active],
-    function (err) {
-      if (err) return res.status(500).json({ error: 'فشل حفظ الكارت' });
-      res.json({ success: true, card_id: this.lastID });
-    }
-  );
+  db.get("SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM cards", [], (err, row) => {
+    const sortOrder = (err || !row) ? 0 : row.next;
+    db.run(
+      `INSERT INTO cards (title, body, button_text, button_url, audience, audience_value, start_date, end_date, active, sort_order)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [p.title, p.body, p.btnText, p.btnUrl, p.audience, p.audienceValue, p.startDate, p.endDate, active, sortOrder],
+      function (err2) {
+        if (err2) return res.status(500).json({ error: 'فشل حفظ الكارت' });
+        res.json({ success: true, card_id: this.lastID });
+      }
+    );
+  });
 });
 
 // 19-د. تعديل كارت — أو إيقاف/تشغيل لو الحقل الوحيد اللي راجع هو active
