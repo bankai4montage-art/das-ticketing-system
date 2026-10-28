@@ -276,6 +276,14 @@
             <input type="text" id="cardBtnUrl" class="input" dir="ltr" placeholder="رابط الزرار (اختياري)">
           </div>
         </div>
+        <div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px;justify-content:space-between">
+            <span style="font-size:12px;font-weight:700;color:var(--text-3)" data-i18n="خيارات تفاعلية (اختياري)">خيارات تفاعلية (اختياري)</span>
+            <button type="button" class="btn btn-ghost btn-sm card-chip" onclick="addCardChoiceRow()" id="addChoiceBtn">➕ <span data-i18n="زود اختيار">زود اختيار</span></button>
+          </div>
+          <div style="display:grid;gap:8px" id="cardChoicesWrap"></div>
+          <div class="hint" style="margin-top:6px" data-i18n="لو حطيت اختيارات — الكارت بيبقى قابل للتصويت: كل مندوب يدوس على اختياره وانت تشوف مين اختار إيه في واجهة الكارت">لو حطيت اختيارات — الكارت بيبقى قابل للتصويت: كل مندوب يدوس على اختياره وانت تشوف مين اختار إيه في واجهة الكارت</div>
+        </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
           <div class="field" style="margin:0">
             <label for="cardAudience" data-i18n="مين يشوف الكارت؟">مين يشوف الكارت؟</label>
@@ -1169,18 +1177,26 @@
       renderCards();
     }
 
-    function cardPreviewHTML(title, body, btnText, btnUrl) {
-      return `<div class="c-card" style="--i:0">
+    function cardPreviewHTML(title, body, btnText, btnUrl, choices) {
+      const opts = Array.isArray(choices) ? choices : [];
+      return `<div class="c-card ${opts.length ? 'interactive' : ''}" style="--i:0">
         <span class="c-badge">${DAS.icon('msg')} إعلان</span>
         <b>${DAS.esc(title || 'عنوان الكارت')}</b>
         ${body ? `<p>${DAS.esc(body)}</p>` : ''}
+        ${opts.length ? `<div class="c-opts">${opts.map(o => `<span class="pick-opt">${DAS.esc(o)}</span>`).join('')}</div><div class="pick-state"><span class="pick-hint">${DAS.t('دوس على اختيارك')}</span></div>` : ''}
         ${btnUrl ? `<span class="btn btn-primary btn-sm c-btn">${DAS.esc(btnText || 'فتح')} ${DAS.icon('arrow')}</span>` : ''}
       </div>`;
     }
 
+    function getCardChoices() {
+      return [...document.querySelectorAll('#cardChoicesWrap .choice-input')]
+        .map(inp => inp.value.trim())
+        .filter(Boolean);
+    }
+
     function updateCardPreview() {
       $('cardPreview').innerHTML = cardPreviewHTML($('cardTitle').value.trim(), $('cardBody').value.trim(),
-        $('cardBtnText').value.trim(), $('cardBtnUrl').value.trim());
+        $('cardBtnText').value.trim(), $('cardBtnUrl').value.trim(), getCardChoices());
     }
 
     // قوالب جاهزة: ملا كامل العنوان والنص، والأدمن يعدل بعدها زي ما يحب
@@ -1229,6 +1245,66 @@
       if (b.url.endsWith('x') || b.url === 'https://') $('cardBtnUrl').focus();
     }
 
+    // ---------- الخيارات التفاعلية: محرر صف بصف (2 لـ 8 اختيارات) ----------
+    function cardChoiceRowHTML() {
+      return `<div class="choice-row">
+        <span class="pos mono">▶</span>
+        <input type="text" class="input choice-input" maxlength="60" placeholder="نص الاختيار (اختياري)" oninput="updateCardPreview()">
+        <button type="button" class="btn btn-ghost btn-sm choice-x" onclick="removeCardChoiceRow(this)" aria-label="${DAS.t('إغلاق')}">✕</button>
+      </div>`;
+    }
+
+    function setCardChoices(list) {
+      const opts = (Array.isArray(list) && list.length) ? list.slice(0, 8) : [''];
+      $('cardChoicesWrap').innerHTML = opts.map(() => cardChoiceRowHTML()).join('');
+      const inputs = $('cardChoicesWrap').querySelectorAll('.choice-input');
+      opts.forEach((o, i) => { inputs[i].value = o || ''; });
+      document.getElementById('addChoiceBtn').disabled = opts.length >= 8;
+    }
+
+    function addCardChoiceRow() {
+      const wrap = $('cardChoicesWrap');
+      if (wrap.children.length >= 8) return;
+      wrap.insertAdjacentHTML('beforeend', cardChoiceRowHTML());
+      document.getElementById('addChoiceBtn').disabled = wrap.children.length >= 8;
+      wrap.lastElementChild.querySelector('.choice-input').focus();
+    }
+
+    function removeCardChoiceRow(btn) {
+      const wrap = $('cardChoicesWrap');
+      btn.closest('.choice-row').remove();
+      if (!wrap.children.length) wrap.insertAdjacentHTML('beforeend', cardChoiceRowHTML());
+      document.getElementById('addChoiceBtn').disabled = wrap.children.length >= 8;
+      updateCardPreview();
+    }
+
+    // ---------- نتايج الأصوات في الـ deck ----------
+    function cardChoiceLabels(c) {
+      try { const p = JSON.parse(c.choices || '[]'); return Array.isArray(p) ? p : []; } catch (e) { return []; }
+    }
+
+    function toggleCardPicks(id) {
+      const el = $('cardPicks' + id);
+      if (!el) return; // بقى: افتح/اقفل
+      const opening = !el.classList.contains('open');
+      el.classList.toggle('open', opening);
+      if (opening) renderCardPicksBody(id);
+    }
+
+    function renderCardPicksBody(id) {
+      const c = allCards.find(x => x.id === id);
+      const el = document.getElementById('cardPicks' + id);
+      if (!c || !el) return;
+      const t = c.picks || { total: 0, options: [] };
+      el.innerHTML = `
+        <div class="picks-total">${DAS.icon('users')} <span>${t.total} ${t.total === 1 ? DAS.t('مندوب') : DAS.t('مناديب')} ${DAS.t('صوّتوا')}</span></div>
+        ${t.options.length ? `<div class="picks-grid">${t.options.map(o => `
+          <div class="pick-opt-res">
+            <div class="por-head"><b data-i18n-raw>${DAS.esc(o.label)}</b><span class="badge ${o.count ? 'info' : ''}">${o.count}</span></div>
+            ${o.who.length ? `<div class="por-who">${o.who.map(w => `<span class="who-pill mono" title="${DAS.esc(w.name || '')}">${DAS.esc(w.das_code)}${w.name ? ' · ' + DAS.esc(w.name) : ''}</span>`).join('')}</div>` : `<div class="por-none">${DAS.t('لسه مفيش حدا اختارها')}</div>`}
+          </div>`).join('')}</div>` : `<div class="por-none">${DAS.t('لسه مفيش أصوات')}</div>`}`;
+    }
+
     function renderCards() {
       const activeCount = allCards.filter(c => c.active).length;
       $('cardsSummary').textContent = `${allCards.length} ${allCards.length === 1 ? DAS.t('كارت') : DAS.t('كروت')} — ${DAS.t('النشط فيهم')}: ${activeCount}`;
@@ -1236,9 +1312,14 @@
         <div class="card-item ${c.active ? '' : 'off'}" draggable="true" data-id="${c.id}" data-idx="${i}" style="--i:${Math.min(i, 12)};${i < 12 ? '' : 'animation:none'}">
           <span class="grip" title="${DAS.t('اسحب الكارت من أي مكان وارميه مكانه عشان تترتيب طريقة ظهورهم للمندوب')}">⠿</span>
           <div class="ci-main">
-            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span class="pos mono">#${i + 1}</span> <b>${DAS.esc(c.title)}</b></div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span class="pos mono">#${i + 1}</span> <b data-i18n-raw>${DAS.esc(c.title)}</b>${cardChoiceLabels(c).length ? `<span class="badge info">${DAS.icon('users')} ${DAS.t('تفاعلي')}</span>` : ''}</div>
             ${c.body ? `<div class="desc-cell" style="font-size:12px;color:var(--text-2);white-space:pre-line" data-i18n-raw>${DAS.esc(c.body)}</div>` : ''}
             ${c.button_url ? `<div style="font-size:12px;color:var(--accent);display:flex;align-items:center;gap:5px">${DAS.icon('msg')} ${DAS.esc(c.button_text || DAS.t('فتح'))} — ${DAS.esc(c.button_url)}</div>` : ''}
+            ${cardChoiceLabels(c).length ? `
+              <div class="picks-line">
+                <button class="btn btn-ghost btn-sm" onclick="toggleCardPicks(${c.id})">🗳️ ${DAS.t('الأصوات')} <span class="mono">${(c.picks || {}).total || 0}</span></button>
+              </div>
+              <div id="cardPicks${c.id}" class="card-picks"></div>` : ''}
             <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
               <span class="badge info">${cardAudienceLabel(c)}</span>
               <span class="badge">${cardPeriodLabel(c)}</span>
@@ -1327,6 +1408,7 @@
       $('cardBody').value = '';
       $('cardBtnText').value = '';
       $('cardBtnUrl').value = '';
+      setCardChoices([]);
       $('cardAudience').value = 'all';
       renderCardAudienceValue();
       $('cardStart').value = '';
@@ -1353,6 +1435,7 @@
       $('cardBody').value = c.body || '';
       $('cardBtnText').value = c.button_text || '';
       $('cardBtnUrl').value = c.button_url || '';
+      setCardChoices(cardChoiceLabels(c));
       $('cardAudience').value = c.audience || 'all';
       renderCardAudienceValue(c.audience_value || null);
       $('cardStart').value = c.start_date || '';
@@ -1377,7 +1460,8 @@
         audience_value: ($('cardAudienceValue') || {}).value || '',
         start_date: $('cardStart').value,
         end_date: $('cardEnd').value,
-        active: $('cardActive').checked
+        active: $('cardActive').checked,
+        choices: getCardChoices()
       };
       DAS.busy(btn, true);
       try {

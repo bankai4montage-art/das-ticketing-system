@@ -156,7 +156,21 @@ db.serialize(() => {
       end_date TEXT DEFAULT '',
       active INTEGER DEFAULT 1,
       sort_order INTEGER DEFAULT 0,
+      choices TEXT DEFAULT '',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // أصوات المناديب على الخيارات التفاعلية — صوت واحد لكل مندوب لكل كارت (وبيقدر يغيره)
+  db.run(`
+    CREATE TABLE IF NOT EXISTS card_picks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      card_id INTEGER NOT NULL,
+      das_code TEXT NOT NULL,
+      courier_name TEXT DEFAULT '',
+      choice INTEGER NOT NULL,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(card_id, das_code)
     )
   `);
 
@@ -178,6 +192,9 @@ db.serialize(() => {
           step();
         });
       });
+    }
+    if (!cCols.some(c => c.name === 'choices')) {
+      db.run("ALTER TABLE cards ADD COLUMN choices TEXT DEFAULT ''");
     }
   });
   db.all("PRAGMA table_info(tickets)", (err, cols) => {
@@ -384,6 +401,13 @@ app.get('/api/courier/cards/:das_code', async (req, res) => {
       if (c.audience === 'type') return !!emp && emp.employment_type === c.audience_value;
       return false;
     });
+
+    // مين اختيار المندوب الحالي على كل كارت تفاعلي
+    const picks = await new Promise((resolve) => {
+      db.all("SELECT card_id, choice FROM card_picks WHERE das_code = ?", [code], (pErr, rows2) => pErr ? resolve([]) : resolve(rows2 || []));
+    });
+    const pickMap = {}; picks.forEach(p => pickMap[p.card_id] = p.choice);
+    visible = visible.map(c => ({ ...c, my_pick: pickMap[c.id] }));
 
     res.json({ cards: visible });
   } catch (e) {
@@ -641,14 +665,47 @@ function cardPayload(b) {
   let endDate = ISO_DATE.test(String(b.end_date || '')) ? String(b.end_date) : '';
   if (startDate && endDate && endDate < startDate) return { error: 'تاريخ النهاية لازم يكون بعد تاريخ البداية' };
 
-  return { title, body, btnText, btnUrl, audience, audienceValue, startDate, endDate };
+  // الخيارات التفاعلية: قايمة نصوص (2 لـ 8) — لو حقل ملوش لازقة بنشيله
+  let choices = [];
+  if (Array.isArray(b.choices)) {
+    choices = b.choices.map(c => String(c || '').trim().slice(0, 60)).filter(Boolean);
+  } else if (typeof b.choices === 'string' && b.choices.trim()) {
+    try {
+      const parsed = JSON.parse(b.choices);
+      if (Array.isArray(parsed)) choices = parsed.map(c => String(c || '').trim().slice(0, 60)).filter(Boolean);
+    } catch (e) { choices = []; }
+  }
+  choices = [...new Set(choices)];
+  if (choices.length === 1) return { error: 'لو هتحط خيارات، حط اتنين على الأقل' };
+  if (choices.length > 8) return { error: 'أقصى 8 اختيارات في الكارت' };
+  const choicesText = choices.length >= 2 ? JSON.stringify(choices) : '';
+
+  return { title, body, btnText, btnUrl, audience, audienceValue, startDate, endDate, choicesText };
 }
 
-// 19-ب. جلب كل الكروت (شاملة المتوقفة والمستحقة تواريخها) للإدارة — بنفس ترتيب السحب والإفلات
+// تجميع أصوات كارت على اختياراته — عشان الأدمن يشوف مين اختار إيه
+function tallyPicks(card, picks) {
+  const choices = [];
+  try { const p = JSON.parse(card.choices || '[]'); if (Array.isArray(p)) choices.push(...p); } catch (e) {}
+  const per = picks.filter(k => k.card_id === card.id);
+  return {
+    total: per.length,
+    options: choices.map((label, i) => {
+      const mine = per.filter((k) => Number(k.choice) === i);
+      return { label, count: mine.length, who: mine.map(k => ({ das_code: k.das_code, name: k.courier_name, at: k.updated_at })) };
+    })
+  };
+}
+
+// 19-ب. جلب كل الكروت (شاملة المتوقفة والمستحقة تواريخها) للإدارة — بنفس ترتيب السحب والإفلات + أصوات الخيارات
 app.get('/api/admin/cards', (req, res) => {
   db.all(`SELECT * FROM cards ${CARDS_ORDER}`, [], (err, rows) => {
     if (err) return res.status(500).json({ error: 'خطأ في جلب الكروت' });
-    res.json({ cards: rows });
+    db.all("SELECT card_id, das_code, courier_name, choice, updated_at FROM card_picks", [], (pErr, picks) => {
+      if (pErr) picks = [];
+      const cards = rows.map(c => ({ ...c, picks: tallyPicks(c, picks) }));
+      res.json({ cards });
+    });
   });
 });
 
@@ -680,9 +737,9 @@ app.post('/api/admin/cards', (req, res) => {
   db.get("SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM cards", [], (err, row) => {
     const sortOrder = (err || !row) ? 0 : row.next;
     db.run(
-      `INSERT INTO cards (title, body, button_text, button_url, audience, audience_value, start_date, end_date, active, sort_order)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [p.title, p.body, p.btnText, p.btnUrl, p.audience, p.audienceValue, p.startDate, p.endDate, active, sortOrder],
+      `INSERT INTO cards (title, body, button_text, button_url, audience, audience_value, start_date, end_date, active, sort_order, choices)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [p.title, p.body, p.btnText, p.btnUrl, p.audience, p.audienceValue, p.startDate, p.endDate, active, sortOrder, p.choicesText],
       function (err2) {
         if (err2) return res.status(500).json({ error: 'فشل حفظ الكارت' });
         res.json({ success: true, card_id: this.lastID });
@@ -711,8 +768,8 @@ app.put('/api/admin/cards/:id', (req, res) => {
     if (p.error) return res.status(400).json({ error: p.error });
     const active = ('active' in b) ? (b.active ? 1 : 0) : before.active;
     db.run(
-      `UPDATE cards SET title=?, body=?, button_text=?, button_url=?, audience=?, audience_value=?, start_date=?, end_date=?, active=? WHERE id=?`,
-      [p.title, p.body, p.btnText, p.btnUrl, p.audience, p.audienceValue, p.startDate, p.endDate, active, id],
+      `UPDATE cards SET title=?, body=?, button_text=?, button_url=?, audience=?, audience_value=?, start_date=?, end_date=?, active=?, choices=? WHERE id=?`,
+      [p.title, p.body, p.btnText, p.btnUrl, p.audience, p.audienceValue, p.startDate, p.endDate, active, p.choicesText, id],
       (err2) => {
         if (err2) return res.status(500).json({ error: 'فشل تحديث الكارت' });
         res.json({ success: true });
@@ -721,12 +778,41 @@ app.put('/api/admin/cards/:id', (req, res) => {
   });
 });
 
-// 19-هـ. مسح كارت
+// 19-هـ. مسح كارت (وبيمسح أصواته كمان)
 app.delete('/api/admin/cards/:id', (req, res) => {
   db.run("DELETE FROM cards WHERE id = ?", [req.params.id], function (err) {
     if (err) return res.status(500).json({ error: 'فشل حذف الكارت' });
     if (this.changes === 0) return res.status(404).json({ error: 'الكارت غير موجود' });
+    db.run("DELETE FROM card_picks WHERE card_id = ?", [req.params.id]);
     res.json({ success: true });
+  });
+});
+
+// 19-و. صوت المندوب على اختيار في كارت — صوت واحد لكل مندوب، وبيقدر يغيره في أي وقت
+app.post('/api/courier/cards/pick', (req, res) => {
+  if (rateLimited(req, 'card-pick', 30, 60e3)) return res.status(429).json({ error: 'محاولات كتير — استنى دقيقة' });
+  const { das_code, card_id, choice } = req.body || {};
+  const code = String(das_code || '').trim().toUpperCase();
+  const name = String((req.body && req.body.name) || '').trim().slice(0, 80);
+  const ch = Number(choice);
+  if (!code || !Number.isInteger(card_id) || !Number.isInteger(ch)) {
+    return res.status(400).json({ error: 'بيانات الصوت ناقصة' });
+  }
+  db.get("SELECT choices FROM cards WHERE id = ? AND active = 1", [card_id], (err, card) => {
+    if (err) return res.status(500).json({ error: 'خطأ في السيرفر' });
+    if (!card) return res.status(404).json({ error: 'الكارت غير موجود أو متوقف' });
+    let labels = [];
+    try { const p = JSON.parse(card.choices || '[]'); if (Array.isArray(p)) labels = p; } catch (e) {}
+    if (ch < 0 || ch >= labels.length) return res.status(400).json({ error: 'اختيار غير موجود' });
+    db.run(
+      `INSERT INTO card_picks (card_id, das_code, courier_name, choice) VALUES (?, ?, ?, ?)
+       ON CONFLICT(card_id, das_code) DO UPDATE SET choice = excluded.choice, courier_name = excluded.courier_name, updated_at = CURRENT_TIMESTAMP`,
+      [card_id, code, name, ch],
+      (wErr) => {
+        if (wErr) return res.status(500).json({ error: 'فشل تسجيل اختيارك' });
+        res.json({ success: true, choice: ch });
+      }
+    );
   });
 });
 

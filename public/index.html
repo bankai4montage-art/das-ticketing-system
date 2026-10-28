@@ -250,6 +250,7 @@
 
     // ================= كروت الإدارة المخصصة =================
     // بتتطلع بس لو الكارت نشط وفي فترته ومش مطابق جمهور الكارت (الكل/الفرع/نوع الدوام/كود)
+    let lastCards = [];
     async function loadMyCards() {
       if (!currentCourier || !currentCourier.das_code) return;
       try {
@@ -257,20 +258,63 @@
           '?name=' + encodeURIComponent(currentCourier.name || ''));
         const data = await res.json();
         const cards = (data && data.cards) || [];
-        const sig = JSON.stringify(cards.map(c => [c.id, c.title, c.body, c.button_text, c.button_url]));
+        lastCards = cards;
+        // sig: بيني في كمان تغير الخيارات/اختيار المندوب عشان نعيد الرندر
+        const sig = JSON.stringify(cards.map(c => [c.id, c.title, c.body, c.button_text, c.button_url, c.my_pick, c.choices]));
         if (sig === cardsCache) return;
         cardsCache = sig;
-        const box = $('cardsBox'), rail = $('cardsRail');
-        if (!cards.length) { box.classList.add('hidden'); rail.innerHTML = ''; return; }
-        rail.innerHTML = cards.map((c, i) => `
-          <div class="c-card" style="--i:${Math.min(i, 8)}">
+        renderCardsRail(cards);
+        const box = $('cardsBox');
+        box.classList.toggle('hidden', !cards.length);
+      } catch (e) { /* تجاهل — جولة البولل الجاية هتعيد المحاولة */ }
+    }
+
+    function cardChoiceLabels(c) {
+      try { const p = JSON.parse(c.choices || '[]'); return Array.isArray(p) ? p : []; } catch (e) { return []; }
+    }
+
+    function renderCardsRail(cards) {
+      const rail = $('cardsRail');
+      rail.innerHTML = cards.map((c, i) => {
+        const opts = cardChoiceLabels(c);
+        return `
+          <div class="c-card ${opts.length ? 'interactive' : ''}" style="--i:${Math.min(i, 8)}">
             <span class="c-badge">${DAS.icon('msg')} إعلان</span>
             <b data-i18n-raw>${DAS.esc(c.title)}</b>
             ${c.body ? `<p data-i18n-raw>${DAS.esc(c.body)}</p>` : ''}
+            ${opts.length ? `
+              <div class="c-opts" data-card="${c.id}">
+                ${opts.map((o, oi) => `<button type="button" class="pick-opt ${c.my_pick === oi ? 'sel' : ''}" onclick="pickCard(${c.id},${oi},this)" data-i18n-raw>${DAS.esc(o)}</button>`).join('')}
+              </div>
+              <div class="pick-state" data-pick="${c.id}">${c.my_pick != null && opts[c.my_pick] ? `<span class="pick-done">${DAS.icon('check')} ${DAS.t('تسجل اختيارك')} — <b data-i18n-raw>${DAS.esc(opts[c.my_pick])}</b></span>` : `<span class="pick-hint">${DAS.t('دوس على اختيارك')}</span>`}</div>` : ''}
             ${c.button_url ? `<a class="btn btn-primary btn-sm c-btn" href="${DAS.esc(c.button_url)}" target="_blank" rel="noopener" data-i18n-raw>${DAS.esc(c.button_text || DAS.t('فتح'))} ${DAS.icon('arrow')}</a>` : ''}
-          </div>`).join('');
-        box.classList.remove('hidden');
-      } catch (e) { /* تجاهل — جولة البولل الجاية هتعيد المحاولة */ }
+          </div>`;
+      }).join('');
+    }
+
+    // المندوب داس على اختيار — بنسجله في السيرفر ونحدث الواجهة في نفس اللحظة
+    async function pickCard(cardId, ch, btn) {
+      try {
+        const res = await fetch('/api/courier/cards/pick', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ das_code: currentCourier.das_code, name: currentCourier.name || '', card_id: cardId, choice: ch })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'فشل تسجيل اختيارك');
+        const c = lastCards.find(x => x.id === cardId);
+        if (c) c.my_pick = ch;
+        const wrap = btn.closest('.c-opts');
+        if (wrap) wrap.querySelectorAll('.pick-opt').forEach(b => b.classList.remove('sel'));
+        btn.classList.add('sel');
+        const opts = c ? cardChoiceLabels(c) : [];
+        const st = document.querySelector(`[data-pick="${cardId}"]`);
+        if (st) st.innerHTML = `<span class="pick-done">${DAS.icon('check')} ${DAS.t('تسجل اختيارك')} — <b data-i18n-raw>${DAS.esc(opts[ch] || '')}</b></span>`;
+        DAS.toast(DAS.t('تسجل اختيارك'));
+        DAS.confetti();
+      } catch (e) {
+        DAS.toast(e.message, 'err');
+      }
     }
 
     // ================= إشعارات المتصفح (Web Push) =================
