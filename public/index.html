@@ -280,14 +280,14 @@
         return `
           <div class="c-card ${opts.length ? 'interactive' : ''}" style="--i:${Math.min(i, 8)}">
             <span class="c-badge">${DAS.icon('msg')} إعلان</span>
-            <b data-i18n-raw>${DAS.esc(c.title)}</b>
-            ${c.body ? `<p data-i18n-raw>${DAS.esc(c.body)}</p>` : ''}
+            <b data-i18n-raw dir="auto">${DAS.esc(c.title)}</b>
+            ${c.body ? `<p data-i18n-raw dir="auto">${DAS.esc(c.body)}</p>` : ''}
             ${opts.length ? `
               <div class="c-opts" data-card="${c.id}">
-                ${opts.map((o, oi) => `<button type="button" class="pick-opt ${c.my_pick === oi ? 'sel' : ''}" onclick="pickCard(${c.id},${oi},this)" data-i18n-raw>${DAS.esc(o)}</button>`).join('')}
+                ${opts.map((o, oi) => `<button type="button" class="pick-opt ${c.my_pick === oi ? 'sel' : ''}" dir="auto" onclick="pickCard(${c.id},${oi},this)" data-i18n-raw>${DAS.esc(o)}</button>`).join('')}
               </div>
               <div class="pick-state" data-pick="${c.id}">${c.my_pick != null && opts[c.my_pick] ? `<span class="pick-done">${DAS.icon('check')} ${DAS.t('تسجل اختيارك')} — <b data-i18n-raw>${DAS.esc(opts[c.my_pick])}</b></span>` : `<span class="pick-hint">${DAS.t('دوس على اختيارك')}</span>`}</div>` : ''}
-            ${c.button_url ? `<a class="btn btn-primary btn-sm c-btn" href="${DAS.esc(c.button_url)}" target="_blank" rel="noopener" data-i18n-raw>${DAS.esc(c.button_text || DAS.t('فتح'))} ${DAS.icon('arrow')}</a>` : ''}
+            ${c.button_url ? `<a class="btn btn-primary btn-sm c-btn" href="${DAS.esc(c.button_url)}" target="_blank" rel="noopener" data-i18n-raw dir="auto">${DAS.esc(c.button_text || DAS.t('فتح'))} ${DAS.icon('arrow')}</a>` : ''}
           </div>`;
       }).join('');
     }
@@ -309,7 +309,7 @@
         btn.classList.add('sel');
         const opts = c ? cardChoiceLabels(c) : [];
         const st = document.querySelector(`[data-pick="${cardId}"]`);
-        if (st) st.innerHTML = `<span class="pick-done">${DAS.icon('check')} ${DAS.t('تسجل اختيارك')} — <b data-i18n-raw>${DAS.esc(opts[ch] || '')}</b></span>`;
+        if (st) st.innerHTML = `<span class="pick-done">${DAS.icon('check')} ${DAS.t('تسجل اختيارك')} — <b dir="auto">${DAS.esc(opts[ch] || '')}</b></span>`;
         DAS.toast(DAS.t('تسجل اختيارك'));
         DAS.confetti();
       } catch (e) {

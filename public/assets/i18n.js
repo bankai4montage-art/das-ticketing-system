@@ -356,6 +356,8 @@
     'مين يشوف الكارت؟': 'Who can see this card?',
     'كل المناديب': 'All couriers',
     'فرع معين (QCD 1 / QCD 2)': 'Specific branch (QCD 1 / QCD 2)',
+    'فرع معين + نوع الدوام': 'Specific branch + employment type',
+    'الفرع + نوع الدوام': 'Branch + employment type',
     'نوع الدوام (Full / Part time)': 'Employment type (Full / Part time)',
     'مناديب معينين بالكود': 'Specific couriers by code',
     'الفرع': 'Branch',

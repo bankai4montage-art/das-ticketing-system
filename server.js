@@ -399,6 +399,12 @@ app.get('/api/courier/cards/:das_code', async (req, res) => {
       if (c.audience === 'code') return String(c.audience_value || '').split(',').includes(code);
       if (c.audience === 'branch') return !!emp && emp.branch === c.audience_value;
       if (c.audience === 'type') return !!emp && emp.employment_type === c.audience_value;
+      if (c.audience === 'branch_type') {
+        // لازم الفرع ونوع الدوام يتطابقوا مع الروستر مع بعض
+        if (!emp) return false;
+        const parts = String(c.audience_value || '').split('|');
+        return emp.branch === parts[0] && emp.employment_type === parts[1];
+      }
       return false;
     });
 
@@ -632,7 +638,7 @@ app.delete('/api/admin/advances/:id', (req, res) => {
 });
 
 // ================= كروت صفحة المندوب (إعلانات بشروط) =================
-const CARD_AUDIENCES = ['all', 'branch', 'type', 'code'];
+const CARD_AUDIENCES = ['all', 'branch', 'type', 'branch_type', 'code'];
 
 // تدقيق بيانات الكارت من الأدمن — إنشاء أو تعديل في نفس القواعد
 function cardPayload(b) {
@@ -652,6 +658,14 @@ function cardPayload(b) {
     if (!['QCD 1', 'QCD 2'].includes(audienceValue)) return { error: 'الفرع لازم يكون QCD 1 أو QCD 2' };
   } else if (audience === 'type') {
     if (!['FT', 'PT'].includes(audienceValue)) return { error: 'نوع الدوام لازم يكون FT أو PT' };
+  } else if (audience === 'branch_type') {
+    // شرط مركب: فرع + نوع دوام مع بعض — بنخزنهم "QCD 1|FT"
+    const parts = audienceValue.split('|');
+    const br = String(parts[0] || '').trim().toUpperCase();
+    const ty = String(parts[1] || '').trim().toUpperCase();
+    if (!['QCD 1', 'QCD 2'].includes(br)) return { error: 'الفرع لازم يكون QCD 1 أو QCD 2' };
+    if (!['FT', 'PT'].includes(ty)) return { error: 'نوع الدوام لازم يكون FT أو PT' };
+    audienceValue = br + '|' + ty;
   } else if (audience === 'code') {
     const codes = [...new Set(audienceValue.split(/[,;\n]+/).map(s => s.trim().toUpperCase()).filter(Boolean))];
     if (!codes.length) return { error: 'اكتب كود مندوب واحد على الأقل' };

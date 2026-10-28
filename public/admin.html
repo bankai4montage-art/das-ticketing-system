@@ -264,15 +264,15 @@
         <span id="cardTemplateChips" style="display:flex;gap:6px;flex-wrap:wrap"></span>
       </div>
       <form id="cardForm" style="display:grid;gap:12px">
-        <input type="text" id="cardTitle" class="input" maxlength="120" placeholder="عنوان الكارت (مثال: ملاحظات التصريح)" required>
-        <textarea id="cardBody" class="textarea" rows="3" maxlength="800" placeholder="نص الكارت... (اختياري)"></textarea>
+        <input type="text" id="cardTitle" class="input" maxlength="120" placeholder="عنوان الكارت (مثال: ملاحظات التصريح)" required dir="auto">
+        <textarea id="cardBody" class="textarea" rows="3" maxlength="800" placeholder="نص الكارت... (اختياري)" dir="auto"></textarea>
         <div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
             <span style="font-size:12px;font-weight:700;color:var(--text-3)">زرار جاهز:</span>
             <span id="cardBtnChips" style="display:flex;gap:6px;flex-wrap:wrap"></span>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-            <input type="text" id="cardBtnText" class="input" maxlength="60" placeholder="نص الزرار (اختياري)">
+            <input type="text" id="cardBtnText" class="input" maxlength="60" placeholder="نص الزرار (اختياري)" dir="auto">
             <input type="text" id="cardBtnUrl" class="input" dir="ltr" placeholder="رابط الزرار (اختياري)">
           </div>
         </div>
@@ -291,6 +291,7 @@
               <option value="all" data-i18n="كل المناديب">كل المناديب</option>
               <option value="branch" data-i18n="فرع معين (QCD 1 / QCD 2)">فرع معين (QCD 1 / QCD 2)</option>
               <option value="type" data-i18n="نوع الدوام (Full / Part time)">نوع الدوام (Full / Part time)</option>
+              <option value="branch_type" data-i18n="فرع معين + نوع الدوام">فرع معين + نوع الدوام</option>
               <option value="code" data-i18n="مناديب معينين بالكود">مناديب معينين بالكود</option>
             </select>
           </div>
@@ -1151,6 +1152,10 @@
       if (c.audience === 'all') return 'كل المناديب';
       if (c.audience === 'branch') return 'فرع ' + DAS.esc(c.audience_value);
       if (c.audience === 'type') return c.audience_value === 'FT' ? 'دوام كامل' : 'دوام جزئي';
+      if (c.audience === 'branch_type') {
+        const parts = String(c.audience_value || '').split('|');
+        return 'فرع ' + DAS.esc(parts[0] || '?') + ' — ' + (parts[1] === 'PT' ? 'دوام جزئي' : 'دوام كامل');
+      }
       if (c.audience === 'code') {
         const n = String(c.audience_value || '').split(',').filter(Boolean).length;
         return 'أكواد محددة (' + n + ' كود)';
@@ -1181,10 +1186,10 @@
       const opts = Array.isArray(choices) ? choices : [];
       return `<div class="c-card ${opts.length ? 'interactive' : ''}" style="--i:0">
         <span class="c-badge">${DAS.icon('msg')} إعلان</span>
-        <b>${DAS.esc(title || 'عنوان الكارت')}</b>
-        ${body ? `<p>${DAS.esc(body)}</p>` : ''}
-        ${opts.length ? `<div class="c-opts">${opts.map(o => `<span class="pick-opt">${DAS.esc(o)}</span>`).join('')}</div><div class="pick-state"><span class="pick-hint">${DAS.t('دوس على اختيارك')}</span></div>` : ''}
-        ${btnUrl ? `<span class="btn btn-primary btn-sm c-btn">${DAS.esc(btnText || 'فتح')} ${DAS.icon('arrow')}</span>` : ''}
+        <b dir="auto">${DAS.esc(title || 'عنوان الكارت')}</b>
+        ${body ? `<p dir="auto">${DAS.esc(body)}</p>` : ''}
+        ${opts.length ? `<div class="c-opts">${opts.map(o => `<span class="pick-opt" dir="auto">${DAS.esc(o)}</span>`).join('')}</div><div class="pick-state"><span class="pick-hint">${DAS.t('دوس على اختيارك')}</span></div>` : ''}
+        ${btnUrl ? `<span class="btn btn-primary btn-sm c-btn" dir="auto">${DAS.esc(btnText || 'فتح')} ${DAS.icon('arrow')}</span>` : ''}
       </div>`;
     }
 
@@ -1249,7 +1254,7 @@
     function cardChoiceRowHTML() {
       return `<div class="choice-row">
         <span class="pos mono">▶</span>
-        <input type="text" class="input choice-input" maxlength="60" placeholder="نص الاختيار (اختياري)" oninput="updateCardPreview()">
+        <input type="text" class="input choice-input" maxlength="60" placeholder="نص الاختيار (اختياري)" dir="auto" oninput="updateCardPreview()">
         <button type="button" class="btn btn-ghost btn-sm choice-x" onclick="removeCardChoiceRow(this)" aria-label="${DAS.t('إغلاق')}">✕</button>
       </div>`;
     }
@@ -1300,7 +1305,7 @@
         <div class="picks-total">${DAS.icon('users')} <span>${t.total} ${t.total === 1 ? DAS.t('مندوب') : DAS.t('مناديب')} ${DAS.t('صوّتوا')}</span></div>
         ${t.options.length ? `<div class="picks-grid">${t.options.map(o => `
           <div class="pick-opt-res">
-            <div class="por-head"><b data-i18n-raw>${DAS.esc(o.label)}</b><span class="badge ${o.count ? 'info' : ''}">${o.count}</span></div>
+            <div class="por-head"><b data-i18n-raw dir="auto">${DAS.esc(o.label)}</b><span class="badge ${o.count ? 'info' : ''}">${o.count}</span></div>
             ${o.who.length ? `<div class="por-who">${o.who.map(w => `<span class="who-pill mono" title="${DAS.esc(w.name || '')}">${DAS.esc(w.das_code)}${w.name ? ' · ' + DAS.esc(w.name) : ''}</span>`).join('')}</div>` : `<div class="por-none">${DAS.t('لسه مفيش حدا اختارها')}</div>`}
           </div>`).join('')}</div>` : `<div class="por-none">${DAS.t('لسه مفيش أصوات')}</div>`}`;
     }
@@ -1312,8 +1317,8 @@
         <div class="card-item ${c.active ? '' : 'off'}" draggable="true" data-id="${c.id}" data-idx="${i}" style="--i:${Math.min(i, 12)};${i < 12 ? '' : 'animation:none'}">
           <span class="grip" title="${DAS.t('اسحب الكارت من أي مكان وارميه مكانه عشان تترتيب طريقة ظهورهم للمندوب')}">⠿</span>
           <div class="ci-main">
-            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span class="pos mono">#${i + 1}</span> <b data-i18n-raw>${DAS.esc(c.title)}</b>${cardChoiceLabels(c).length ? `<span class="badge info">${DAS.icon('users')} ${DAS.t('تفاعلي')}</span>` : ''}</div>
-            ${c.body ? `<div class="desc-cell" style="font-size:12px;color:var(--text-2);white-space:pre-line" data-i18n-raw>${DAS.esc(c.body)}</div>` : ''}
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span class="pos mono">#${i + 1}</span> <b data-i18n-raw dir="auto">${DAS.esc(c.title)}</b>${cardChoiceLabels(c).length ? `<span class="badge info">${DAS.icon('users')} ${DAS.t('تفاعلي')}</span>` : ''}</div>
+            ${c.body ? `<div class="desc-cell" style="font-size:12px;color:var(--text-2);white-space:pre-line" data-i18n-raw dir="auto">${DAS.esc(c.body)}</div>` : ''}
             ${c.button_url ? `<div style="font-size:12px;color:var(--accent);display:flex;align-items:center;gap:5px">${DAS.icon('msg')} ${DAS.esc(c.button_text || DAS.t('فتح'))} — ${DAS.esc(c.button_url)}</div>` : ''}
             ${cardChoiceLabels(c).length ? `
               <div class="picks-line">
@@ -1385,19 +1390,42 @@
     function renderCardAudienceValue(sel) {
       const a = $('cardAudience').value;
       const wrap = $('cardAudienceValueWrap');
+      // كل اتجاهات المحرر بتستخدم input مخفي موحد بيمثل القيمة النهائية
+      const base = `<input type="hidden" id="cardAudienceValue">`;
       if (a === 'branch') {
-        wrap.innerHTML = `<label>الفرع</label><select id="cardAudienceValue" class="input"><option value="QCD 1">QCD 1</option><option value="QCD 2">QCD 2</option></select>`;
+        wrap.innerHTML = `${base}<label data-i18n="الفرع">الفرع</label><select id="cardAudBranch" class="input" onchange="syncCardAudienceValue()"><option value="QCD 1">QCD 1</option><option value="QCD 2">QCD 2</option></select>`;
       } else if (a === 'type') {
-        wrap.innerHTML = `<label>نوع الدوام</label><select id="cardAudienceValue" class="input"><option value="FT">دوام كامل (Full time)</option><option value="PT">دوام جزئي (Part time)</option></select>`;
+        wrap.innerHTML = `${base}<label data-i18n="نوع الدوام">نوع الدوام</label><select id="cardAudType" class="input" onchange="syncCardAudienceValue()"><option value="FT" data-i18n="دوام كامل">دوام كامل</option><option value="PT" data-i18n="دوام جزئي">دوام جزئي</option></select>`;
+      } else if (a === 'branch_type') {
+        wrap.innerHTML = `${base}<label data-i18n="الفرع + نوع الدوام">الفرع + نوع الدوام</label><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><select id="cardAudBranch" class="input" onchange="syncCardAudienceValue()"><option value="QCD 1">QCD 1</option><option value="QCD 2">QCD 2</option></select><select id="cardAudType" class="input" onchange="syncCardAudienceValue()"><option value="FT" data-i18n="دوام كامل">دوام كامل</option><option value="PT" data-i18n="دوام جزئي">دوام جزئي</option></select></div>`;
       } else if (a === 'code') {
-        wrap.innerHTML = `<label>أكواد المناديب (فاصلة بينهم)</label><input type="text" id="cardAudienceValue" class="input mono" style="text-transform:uppercase" placeholder="DAS-105, DAS-120">`;
+        wrap.innerHTML = `${base}<label data-i18n="أكواد المناديب (فاصلة بينهم)">أكواد المناديب (فاصلة بينهم)</label><input type="text" id="cardAudCodes" class="input mono" style="text-transform:uppercase" placeholder="DAS-105, DAS-120" oninput="syncCardAudienceValue()">`;
       } else {
-        wrap.innerHTML = '<label>&nbsp;</label><div style="font-size:13px;color:var(--text-3);padding:10px 0">هيظهر لكل المناديب المسجلين من غير شرط إضافي</div>';
+        wrap.innerHTML = `${base}<label>&nbsp;</label><div style="font-size:13px;color:var(--text-3);padding:10px 0" data-i18n="هيظهر لكل المناديب المسجلين من غير شرط إضافي">هيظهر لكل المناديب المسجلين من غير شرط إضافي</div>`;
       }
-      if (sel != null) {
-        const el = $('cardAudienceValue');
-        if (el) el.value = sel;
-      }
+      // تعبئة القيم القديمة (branch_type محفوظ كـ "QCD 1|FT")
+      const el = $('cardAudienceValue');
+      if (el && sel != null) el.value = sel;
+      const parts = String(sel || '').split('|');
+      const br = $('cardAudBranch'); const ty = $('cardAudType');
+      if (br) br.value = parts[0] || 'QCD 1';
+      if (ty) ty.value = parts[1] || (a === 'branch_type' ? 'FT' : (a === 'type' ? (parts[0] || 'FT') : ''));
+      syncCardAudienceValue();
+    }
+
+    // مزامنة القيمة المخفية — branch_type بتتخزن "QCD 1|FT"
+    function syncCardAudienceValue() {
+      const a = $('cardAudience').value;
+      const hid = $('cardAudienceValue');
+      if (!hid) return;
+      const br = ($('cardAudBranch') || {}).value || '';
+      const ty = ($('cardAudType') || {}).value || '';
+      if (a === 'branch') hid.value = br;
+      else if (a === 'type') hid.value = ty;
+      else if (a === 'branch_type') hid.value = br + '|' + ty;
+      else if (a !== 'code') hid.value = '';
+      const codes = $('cardAudCodes');
+      if (codes) hid.value = codes.value;
     }
 
     function openCardModalEmpty() {
