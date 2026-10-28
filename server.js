@@ -574,6 +574,7 @@ app.post('/api/push/unsubscribe', (req, res) => {
 // بس قسم الحضور في بروفايل المندوب هياخد "الروستر مش مربوط".
 // السيرفر هنا وسيط بس: التوكن بيفضل جواه ومفيش أي باسورد بيروح للمتصفح.
 const ROSTER_URL = (process.env.ROSTER_URL || '').replace(/\/+$/, '');
+const ROSTER_URL_FULL = ROSTER_URL ? (ROSTER_URL.startsWith('http') ? ROSTER_URL : 'https://' + ROSTER_URL) : '';
 const ROSTER_ADMIN_PASSWORD = process.env.ROSTER_ADMIN_PASSWORD || '';
 const rosterState = { connected: false, rev: 0, employees: 0 };
 
@@ -583,12 +584,12 @@ let rosterEmployeesCache = null;
 let rosterEmployeesAt = 0;
 
 function rosterConfigured() {
-  return !!ROSTER_URL && !!ROSTER_ADMIN_PASSWORD;
+  return !!ROSTER_URL_FULL && !!ROSTER_ADMIN_PASSWORD;
 }
 
 async function rosterLogin(retried = false) {
   rosterLoginAt = Date.now();
-  const res = await fetch(ROSTER_URL + '/api/login', {
+  const res = await fetch(ROSTER_URL_FULL + '/api/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ password: ROSTER_ADMIN_PASSWORD })
@@ -606,7 +607,7 @@ async function rosterLogin(retried = false) {
 }
 
 async function rosterFetch(path, opts = {}) {
-  const res = await fetch(ROSTER_URL + path, {
+  const res = await fetch(ROSTER_URL_FULL + path, {
     ...opts,
     headers: { Authorization: 'Bearer ' + rosterToken, ...(opts.headers || {}) }
   });
@@ -617,17 +618,18 @@ async function rosterFetch(path, opts = {}) {
   return res;
 }
 
-// حلقة لايف: long-poll على أمثال الروستر — أي تسجيل حضور في أي تاب بيجي هنا فورًا
+// حلقة لايف: long-poll على أحداث الروستر — أي تسجيل حضور في أي تاب بيجي هنا فورًا
 // وبيزوّد rev، وواجهة الأدمن بتقارن rev كل 4 ثواني فبتحدّث قسم الحضور نفسها.
 async function rosterLiveLoop() {
   if (!rosterConfigured()) {
     console.warn('[DAS] ROSTER_URL/ROSTER_ADMIN_PASSWORD not set — roster bridge disabled');
     return;
   }
+  console.log('[DAS] Roster bridge starting — target:', ROSTER_URL_FULL);
   let since = 0;
   for (;;) {
     try {
-      const res = await fetch(ROSTER_URL + `/api/events?since=${since}&wait=28`, { headers: { Authorization: 'Bearer ' + rosterToken } });
+      const res = await fetch(ROSTER_URL_FULL + `/api/events?since=${since}&wait=28`, { headers: { Authorization: 'Bearer ' + rosterToken } });
       if (res.status === 401) { await rosterLogin(); continue; }
       const data = await res.json().catch(() => null);
       if (!data) throw new Error('bad payload');
@@ -638,6 +640,7 @@ async function rosterLiveLoop() {
       await new Promise((r) => setTimeout(r, 400)); // نبضة خفيفة قبل الجولة اللي جاية
     } catch (e) {
       rosterState.connected = false;
+      console.error('[DAS] Roster long-poll error:', e.message);
       await new Promise((r) => setTimeout(r, 5000));
       // إعادة تسجيل الدخول مرة كل دقيقة بالكتير — الروستر بيقفل الـIP لو المحاولات كترت
       if (Date.now() - rosterLoginAt > 60e3) {
