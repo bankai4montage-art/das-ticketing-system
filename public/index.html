@@ -21,7 +21,7 @@
     <!-- ============ تسجيل الدخول ============ -->
     <div id="loginScreen" class="center-wrap">
       <div class="glass login-card rise">
-        <div class="logo">DAS</div>
+        <img class="rawa7el-logo" src="assets/rawa7el-logo.svg" alt="Rawa7el powered by Bankai" />
         <h1>بوابة دعم المناديب</h1>
         <p class="sub">سجّل دخولك بكود الـ DAS الخاص بك</p>
 
@@ -46,6 +46,7 @@
           <div class="code mono" id="courierCodeBadge">—</div>
           <div class="name" id="courierName">—</div>
         </div>
+        <span class="rawa7el-badge" title="Rawa7el powered by Bankai"><span class="dot"></span>Rawa7el</span>
         <div class="actions">
           <button class="btn btn-ghost btn-sm push-btn hidden" id="pushBtn" onclick="togglePush()" aria-label="الإشعارات" title="الإشعارات">
             <span class="ico-slot" id="pushIcoSlot"></span> <span id="pushLabel">تفعيل الإشعارات</span>
@@ -621,14 +622,15 @@
         const catCls = t.category === 'الشيفت' ? 'shift' : 'pay';
         const anim = (animate || changed.has(t.id)) ? '' : 'animation:none';
         return `
-        <article class="ticket s-${s.cls} ${changed.has(t.id) ? 'flash' : ''}" style="--i:${animate ? i : 0};${anim}">
-          <div class="ticket-top">
-            <div class="l">
-              <span class="tag ${catCls}">${DAS.esc(t.category)}</span>
-              <span class="sub">${DAS.esc(t.sub_type)}</span>
+<article class="ticket s-${s.cls} ${changed.has(t.id) ? 'flash' : ''}" style="--i:${animate ? i : 0};${anim}">
+            <div class="ticket-top">
+              <div class="l">
+                <span class="rawa7el-badge" style="font-size:10px;padding:3px 8px"><span class="dot"></span>Rawa7el</span>
+                <span class="tag ${catCls}">${DAS.esc(t.category)}</span>
+                <span class="sub">${DAS.esc(t.sub_type)}</span>
+              </div>
+              ${badge(t.status)}
             </div>
-            ${badge(t.status)}
-          </div>
           <p class="desc">${DAS.esc(t.description)}</p>
           ${t.admin_note ? `
             <div class="reply">
