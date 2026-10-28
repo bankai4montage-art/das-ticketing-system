@@ -693,7 +693,10 @@ app.get('/api/admin/roster-attendance/:dasCode', async (req, res) => {
     const r = await rosterFetch(path);
     if (!r.ok) return res.status(502).json({ error: 'الروستر رد بخطأ (' + r.status + ') — جرب تاني' });
     const data = await r.json();
+    // الفرع ونوع التوظيف (FT/PT) — من بيانات الموظف في تقرير الروستر، وباكر داتا الكاش للنيوبة
     res.json({ found: true, matched_by: matchedBy, roster: rosterState,
+      branch: (data.employee && data.employee.branch) || emp.branch || '',
+      employment_type: (data.employee && data.employee.employment_type) || emp.employment_type || '',
       employee: data.employee, stats: data.stats, records: data.records, weeks: data.weeks || [] });
   } catch (e) {
     rosterState.connected = false;

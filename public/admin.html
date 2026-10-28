@@ -927,6 +927,11 @@
           return;
         }
         profAtt.weeks = (data.weeks || []).map(w => w.start);
+        // الفرع ونوع التوظيف من الروستر — QCD 1 / QCD 2 و Full time / Part time
+        const empBranch = String(data.branch || (data.employee && data.employee.branch) || '').trim();
+        const empTypeRaw = String(data.employment_type || (data.employee && data.employee.employment_type) || '').trim().toUpperCase();
+        const empTypeLabel = empTypeRaw === 'FT' ? ((DAS.lang === 'en') ? 'Full time' : 'دوام كامل')
+          : empTypeRaw === 'PT' ? ((DAS.lang === 'en') ? 'Part time' : 'دوام جزئي') : '';
         const s = data.stats || {}, t = s.fine_total || 0;
         const statusCls = ST => (ATT_STATUS[ST] || ATT_STATUS.none)[1];
         const statusName = STn => (ATT_STATUS[STn] || ATT_STATUS.none)[0];
@@ -938,6 +943,8 @@
         box.innerHTML = `
           <div class="row" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
             <span id="profAttLive" class="badge ${data.roster.connected ? 'ok' : 'bad'}"><span class="dot"></span>${data.roster.connected ? 'لايف — متصل بالروستر' : 'غير متصل بالروستر'}</span>
+            ${empBranch ? `<span class="badge info">${DAS.esc(empBranch)}</span>` : ''}
+            ${empTypeLabel ? `<span class="badge ${empTypeRaw === 'FT' ? 'ok' : 'warn'}">${DAS.esc(empTypeLabel)}</span>` : ''}
             <select id="profAttWeek" class="input" style="max-width:280px" onchange="setProfAttWeek(this.value)">${weekOptions()}</select>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
