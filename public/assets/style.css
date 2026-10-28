@@ -626,3 +626,12 @@ html.scrolling .orb, html.scrolling .bg-fx::before { animation-play-state: pause
 .upload-row { display: flex; align-items: center; gap: 10px; }
 .file-name { font-size: 12px; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
 input[type="file"].visually-hidden { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+
+/* ===== وضع الإنجليزي (LTR) — الأيقونات والجداول بتتحول للشمال ===== */
+[dir="ltr"] .input-icon .ico { right: auto; left: 14px; }
+[dir="ltr"] .input-icon .input { padding-right: 14px; padding-left: 44px; }
+[dir="ltr"] .search .ico { right: auto; left: 14px; }
+[dir="ltr"] .search .input { padding-right: 14px; padding-left: 42px; }
+[dir="ltr"] .tbl thead th { text-align: left; }
+[dir="ltr"] .kpi { text-align: left; }
+[dir="ltr"] .dd-item { text-align: left; }

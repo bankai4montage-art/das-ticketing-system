@@ -11,6 +11,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&family=JetBrains+Mono:wght@600;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/assets/style.css">
   <script src="/assets/common.js"></script>
+  <script src="/assets/i18n.js"></script>
 </head>
 <body>
 
@@ -467,7 +468,7 @@
           ? `<span class="seen-flag ok" title="المندوب فتح الشكوى بعد آخر رد">${DAS.icon('check')} شافها</span>`
           : `<span class="seen-flag wait" title="الرد لسه وصلش للمندوب">${DAS.icon('clock')} مش شافها</span>`);
         const noteCell = archiveMode
-          ? `<span style="font-size:13px;color:var(--text-2)">${DAS.esc(t.admin_note || '—')}</span>`
+          ? `<span style="font-size:13px;color:var(--text-2)" data-i18n-raw>${DAS.esc(t.admin_note || '—')}</span>`
           : `<div class="note-wrap"><input type="text" id="note-${t.id}" class="input note-input" value="${DAS.esc(t.admin_note || '')}" placeholder="اكتب رد للمندوب..."
               onchange="updateTicket(${t.id})" onkeydown="if(event.key==='Enter')this.blur()">${seenFlag}</div>`;
         return `
@@ -489,11 +490,11 @@
             <div style="font-size:13px;color:var(--text-2);margin-top:6px">${DAS.esc(t.sub_type)}</div>
             <div class="meta">بتاريخ: ${DAS.esc(t.issue_date)}</div>
           </td>
-          <td data-label="الشكوى" class="desc-cell">${DAS.esc(t.description)}</td>
+          <td data-label="الشكوى" class="desc-cell" data-i18n-raw>${DAS.esc(t.description)}</td>
           <td data-label="ملاحظة للمندوب">${noteCell}</td>
           <td data-label="الحالة">${statusCell}</td>
           <td data-label="التقييم">${t.rating != null
-            ? `<span class="stars-inline" title="${DAS.esc(t.rating_note || '')}">${DAS.icon('star')} ${t.rating}/5</span>`
+            ? `<span class="stars-inline" data-i18n-raw title="${DAS.esc(t.rating_note || '')}">${DAS.icon('star')} ${t.rating}/5</span>`
             : '<span style="color:var(--text-3)">—</span>'}</td>
         </tr>`;
       }).join('');
@@ -559,10 +560,10 @@
         const mp = !start || (created && created >= start);
         const mq = !q || t.das_code.toLowerCase().includes(q) || t.courier_name.toLowerCase().includes(q);
         return mc && ms && mp && mq;
-      }).map(t => [t.id, t.das_code, t.courier_name, t.category, t.sub_type, t.issue_date, t.status, t.admin_note || '', t.rating != null ? t.rating + '/5' : '', t.rating_note || '', t.description, DAS.fmtDateTime(t.created_at)]);
+      }).map(t => [t.id, t.das_code, t.courier_name, DAS.t(t.category), DAS.t(t.sub_type), t.issue_date, DAS.t(t.status), t.admin_note || '', t.rating != null ? t.rating + '/5' : '', t.rating_note || '', t.description, DAS.fmtDateTime(t.created_at)]);
       if (!rows.length) { DAS.toast('مفيش شكاوى للتصدير بالفلاتر الحالية', 'err'); return; }
       DAS.downloadCsv(`das-tickets-${new Date().toISOString().slice(0, 10)}.csv`, [
-        ['#', 'الكود', 'الاسم', 'القسم', 'النوع', 'تاريخ المشكلة', 'الحالة', 'ملاحظة الإدارة', 'التقييم', 'تعليق التقييم', 'نص الشكوى', 'وقت التسجيل'],
+        ['#', 'الكود', 'الاسم', 'القسم', 'النوع', 'تاريخ المشكلة', 'الحالة', 'ملاحظة الإدارة', 'التقييم', 'تعليق التقييم', 'نص الشكوى', 'وقت التسجيل'].map(DAS.t),
         ...rows
       ]);
       DAS.toast('تم تنزيل ملف الشكاوى');
@@ -589,7 +590,7 @@
     }
 
     async function deleteTicket(id) {
-      if (!confirm('متأكد من مسح الشكوى دي نهائياً؟')) return;
+      if (!confirm(DAS.t('متأكد من مسح الشكوى دي نهائياً؟'))) return;
       try {
         const res = await adminFetch(`/api/admin/tickets/${id}`, { method: 'DELETE' });
         if (!res.ok) throw new Error();
@@ -830,7 +831,7 @@
           <div class="mini-stat ok"><b>${resolved}</b><span>اتحلت</span></div>
           <div class="mini-stat warn"><b>${review}</b><span>تحت المراجعة</span></div>
           <div class="mini-stat bad"><b>${office}</b><span>لازم تيجي المكتب</span></div>
-          <div class="mini-stat"><b style="color:var(--warn)">${avg ? avg + '★' : '—'}</b><span>متوسط الرضا (${rated.length} تقييم)</span></div>
+          <div class="mini-stat"><b style="color:var(--warn)">${avg ? avg + '★' : '—'}</b><span>متوسط الرضا (${rated.length} ${rated.length === 1 ? 'تقييم' : 'تقييمات'})</span></div>
           <div class="mini-stat bad"><b>${weak}</b><span>تقييمات ضعيفة (★2-)</span></div>
           <div class="mini-stat"><b>${advs.length}</b><span>عدد السلف</span></div>
           <div class="mini-stat"><b>${advTotal}</b><span>إجمالي السلف (ج)</span></div>
@@ -850,7 +851,7 @@
           <td class="mono" style="color:var(--text-3);font-size:12px">#${t.id}</td>
           <td data-label="القسم"><span class="tag ${t.category === 'الشيفت' ? 'shift' : 'pay'}">${DAS.esc(t.category)}</span> <span style="font-size:12px;color:var(--text-2)">${DAS.esc(t.sub_type)}</span>${t.archived ? ' <span class="tag adv">مؤرشفة</span>' : ''}</td>
           <td data-label="الحالة"><span class="badge ${STATUS_CLS[t.status] || 'warn'}"><span class="dot"></span>${DAS.esc(t.status)}</span></td>
-          <td data-label="التقييم">${t.rating != null ? `<span class="stars-inline" title="${DAS.esc(t.rating_note || '')}">${DAS.icon('star')} ${t.rating}/5</span>` : '<span style="color:var(--text-3)">—</span>'}</td>
+          <td data-label="التقييم">${t.rating != null ? `<span class="stars-inline" data-i18n-raw title="${DAS.esc(t.rating_note || '')}">${DAS.icon('star')} ${t.rating}/5</span>` : '<span style="color:var(--text-3)">—</span>'}</td>
           <td data-label="وقت التسجيل" style="font-size:12px;color:var(--text-2)">${DAS.fmtDateTime(t.created_at)}</td>
         </tr>`).join('');
       return `
@@ -867,7 +868,7 @@
         <tr style="--i:${Math.min(i, 12)};${i < 12 ? '' : 'animation:none'}">
           <td class="mono" style="color:var(--text-3);font-size:12px">#${a.id}</td>
           <td data-label="المبلغ"><span class="amt">${DAS.esc(a.amount)} ج</span></td>
-          <td data-label="السبب" class="desc-cell">${DAS.esc(a.reason)}<div class="meta">${DAS.fmtDateTime(a.created_at)}</div></td>
+          <td data-label="السبب" class="desc-cell"><span data-i18n-raw>${DAS.esc(a.reason)}</span><div class="meta">${DAS.fmtDateTime(a.created_at)}</div></td>
           <td data-label="الحالة"><span class="badge ${ADV_CLS[a.status] || 'warn'}"><span class="dot"></span>${DAS.esc(a.status)}</span></td>
         </tr>`).join('');
       return `
@@ -893,7 +894,10 @@
       const ye = +rAddDays(ws, 6).slice(0, 4), first = rWeekStart(`${ye}-01-01`);
       return Math.round((new Date(ws + 'T00:00:00') - new Date(first + 'T00:00:00')) / 864e5 / 7) + 1;
     };
-    const rRangeLabel = (ws) => `${new Date(ws + 'T00:00:00').toLocaleDateString('ar-EG-u-nu-latn', { day: 'numeric', month: 'short' })} – ${new Date(rAddDays(ws, 6) + 'T00:00:00').toLocaleDateString('ar-EG-u-nu-latn', { day: 'numeric', month: 'short', year: 'numeric' })}`;
+    // التواريخ بتتبع لغة العرض (عربي/إنجليزي) — مع أرقام لاتينية زي الأول
+    const rLocale = () => (window.DAS && DAS.lang === 'en') ? 'en-EG-u-nu-latn' : 'ar-EG-u-nu-latn';
+    const rRangeLabel = (ws) => `${new Date(ws + 'T00:00:00').toLocaleDateString(rLocale(), { day: 'numeric', month: 'short' })} – ${new Date(rAddDays(ws, 6) + 'T00:00:00').toLocaleDateString(rLocale(), { day: 'numeric', month: 'short', year: 'numeric' })}`;
+    const rWeekLabel = (ws) => `${(window.DAS && DAS.lang === 'en') ? 'Week' : 'الأسبوع'} ${rWeekNo(ws)} · ${rRangeLabel(ws)}`;
 
     const ATT_STATUS = { Present: ['حاضر', 'ok'], Late: ['متأخر', 'warn'], Absent: ['غائب', 'bad'], Excused: ['بعذر', 'info'], none: ['لم يُسجل', 'warn'] };
 
@@ -929,7 +933,7 @@
         const weekOptions = () => {
           const cur = rWeekStart(rISO(new Date())), starts = profAtt.weeks.slice();
           if (!starts.includes(cur)) starts.unshift(cur);
-          return starts.map(ws => `<option value="${ws}"${ws === profAtt.week ? ' selected' : ''}>Week ${rWeekNo(ws)} · ${rRangeLabel(ws)}</option>`).join('');
+          return starts.map(ws => `<option value="${ws}"${ws === profAtt.week ? ' selected' : ''}>${rWeekLabel(ws)}</option>`).join('');
         };
         box.innerHTML = `
           <div class="row" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
@@ -950,10 +954,10 @@
               <thead><tr><th>اليوم</th><th>الحالة</th><th>السبب</th><th>ملاحظة</th></tr></thead>
               <tbody>${data.records.map(a => `
                 <tr>
-                  <td data-label="اليوم">${(new Date(a.attendance_date + 'T00:00:00').toLocaleDateString('ar-EG-u-nu-latn', { weekday: 'long' }))} ${new Date(a.attendance_date + 'T00:00:00').toLocaleDateString('ar-EG-u-nu-latn', { day: 'numeric', month: 'short' })}</td>
+                  <td data-label="اليوم">${(new Date(a.attendance_date + 'T00:00:00').toLocaleDateString(rLocale(), { weekday: 'long' }))} ${new Date(a.attendance_date + 'T00:00:00').toLocaleDateString(rLocale(), { day: 'numeric', month: 'short' })}</td>
                   <td data-label="الحالة"><span class="badge ${statusCls(a.status)}"><span class="dot"></span>${statusName(a.status)}</span></td>
-                  <td data-label="السبب" class="desc-cell">${DAS.esc(a.reason || '—')}</td>
-                  <td data-label="ملاحظة" class="desc-cell">${DAS.esc(a.note || '—')}</td>
+                  <td data-label="السبب" class="desc-cell" data-i18n-raw>${DAS.esc(a.reason || '—')}</td>
+                  <td data-label="ملاحظة" class="desc-cell" data-i18n-raw>${DAS.esc(a.note || '—')}</td>
                 </tr>`).join('')}
               </tbody>
             </table>
@@ -1037,10 +1041,10 @@
       if (!key || !couriers.length) { DAS.toast('مفيش داتا للتصدير', 'err'); return; }
       const total = couriers.reduce((t, c) => ({ count: t.count + c.count, paid: t.paid + c.paid, pending: t.pending + c.pending, rejected: t.rejected + c.rejected }), { count: 0, paid: 0, pending: 0, rejected: 0 });
       DAS.downloadCsv(`das-advances-report-${key}.csv`, [
-        [`التقرير الشهري للسلف — ${DAS.fmtMonthLabel(key)}`],
-        ['الكود', 'الاسم', 'عدد السلف', 'مصروف (ج)', 'قيد المراجعة (ج)', 'مرفوض (ج)'],
+        [`${DAS.t('التقرير الشهري للسلف')} — ${DAS.fmtMonthLabel(key)}`],
+        ['الكود', 'الاسم', 'عدد السلف', 'مصروف (ج)', 'قيد المراجعة (ج)', 'مرفوض (ج)'].map(DAS.t),
         ...couriers.map(c => [c.das_code, c.name, c.count, c.paid, c.pending, c.rejected]),
-        ['الإجمالي', '', total.count, total.paid, total.pending, total.rejected]
+        [DAS.t('الإجمالي'), '', total.count, total.paid, total.pending, total.rejected]
       ]);
       DAS.toast('تم تنزيل التقرير');
     }
@@ -1103,7 +1107,7 @@
       const pending = allAdvances.filter(a => a.status === 'قيد المراجعة');
       const paid = allAdvances.filter(a => a.status === 'تمت الصرف');
       const sum = (arr) => arr.reduce((t, a) => t + (Number(a.amount) || 0), 0);
-      $('advSummary').textContent = `${allAdvances.length} سلفة — قيد المراجعة: ${pending.length} (${sum(pending)} ج) — مصروفة: ${paid.length} (${sum(paid)} ج)`;
+      $('advSummary').textContent = `${allAdvances.length} ${allAdvances.length === 1 ? 'سلفة' : 'سلف'} — قيد المراجعة: ${pending.length} (${sum(pending)} ج) — مصروفة: ${paid.length} (${sum(paid)} ج)`;
 
       const list = advSearchList();
       const tbody = $('advTableBody');
@@ -1139,7 +1143,7 @@
             </div>
           </td>
           <td data-label="المبلغ"><span class="amt">${DAS.esc(a.amount)} ج</span></td>
-          <td data-label="السبب" class="desc-cell">${DAS.esc(a.reason)}<div class="meta">${DAS.fmtDateTime(a.created_at)}</div></td>
+          <td data-label="السبب" class="desc-cell"><span data-i18n-raw>${DAS.esc(a.reason)}</span><div class="meta">${DAS.fmtDateTime(a.created_at)}</div></td>
           <td data-label="المحفظة" class="mono">${DAS.esc(a.wallet || '—')}</td>
           <td data-label="الحالة">
             ${DAS.ddHtml(`dd-advstatus-${a.id}`, a.status, ADV_OPTS, ADV_CLS)}
@@ -1158,14 +1162,14 @@
       const list = advSearchList();
       if (!list.length) { DAS.toast('مفيش سلف للتصدير', 'err'); return; }
       DAS.downloadCsv(`das-advances-${new Date().toISOString().slice(0, 10)}.csv`, [
-        ['#', 'الكود', 'الاسم', 'المبلغ (ج)', 'السبب', 'المحفظة', 'الحالة', 'ملاحظة الإدارة', 'التاريخ'],
-        ...list.map(a => [a.id, a.das_code, a.courier_name, a.amount, a.reason, a.wallet || '', a.status, a.admin_note || '', DAS.fmtDateTime(a.created_at)])
+        ['#', 'الكود', 'الاسم', 'المبلغ (ج)', 'السبب', 'المحفظة', 'الحالة', 'ملاحظة الإدارة', 'التاريخ'].map(DAS.t),
+        ...list.map(a => [a.id, a.das_code, a.courier_name, a.amount, a.reason, a.wallet || '', DAS.t(a.status), a.admin_note || '', DAS.fmtDateTime(a.created_at)])
       ]);
       DAS.toast('تم تنزيل ملف السلف');
     }
 
     async function deleteAdvance(id) {
-      if (!confirm('متأكد من مسح السلفة دي نهائياً؟')) return;
+      if (!confirm(DAS.t('متأكد من مسح السلفة دي نهائياً؟'))) return;
       try {
         const res = await adminFetch(`/api/admin/advances/${id}`, { method: 'DELETE' });
         if (!res.ok) throw new Error();
@@ -1231,6 +1235,15 @@
       } catch (err) {
         errEl.textContent = 'تعذر الاتصال بالسيرفر';
       } finally { DAS.busy(btn, false); }
+    });
+    // تغيير اللغة: بنعيد رندر الجداول والتقرير والبروفايل بلغة العرض الجديدة
+    document.addEventListener('das:lang', () => {
+      renderTickets();
+      renderAdvances();
+      loadCouriers();
+      buildReportMonths();
+      if ($('reportModal').classList.contains('open')) renderReport();
+      if ($('profileModal').classList.contains('open') && profileCode) openProfile(profileCode);
     });
   </script>
 </body>

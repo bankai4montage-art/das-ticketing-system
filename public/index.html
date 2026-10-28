@@ -11,6 +11,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&family=JetBrains+Mono:wght@600;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/assets/style.css">
   <script src="/assets/common.js"></script>
+  <script src="/assets/i18n.js"></script>
 </head>
 <body>
 
@@ -27,7 +28,7 @@
 
         <form id="loginForm" autocomplete="off">
           <div class="field">
-            <input type="text" id="dasInput" class="input code-input" required placeholder="ادخل كود المندوب" autocapitalize="characters" spellcheck="false" aria-label="كود المندوب">
+            <input type="text" id="dasInput" class="input code-input" required placeholder="ادخل كود المندوب" data-i18n-placeholder="ادخل كود المندوب" autocapitalize="characters" spellcheck="false" aria-label="كود المندوب" data-i18n-aria="كود المندوب">
           </div>
           <p id="loginError" class="err-text" role="alert"></p>
           <button type="submit" class="btn btn-primary" style="width:100%" id="loginBtn">
@@ -48,14 +49,14 @@
         </div>
         <span class="rawahel-badge" title="Rawa7el powered by Bankai"><span class="dot"></span>Rawa7el</span>
         <div class="actions">
-          <button class="btn btn-ghost btn-sm push-btn hidden" id="pushBtn" onclick="togglePush()" aria-label="الإشعارات" title="الإشعارات">
+          <button class="btn btn-ghost btn-sm push-btn hidden" id="pushBtn" onclick="togglePush()" aria-label="الإشعارات" data-i18n-aria="الإشعارات" title="الإشعارات" data-i18n-title="الإشعارات">
             <span class="ico-slot" id="pushIcoSlot"></span> <span id="pushLabel" data-i18n="تفعيل الإشعارات">تفعيل الإشعارات</span>
           </button>
-          <button class="btn btn-ghost btn-icon theme-toggle" onclick="DAS.toggleTheme()" aria-label="تغيير المظهر">
+          <button class="btn btn-ghost btn-icon theme-toggle" onclick="DAS.toggleTheme()" aria-label="تغيير المظهر" data-i18n-aria="تغيير المظهر">
             <svg class="ico moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
             <svg class="ico sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
           </button>
-          <button class="btn btn-ghost btn-icon lang-btn" onclick="DAS.toggleLang()" aria-label="تغيير اللغة" title="English / عربي">
+          <button class="btn btn-ghost btn-icon lang-btn" onclick="DAS.toggleLang()" aria-label="تغيير اللغة" data-i18n-aria="تغيير اللغة" title="English / عربي">
             <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 0 20"/><path d="M12 2a15.3 15.3 0 0 0 0 20"/></svg>
           </button>
           <button class="btn btn-ghost btn-icon" onclick="logout()" aria-label="خروج" title="خروج" data-i18n-aria="خروج"><i data-ico="logout"></i></button>
@@ -473,7 +474,7 @@
       }
     });
 
-    async function loadMyAdvances() {
+    async function loadMyAdvances(force) {
       if (!currentCourier) return;
       let data;
       try {
@@ -484,7 +485,7 @@
 
       const advances = data.advances || [];
       const sig = JSON.stringify(advances.map(a => [a.id, a.status, a.admin_note]));
-      if (sig === advSig) return;
+      if (!force && sig === advSig) return;
       advSig = sig;
 
       const changed = new Set();
@@ -522,12 +523,12 @@
             </div>
             ${advBadge(a.status)}
           </div>
-          <p class="desc">${DAS.esc(a.reason)}</p>
+          <p class="desc" data-i18n-raw>${DAS.esc(a.reason)}</p>
           <div class="meta">المحفظة: <span class="mono">${DAS.esc(a.wallet)}</span></div>
           ${a.admin_note ? `
             <div class="reply">
               <strong>${DAS.icon('msg')} رد الإدارة</strong>
-              ${DAS.esc(a.admin_note)}
+              <span data-i18n-raw>${DAS.esc(a.admin_note)}</span>
             </div>` : ''}
           <div class="ticket-foot">
             <span>رقم الطلب: #${a.id}</span>
@@ -572,7 +573,7 @@
       DAS.countUp($('sDone'), n('اتحلت'), 600);
     }
 
-    async function loadMyTickets() {
+    async function loadMyTickets(force) {
       if (!currentCourier) return;
       let data;
       try {
@@ -583,7 +584,7 @@
 
       const tickets = data.tickets || [];
       const sig = JSON.stringify(tickets.map(t => [t.id, t.status, t.admin_note, t.rating]));
-      if (sig === lastSig) return; // مفيش تغيير، منعمل ريندر ولا نعيد الأنيمشن
+      if (!force && sig === lastSig) return; // مفيش تغيير، منعمل ريندر ولا نعيد الأنيمشن
       lastSig = sig;
       myTicketsCache = tickets;
       updateStats(tickets);
@@ -634,11 +635,11 @@
               </div>
               ${badge(t.status)}
             </div>
-          <p class="desc">${DAS.esc(t.description)}</p>
+          <p class="desc" data-i18n-raw>${DAS.esc(t.description)}</p>
           ${t.admin_note ? `
             <div class="reply">
               <strong>${DAS.icon('msg')} رد الإدارة</strong>
-              ${DAS.esc(t.admin_note)}
+              <span data-i18n-raw>${DAS.esc(t.admin_note)}</span>
             </div>` : ''}
           ${steps(t.status)}
           ${t.status === 'اتحلت' ? rateBox(t) : ''}
@@ -676,7 +677,7 @@
         <span class="rate-label">${DAS.icon('star')} تقييمك للحل</span>
         <div class="stars-view">${starRow(t.rating, t.id, false)}</div>
         <button type="button" class="btn btn-ghost btn-sm" onclick="editRating(${t.id})">تعديل التقييم</button>
-        ${t.rating_note ? `<div class="rate-note-view">${DAS.esc(t.rating_note)}</div>` : ''}
+        ${t.rating_note ? `<div class="rate-note-view" data-i18n-raw>${DAS.esc(t.rating_note)}</div>` : ''}
       </div>`;
     }
 
@@ -716,6 +717,13 @@
         DAS.busy(btn, false);
       }
     }
+
+    // تغيير اللغة: بنعيد رندر الكروت والتواريخ بلغة العرض الجديدة
+    document.addEventListener('das:lang', () => {
+      if (!currentCourier) return;
+      loadMyTickets(true);
+      loadMyAdvances(true);
+    });
 
     DAS.glow('.cat-card');
     DAS.scrollCalm();

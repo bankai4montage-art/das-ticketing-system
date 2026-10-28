@@ -128,11 +128,19 @@
       const lw = list.offsetWidth, lh = list.offsetHeight;
       let top = r.bottom + 6;
       if (top + lh > window.innerHeight - 8) top = Math.max(8, r.top - lh - 6);
-      let right = window.innerWidth - r.right;
-      if (right + lw > window.innerWidth - 8) right = Math.max(8, window.innerWidth - lw - 8);
       list.style.top = top + 'px';
-      list.style.right = right + 'px';
-      list.style.left = 'auto';
+      // القايمة بتتثبّت ناحية زرها — يمين في العربي، شمال في الإنجليزي
+      if (document.documentElement.dir === 'ltr') {
+        let left = r.left;
+        if (left + lw > window.innerWidth - 8) left = Math.max(8, window.innerWidth - lw - 8);
+        list.style.left = left + 'px';
+        list.style.right = 'auto';
+      } else {
+        let right = window.innerWidth - r.right;
+        if (right + lw > window.innerWidth - 8) right = Math.max(8, window.innerWidth - lw - 8);
+        list.style.right = right + 'px';
+        list.style.left = 'auto';
+      }
       list.style.visibility = '';
       this._dd = { dd, list };
     },
@@ -172,10 +180,15 @@
       return isNaN(d) ? null : d;
     },
 
+    // لغة العرض بتتحكم في شكل التاريخ (عربي/إنجليزي)
+    locale() {
+      return (window.DAS && DAS.lang === 'en') ? 'en-EG' : 'ar-EG';
+    },
+
     fmtDateTime(s) {
       const d = this.parseUtc(s);
       if (!d) return String(s || '');
-      return d.toLocaleString('ar-EG', { timeZone: 'Africa/Cairo', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+      return d.toLocaleString(this.locale(), { timeZone: 'Africa/Cairo', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
     },
 
     fmtMonthKey(s) {
@@ -187,7 +200,7 @@
     fmtMonthLabel(key) {
       const parts = String(key || '').split('-').map(Number);
       if (parts.length !== 2 || parts.some(isNaN)) return key;
-      return new Date(Date.UTC(parts[0], parts[1] - 1, 15)).toLocaleDateString('ar-EG', { timeZone: 'Africa/Cairo', month: 'long', year: 'numeric' });
+      return new Date(Date.UTC(parts[0], parts[1] - 1, 15)).toLocaleDateString(this.locale(), { timeZone: 'Africa/Cairo', month: 'long', year: 'numeric' });
     },
 
     // CSV بمحارف معلّمة عشان Excel يفتحه عربي صح
@@ -228,7 +241,7 @@
       }
       const el = document.createElement('div');
       el.className = 'toast ' + (type === 'err' ? 'err' : 'ok');
-      el.innerHTML = this.icon(type === 'err' ? 'alert' : 'checkCircle') + '<span>' + this.esc(msg) + '</span>';
+      el.innerHTML = this.icon(type === 'err' ? 'alert' : 'checkCircle') + '<span>' + this.esc(this.t ? this.t(msg) : msg) + '</span>';
       box.appendChild(el);
       setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 380); }, 2800);
     },
@@ -270,41 +283,6 @@
       try { localStorage.setItem('das_theme', cur); } catch (e) {}
     },
 
-    toggleLang(lang) {
-      const cur = lang || (localStorage.getItem('das_lang') === 'en' ? 'ar' : 'en');
-      localStorage.setItem('das_lang', cur);
-      document.documentElement.lang = cur;
-      document.documentElement.dir = cur === 'ar' ? 'rtl' : 'ltr';
-      // Simple translation for key UI elements
-      const dict = {
-        ar: {
-          'Overview': 'نظرة عامة', 'Daily Attendance': 'الحضور اليومي', 'Schedule': 'الجدول', 'Employees': 'الموظفون', 'Reports': 'التقارير', 'Fines': 'الغرامات', 'Settings': 'الإعدادات',
-          'Search employee...': 'ابحث عن موظف...', 'Previous week': 'الأسبوع السابق', 'Next week': 'الأسبوع التالي', 'Current week': 'الأسبوع الحالي',
-          'Saturday': 'السبت', 'Sunday': 'الأحد', 'Monday': 'الاثنين', 'Tuesday': 'الثلاثاء', 'Wednesday': 'الأربعاء', 'Thursday': 'الخميس', 'Friday': 'الجمعة',
-          'Present': 'حاضر', 'Late': 'متأخر', 'Absent': 'غائب', 'Excused': 'بعذر', 'Not marked': 'لم يُسجل',
-          'Overview': 'نظرة عامة', 'Daily Attendance': 'الحضور اليومي', 'Schedule': 'الجدول', 'Employees': 'الموظفون', 'Reports': 'التقارير', 'Fines': 'الغرامات', 'Settings': 'الإعدادات',
-        },
-        en: {
-          'نظرة عامة': 'Overview', 'الحضور اليومي': 'Daily Attendance', 'الجدول': 'Schedule', 'الموظفون': 'Employees', 'التقارير': 'Reports', 'الغرامات': 'Fines', 'الإعدادات': 'Settings',
-          'ابحث عن موظف...': 'Search employee...', 'الأسبوع السابق': 'Previous week', 'الأسبوع التالي': 'Next week', 'الأسبوع الحالي': 'Current week',
-          'السبت': 'Saturday', 'الأحد': 'Sunday', 'الاثنين': 'Monday', 'الثلاثاء': 'Tuesday', 'الأربعاء': 'Wednesday', 'الخميس': 'Thursday', 'الجمعة': 'Friday',
-          'حاضر': 'Present', 'متأخر': 'Late', 'غائب': 'Absent', 'بعذر': 'Excused', 'لم يُسجل': 'Not marked',
-          'نظرة عامة': 'Overview', 'الحضور اليومي': 'Daily Attendance', 'الجدول': 'Schedule', 'الموظفون': 'Employees', 'التقارير': 'Reports', 'الغرامات': 'Fines', 'الإعدادات': 'Settings',
-        }
-      };
-      const t = dict[cur] || dict.ar;
-      document.querySelectorAll('[data-i18n]').forEach(el => {
-        const key = el.getAttribute('data-i18n');
-        if (t[key]) el.textContent = t[key];
-      });
-      document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
-        const key = el.getAttribute('data-i18n-placeholder');
-        if (t[key]) el.placeholder = t[key];
-      });
-      document.documentElement.lang = cur;
-      document.documentElement.dir = cur === 'ar' ? 'rtl' : 'ltr';
-    },
-
     // Button loading helper
     busy(btn, on) {
       btn.classList.toggle('loading', !!on);
@@ -324,39 +302,8 @@
   };
 
 
-  // ---- dynamic translation helper (AR <-> EN) ----
-  const TICK_TRANS = [];
-  function T(s){ if (document.documentElement.lang !== 'en') return s; return s; }
-
-  function translateTree(root) {
-    if (!root) return;
-    try {
-      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
-      let n;
-      while ((n = walker.nextNode())) {
-        if (n.parentNode && n.parentNode.nodeName !== 'SCRIPT' && n.parentNode.nodeName !== 'STYLE') {
-          const v = n.nodeValue;
-          const t = (v || '').trim();
-          if (t && DAS._dict && DAS._dict[t] && t !== DAS._dict[t]) {
-            n.nodeValue = v.replace(t, DAS._dict[t]);
-          }
-        }
-      }
-      root.querySelectorAll && root.querySelectorAll('*').forEach(el => {
-        ['placeholder','title','aria-label'].forEach(a => {
-          if (el.hasAttribute(a)) {
-            const v = el.getAttribute(a);
-            if (DAS._dict && DAS._dict[v]) el.setAttribute(a, DAS._dict[v]);
-          }
-        });
-      });
-    } catch (e) {}
-  }
-
-  // expose dict reference (populated by toggleLang)
-  DAS._dict = {};
-
-  document.addEventListener('DOMContentLoaded', () => { DAS.hydrateIcons(); const l = localStorage.getItem('das_lang'); if (l === 'en') DAS.toggleLang('en'); });
+  // الترجمة (عربي ⇄ إنجليزي) شغالة في i18n.js — هنا بس بنحدد اتجاه الصفحة
+  document.addEventListener('DOMContentLoaded', () => { DAS.hydrateIcons(); });
 
   // قفل الـ dropdown لما تدوس بره / resize / scroll / Escape
   document.addEventListener('click', (e) => {
