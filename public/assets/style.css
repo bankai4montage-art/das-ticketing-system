@@ -638,12 +638,14 @@ input[type="file"].visually-hidden { position: absolute; width: 1px; height: 1px
 
 /* ===== ???? ??????? ??????? ??? ??????? ===== */
 .cards-box { padding: 16px 20px; }
-.cards-rail { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: thin; }
+/* الشيل بقى عمود كامل العرض: كل إعلان بياخد عرض البورد بالكامل (مناسب للموبايل كمان) */
+.cards-rail { display: grid; grid-template-columns: 1fr; gap: 12px; }
 .cards-rail::-webkit-scrollbar { height: 6px; }
 .cards-rail::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 3px; }
 .c-card {
-  flex: 0 0 auto; min-width: 250px; max-width: 320px;
+  min-width: 0; max-width: none; height: 100%;
   display: flex; flex-direction: column; gap: 9px;
+  align-content: stretch;
   background: color-mix(in srgb, var(--accent) 7%, var(--surface));
   border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--border));
   border-radius: 16px; padding: 15px 16px;
