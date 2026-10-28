@@ -701,10 +701,11 @@ function cardPayload(b) {
 }
 
 // تجميع أصوات كارت على اختياراته — عشان الأدمن يشوف مين اختار إيه
+// الأصوات اليتيمة (اختيار اتشال من الكارت) مبتتحسبش — وبتتنضف من القاعدة عند الحفظ
 function tallyPicks(card, picks) {
   const choices = [];
   try { const p = JSON.parse(card.choices || '[]'); if (Array.isArray(p)) choices.push(...p); } catch (e) {}
-  const per = picks.filter(k => k.card_id === card.id);
+  const per = picks.filter(k => k.card_id === card.id && Number(k.choice) < choices.length);
   return {
     total: per.length,
     options: choices.map((label, i) => {
@@ -789,6 +790,9 @@ app.put('/api/admin/cards/:id', (req, res) => {
       [p.title, p.body, p.btnText, p.btnUrl, p.audience, p.audienceValue, p.startDate, p.endDate, active, p.choicesText, id],
       (err2) => {
         if (err2) return res.status(500).json({ error: 'فشل تحديث الكارت' });
+        // لو الخيارات قلّ أو اتشالت: نمسح الأصوات المتيمة (على اختيارات مش موجودة تاني)
+        const nOpts = p.choicesText ? JSON.parse(p.choicesText).length : 0;
+        db.run("DELETE FROM card_picks WHERE card_id = ? AND choice >= ?", [id, nOpts], () => {});
         res.json({ success: true });
       }
     );

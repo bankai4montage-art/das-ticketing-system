@@ -716,16 +716,19 @@ input[type="file"].visually-hidden { position: absolute; width: 1px; height: 1px
 .choice-row .choice-input { flex: 1 1 auto; }
 .choice-row .choice-x { flex-shrink: 0; width: 34px; color: var(--text-3); }
 .choice-row .choice-x:hover { color: var(--bad); }
-/* نتايج الأصوات في الـ deck */
+/* نتايج الأصوات في الـ deck — صف لكل اختيار ببروجيس بار */
 .picks-line { display: flex; margin-top: 4px; }
-.card-picks { display: none; margin-top: 8px; }
-.card-picks.open { display: grid; gap: 8px; }
+.card-picks { display: none; margin-top: 10px; border-top: 1px dashed var(--border); padding-top: 10px; }
+.card-picks.open { display: grid; gap: 10px; }
 .picks-total { display: flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 700; color: var(--text-2); }
-.picks-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
-.pick-opt-res { background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 9px 11px; }
-.por-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
-.por-head b { font-size: 13px; }
-.por-head .badge { min-width: 26px; justify-content: center; }
-.por-who { display: flex; gap: 5px; flex-wrap: wrap; }
-.who-pill { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--border)); }
+.picks-list { display: grid; gap: 8px; }
+.pick-opt-res { background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; }
+.por-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 7px; min-width: 0; }
+.por-head b { font-size: 13px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.por-head .badge { flex-shrink: 0; }
+.por-bar { height: 6px; border-radius: 999px; background: var(--border); overflow: hidden; }
+.por-fill { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 55%, #fff)); transition: width .4s var(--ease); }
+.por-who { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 8px; }
+.who-pill { font-size: 11px; padding: 2px 9px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--border)); max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.who-pill b { font-weight: 700; }
 .por-none { font-size: 11.5px; color: var(--text-3); }

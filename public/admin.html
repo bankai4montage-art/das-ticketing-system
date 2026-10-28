@@ -436,6 +436,8 @@
         if (archiveMode) fetchArchiveTickets();
         fetchAdvances();
         refreshProfileAttendanceIfChanged();
+        // لايف للأصوات: لو تاب الكروت مفتوح نبعت له جولة تحديث (fetchCards بيترندر بس لو في تغيير)
+        if (!$('cardsView').classList.contains('hidden')) fetchCards();
       }, 4000);
     }
 
@@ -1172,13 +1174,31 @@
       return 'لحد ' + dFmt(c.end_date);
     }
 
+    // تحديث الكروت: بنعمل سيجنيشر عشان منرندرش من غير داعي (سحب/مودال مفتوح بيتجمدوا كمان)
+    let cardsSig = null;
+    const openPicks = new Set(); // لوحات الأصوات المفتوحة — بنرجّعها بعد أي رندر جديد
+    const prevVotesTotal = {};   // لتوتير "صوت جديد" لما حد يصوّت
+
     async function fetchCards(force) {
+      // ممنوع التجميد: لو الأدمن بيسحب كارت أو مودال الكارت مفتوح، بنقفل الجولة دي
+      if (!force && (dragId || $('cardModal').classList.contains('open'))) return;
       let data;
       try {
         const res = await adminFetch('/api/admin/cards');
         data = await res.json();
       } catch (e) { return; }
       allCards = data.cards || [];
+      const newSig = JSON.stringify(allCards.map(c => [c.id, c.title, c.body, c.button_text, c.button_url, c.active, c.sort_order, c.audience, c.audience_value, c.picks]));
+      if (newSig === cardsSig && !force) return;
+      cardsSig = newSig;
+      // صوت جديد؟ توست خفيف يلفت نظر الأدمن من غير ريفرش
+      if (!force && Object.keys(prevVotesTotal).length) {
+        allCards.forEach(c => {
+          const t = (c.picks || {}).total || 0;
+          if (t > (prevVotesTotal[c.id] || 0)) DAS.toast(`🗳️ ${DAS.t('صوت جديد على')} ${c.title}`);
+        });
+      }
+      allCards.forEach(c => { prevVotesTotal[c.id] = (c.picks || {}).total || 0; });
       renderCards();
     }
 
@@ -1293,7 +1313,8 @@
       if (!el) return; // بقى: افتح/اقفل
       const opening = !el.classList.contains('open');
       el.classList.toggle('open', opening);
-      if (opening) renderCardPicksBody(id);
+      if (opening) { openPicks.add(id); renderCardPicksBody(id); }
+      else openPicks.delete(id);
     }
 
     function renderCardPicksBody(id) {
@@ -1303,11 +1324,14 @@
       const t = c.picks || { total: 0, options: [] };
       el.innerHTML = `
         <div class="picks-total">${DAS.icon('users')} <span>${t.total} ${t.total === 1 ? DAS.t('مندوب') : DAS.t('مناديب')} ${DAS.t('صوّتوا')}</span></div>
-        ${t.options.length ? `<div class="picks-grid">${t.options.map(o => `
-          <div class="pick-opt-res">
-            <div class="por-head"><b data-i18n-raw dir="auto">${DAS.esc(o.label)}</b><span class="badge ${o.count ? 'info' : ''}">${o.count}</span></div>
-            ${o.who.length ? `<div class="por-who">${o.who.map(w => `<span class="who-pill mono" title="${DAS.esc(w.name || '')}">${DAS.esc(w.das_code)}${w.name ? ' · ' + DAS.esc(w.name) : ''}</span>`).join('')}</div>` : `<div class="por-none">${DAS.t('لسه مفيش حدا اختارها')}</div>`}
-          </div>`).join('')}</div>` : `<div class="por-none">${DAS.t('لسه مفيش أصوات')}</div>`}`;
+        ${t.options.length ? `<div class="picks-list">${t.options.map(o => {
+          const pct = t.total ? Math.round(o.count * 100 / t.total) : 0;
+          return `<div class="pick-opt-res">
+            <div class="por-head"><b data-i18n-raw dir="auto">${DAS.esc(o.label)}</b><span class="badge ${o.count ? 'info' : ''}"><span class="mono">${o.count}</span> · ${pct}%</span></div>
+            <div class="por-bar"><span class="por-fill" style="width:${pct}%"></span></div>
+            ${o.who.length ? `<div class="por-who">${o.who.map(w => `<span class="who-pill" dir="auto" title="${DAS.esc(w.name || '')}"><b>${DAS.esc(w.das_code)}</b>${w.name ? ' · ' + DAS.esc(w.name) : ''}</span>`).join('')}</div>` : `<div class="por-none">${DAS.t('لسه مفيش حدا اختارها')}</div>`}
+          </div>`;
+        }).join('')}</div>` : `<div class="por-none">${DAS.t('لسه مفيش أصوات')}</div>`}`;
     }
 
     function renderCards() {
@@ -1341,6 +1365,14 @@
         </div>`).join('')
         : `<div class="empty fade"><div class="eic">${DAS.icon('msg', 'ico-lg')}</div><b>مفيش كروت</b>اضغط "كارت جديد" وازود أول كارت لصفحة المندوب</div>`;
       setupCardsDnD();
+      // نرجّع لوحات الأصوات اللي كانت مفتوحة (بعد تحديث لايف أو أي رندر)
+      openPicks.forEach(id => {
+        const el = $('cardPicks' + id);
+        if (el && cardChoiceLabels(allCards.find(c => c.id === id)).length) {
+          el.classList.add('open');
+          renderCardPicksBody(id);
+        } else openPicks.delete(id);
+      });
     }
 
     // ---------- السحب والإفلات لترتيب الكروت ----------

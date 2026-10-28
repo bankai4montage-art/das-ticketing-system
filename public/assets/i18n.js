@@ -398,6 +398,7 @@
     'صوّتوا': 'voted',
     'مناديب': 'couriers',
     'مندوب': 'courier',
+    'صوت جديد على': 'New vote on',
     'لسه مفيش حدا اختارها': 'Nobody picked this yet',
     'لسه مفيش أصوات': 'No votes yet',
     'دوس على اختيارك': 'Tap your choice',
