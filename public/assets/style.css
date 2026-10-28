@@ -93,7 +93,7 @@
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
-html { -webkit-text-size-adjust: 100%; }
+html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
 body {
   font-family: 'Cairo', system-ui, sans-serif;
   background: var(--bg);
@@ -371,6 +371,7 @@ html.scrolling .orb, html.scrolling .bg-fx::before { animation-play-state: pause
 .cat-card::before { content: ""; position: absolute; inset: 0; background: radial-gradient(circle at var(--mx, 50%) var(--my, 0%), var(--c-soft), transparent 60%); opacity: 0; transition: opacity .35s; }
 .cat-card:hover::before, .cat-card.active::before { opacity: 1; }
 .cat-card:hover { transform: translateY(-6px); border-color: var(--c); box-shadow: 0 22px 50px -22px var(--c); }
+.cat-card:active { transform: translateY(-2px) scale(.98); transition-duration: .09s; }
 .cat-card.active { border-color: var(--c); box-shadow: 0 22px 50px -22px var(--c); }
 .cat-card .ci { position: relative; width: 60px; height: 60px; margin: 0 auto 14px; border-radius: 20px; display: grid; place-items: center; color: var(--c); background: var(--c-soft); transition: transform .45s var(--ease-spring); }
 .cat-card:hover .ci { transform: scale(1.12) rotate(-6deg); }
@@ -745,8 +746,20 @@ input[type="file"].visually-hidden { position: absolute; width: 1px; height: 1px
 .choice-row .choice-input { flex: 1 1 auto; }
 .choice-row .choice-x { flex-shrink: 0; width: 34px; color: var(--text-3); }
 .choice-row .choice-x:hover { color: var(--bad); }
-/* نتايج الأصوات في الـ deck — صف لكل اختيار ببروجيس بار */
-.picks-line { display: flex; margin-top: 4px; }
+/* ---------- قسم حضور الروست في بروفايل الأدمن: حركة أنشودة ---------- */
+/* نبضة النقطة الخضرا = الروست لايف — حية قبل ما البيانات تتحدث */
+.pulse-dot { animation: pulseDot 2s var(--ease) infinite; }
+.patt-stats .badge { animation: riseIn .32s var(--ease) both; animation-delay: calc(var(--i, 0) * 40ms); }
+.patt-stats .badge:nth-child(1) { --i: 0; } .patt-stats .badge:nth-child(2) { --i: 1; }
+.patt-stats .badge:nth-child(3) { --i: 2; } .patt-stats .badge:nth-child(4) { --i: 3; }
+.patt-stats .badge:nth-child(5) { --i: 4; } .patt-stats .badge:nth-child(6) { --i: 5; }
+.patt-head .badge { animation: riseIn .3s var(--ease) both; }
+.patt-head .badge:nth-child(2) { animation-delay: 40ms; } .patt-head .badge:nth-child(3) { animation-delay: 70ms; }
+/* صفوف جدول التسجيلات: دخول متتابع — والجدول الطويل أكبر من 10 صفوف من غير حركة عشان السكرول يفضل ناعم */
+.patt-tbl tbody tr { animation: riseIn .3s var(--ease) both; animation-delay: calc(min(var(--i, 0), 10) * 30ms); }
+@media (prefers-reduced-motion: reduce) { .patt-stats .badge, .patt-tbl tbody tr, .patt-head .badge { animation: none; } }
+
+/* نتايج الأصوات في الـ deck — صف لكل اختيار ببروجيس بار */.picks-line { display: flex; margin-top: 4px; }
 .card-picks { display: none; margin-top: 10px; border-top: 1px dashed var(--border); padding-top: 10px; }
 .card-picks.open { display: grid; gap: 10px; }
 .picks-total { display: flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 700; color: var(--text-2); }

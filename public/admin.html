@@ -370,6 +370,7 @@
     let archiveMode = false;
     let archiveTickets = [];
     let pendingFlash = new Set();
+    let prevTicketState = {}; // id → status|note — عشان نعمل فلاش على الصفوف اللي اتغيرت في الجدول
 
     // ---------- Auth ----------
     // كل نداءات الأدمن بتمر من هنا: بتبعت التوكن، ولو اترفض (401) بترجّع للوجين بدل ما الداشبورد تفضل مكسورة
@@ -497,6 +498,15 @@
         }
       }
       prevIds = new Set(tickets.map(t => t.id));
+      // فلاش الحالة المتغيرة: الشكوى اللي غيّرت الإدارة حالتها/ردودها بتومض في الجدول — بتحسّك بمكان التغيير
+      const tState = Object.fromEntries(tickets.map(t => [t.id, t.status + '|' + (t.admin_note || '')]));
+      if (!firstRender) {
+        tickets.forEach(t => {
+          const old = prevTicketState[t.id];
+          if (old != null && old !== tState[t.id]) pendingFlash.add(t.id);
+        });
+      }
+      prevTicketState = tState;
       allTickets = tickets;
       updateStats();
       if (!archiveMode) renderTickets();
@@ -1031,26 +1041,26 @@
           return starts.map(ws => `<option value="${ws}"${ws === profAtt.week ? ' selected' : ''}>${rWeekLabel(ws)}</option>`).join('');
         };
         box.innerHTML = `
-          <div class="row" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
-            <span id="profAttLive" class="badge ${data.roster.connected ? 'ok' : 'bad'}"><span class="dot"></span>${data.roster.connected ? 'لايف — متصل بالروستر' : 'غير متصل بالروستر'}</span>
+          <div class="patt-head row" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+            <span id="profAttLive" class="badge ${data.roster.connected ? 'ok' : 'bad'}"><span class="dot ${data.roster.connected ? 'pulse-dot' : ''}"></span>${data.roster.connected ? 'لايف — متصل بالروستر' : 'غير متصل بالروستر'}</span>
             ${empBranch ? `<span class="badge info">${DAS.esc(empBranch)}</span>` : ''}
             ${empTypeLabel ? `<span class="badge ${empTypeRaw === 'FT' ? 'ok' : 'warn'}">${DAS.esc(empTypeLabel)}</span>` : ''}
             <select id="profAttWeek" class="input" style="max-width:280px" onchange="setProfAttWeek(this.value)">${weekOptions()}</select>
           </div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
-            <span class="badge"><b>${s.total ?? 0}</b> تسجيلات</span>
-            <span class="badge ${statusCls('Present')}"><span class="dot"></span><b>${s.present ?? 0}</b> ${statusName('Present')}</span>
-            <span class="badge ${statusCls('Late')}"><span class="dot"></span><b>${s.late ?? 0}</b> ${statusName('Late')}</span>
-            <span class="badge ${statusCls('Absent')}"><span class="dot"></span><b>${s.absent ?? 0}</b> ${statusName('Absent')}</span>
-            <span class="badge ${statusCls('Excused')}"><span class="dot"></span><b>${s.excused ?? 0}</b> ${statusName('Excused')}</span>
-            <span class="badge bad"><span class="dot"></span><b>${t}</b> ج غرامات</span>
+          <div class="patt-stats" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+            <span class="badge"><b id="pattTotal">${s.total ?? 0}</b> تسجيلات</span>
+            <span class="badge ${statusCls('Present')}"><span class="dot"></span><b id="pattPre">${s.present ?? 0}</b> ${statusName('Present')}</span>
+            <span class="badge ${statusCls('Late')}"><span class="dot"></span><b id="pattLate">${s.late ?? 0}</b> ${statusName('Late')}</span>
+            <span class="badge ${statusCls('Absent')}"><span class="dot"></span><b id="pattAbs">${s.absent ?? 0}</b> ${statusName('Absent')}</span>
+            <span class="badge ${statusCls('Excused')}"><span class="dot"></span><b id="pattExc">${s.excused ?? 0}</b> ${statusName('Excused')}</span>
+            <span class="badge bad"><span class="dot"></span><b id="pattFine">${t}</b> ج غرامات</span>
           </div>
           ${data.records.length ? `
-          <div class="table-wrap" style="border:none;box-shadow:none;background:transparent;padding:0;max-height:260px;overflow:auto">
+          <div class="table-wrap patt-tbl" style="border:none;box-shadow:none;background:transparent;padding:0;max-height:260px;overflow:auto">
             <table class="tbl">
               <thead><tr><th>اليوم</th><th>الحالة</th><th>السبب</th><th>ملاحظة</th></tr></thead>
-              <tbody>${data.records.map(a => `
-                <tr>
+              <tbody>${data.records.map((a, i) => `
+                <tr style="--i:${Math.min(i, 10)};${i >= 10 ? 'animation:none' : ''}">
                   <td data-label="اليوم">${(new Date(a.attendance_date + 'T00:00:00').toLocaleDateString(rLocale(), { weekday: 'long' }))} ${new Date(a.attendance_date + 'T00:00:00').toLocaleDateString(rLocale(), { day: 'numeric', month: 'short' })}</td>
                   <td data-label="الحالة"><span class="badge ${statusCls(a.status)}"><span class="dot"></span>${statusName(a.status)}</span></td>
                   <td data-label="السبب" class="desc-cell" data-i18n-raw>${DAS.esc(a.reason || '—')}</td>
@@ -1060,6 +1070,12 @@
             </table>
           </div>` : `<div class="empty fade"><b>مفيش تسجيلات في الأسبوع ده</b>سجّل الحضور من سيستم الروستر وهيظهر هنا لوحده</div>`}
         `;
+        // عدّ تصاعدي لعناصر الإحصائيات — إحساس حي عند تبديل الأسبوع أو تحديث لايف
+        ['pattTotal', 'pattPre', 'pattLate', 'pattAbs', 'pattExc', 'pattFine'].forEach((id, k) => {
+          const el = document.getElementById(id);
+          const src = [s.total, s.present, s.late, s.absent, s.excused, t][k];
+          if (el && typeof src === 'number' && src > 0) DAS.countUp(el, src);
+        });
         if (!profAtt.week) {
           /* أول جولة: من غير فترة — بنملي القايمة ونجيب أسابيع الأسبوع اللي فيه النهارده لو له تسجيلات، وإلا الأحدث */
           const cur = rWeekStart(rISO(new Date()));
