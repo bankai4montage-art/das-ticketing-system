@@ -69,6 +69,7 @@
       <section class="view-tabs rise">
         <button class="chip active" id="tabTickets" onclick="switchView('tickets')"><i data-ico="layers"></i> <span data-i18n="الشكاوى">الشكاوى</span></button>
         <button class="chip" id="tabAdvances" onclick="switchView('advances')"><i data-ico="banknote"></i> <span data-i18n="السلف">السلف</span></button>
+        <button class="chip" id="tabCards" onclick="switchView('cards')"><i data-ico="msg"></i> <span data-i18n="الكروت">الكروت</span></button>
       </section>
 
       <div id="ticketsView" class="view-panel">
@@ -182,6 +183,35 @@
         </section>
       </div>
 
+      <!-- كروت صفحة المندوب -->
+      <div id="cardsView" class="view-panel hidden">
+        <section class="glass adv-head rise">
+          <div>
+            <b>كروت صفحة المندوب</b>
+            <div class="adv-summary" id="cardsSummary">—</div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <button class="btn btn-ok btn-sm" onclick="toggleCardModal()"><i data-ico="plus"></i> كارت جديد</button>
+          </div>
+        </section>
+
+        <section class="glass table-wrap rise">
+          <table class="tbl">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>الكارت</th>
+                <th>الجمهور</th>
+                <th>الفترة</th>
+                <th>الحالة</th>
+                <th>تحكم</th>
+              </tr>
+            </thead>
+            <tbody id="cardsTableBody"></tbody>
+          </table>
+        </section>
+      </div>
+
     </div>
   </div>
 
@@ -231,6 +261,52 @@
         <button type="submit" class="btn btn-ok" id="addAdvanceBtn"><span class="spinner"></span><i data-ico="plus"></i><span class="label">حفظ السلفة</span></button>
       </form>
       <div class="hint" style="margin-top:16px;padding-top:14px">السلفة اللي بتسجلها هنا بتتحدد على "تمت الصرف" تلقائي — طلبات المندوبين بتوصل من تاباتهم بـ"قيد المراجعة"</div>
+    </div>
+  </div>
+
+  <!-- ============ نافذة كارت صفحة المندوب ============ -->
+  <div id="cardModal" class="modal-back" onclick="if(event.target===this)toggleCardModal()">
+    <div class="modal">
+      <div class="form-head">
+        <h3 id="cardModalTitle">كارت جديد</h3>
+        <button class="btn btn-ghost btn-icon" onclick="toggleCardModal()" aria-label="إغلاق"><i data-ico="close"></i></button>
+      </div>
+      <form id="cardForm" style="display:grid;gap:12px">
+        <input type="text" id="cardTitle" class="input" maxlength="120" placeholder="عنوان الكارت (مثال: ملاحظات التصريح)" required>
+        <textarea id="cardBody" class="textarea" rows="3" maxlength="800" placeholder="نص الكارت... (اختياري)"></textarea>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <input type="text" id="cardBtnText" class="input" maxlength="60" placeholder="نص الزرار (اختياري)">
+          <input type="text" id="cardBtnUrl" class="input" dir="ltr" placeholder="رابط الزرار (اختياري)">
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <div class="field" style="margin:0">
+            <label for="cardAudience">مين يشوف الكارت؟</label>
+            <select id="cardAudience" class="input" onchange="renderCardAudienceValue()">
+              <option value="all">كل المناديب</option>
+              <option value="branch">فرع معين (QCD 1 / QCD 2)</option>
+              <option value="type">نوع الدوام (Full / Part time)</option>
+              <option value="code">مناديب معينين بالكود</option>
+            </select>
+          </div>
+          <div class="field" style="margin:0" id="cardAudienceValueWrap"></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <div class="field" style="margin:0">
+            <label for="cardStart">يظهر من (اختياري)</label>
+            <input type="date" id="cardStart" class="input">
+          </div>
+          <div class="field" style="margin:0">
+            <label for="cardEnd">لحد (اختياري)</label>
+            <input type="date" id="cardEnd" class="input">
+          </div>
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-2);cursor:pointer">
+          <input type="checkbox" id="cardActive" checked style="width:16px;height:16px;accent-color:var(--ok)"> الكارت نشط (ظاهر للمندوبين)
+        </label>
+        <p id="cardErr" class="err-text" role="alert" style="min-height:0;margin:0"></p>
+        <button type="submit" class="btn btn-ok"><span class="spinner"></span><i data-ico="checkCircle"></i><span class="label" id="cardSubmitLabel">حفظ الكارت</span></button>
+        <div class="hint">الكارت بيهيأ مع أسبوعه: بيبان في بداية صفحة المندوب بس لو كان نشط وفي فترته ومطابق للجمهور (الفرع ونوع الدوام بيتحددوا من الروستر)</div>
+      </form>
     </div>
   </div>
 
@@ -1056,22 +1132,204 @@
       DAS.toast('تم تنزيل التقرير');
     }
 
+    // ---------- كروت صفحة المندوب ----------
+    let allCards = [];
+    let editingCardId = null;
+
+    function cardAudienceLabel(c) {
+      if (c.audience === 'all') return 'كل المناديب';
+      if (c.audience === 'branch') return 'فرع ' + DAS.esc(c.audience_value);
+      if (c.audience === 'type') return c.audience_value === 'FT' ? 'دوام كامل' : 'دوام جزئي';
+      if (c.audience === 'code') {
+        const n = String(c.audience_value || '').split(',').filter(Boolean).length;
+        return 'أكواد محددة (' + n + ' كود)';
+      }
+      return DAS.esc(c.audience || '—');
+    }
+
+    const dFmt = (d) => d ? new Date(d + 'T00:00:00').toLocaleDateString(rLocale(), { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+
+    function cardPeriodLabel(c) {
+      if (!c.start_date && !c.end_date) return 'دائم';
+      if (c.start_date && c.end_date) return dFmt(c.start_date) + ' ← ' + dFmt(c.end_date);
+      if (c.start_date) return 'من ' + dFmt(c.start_date);
+      return 'لحد ' + dFmt(c.end_date);
+    }
+
+    async function fetchCards(force) {
+      let data;
+      try {
+        const res = await adminFetch('/api/admin/cards');
+        data = await res.json();
+      } catch (e) { return; }
+      allCards = data.cards || [];
+      renderCards();
+    }
+
+    function renderCards() {
+      const activeCount = allCards.filter(c => c.active).length;
+      $('cardsSummary').textContent = `${allCards.length} ${allCards.length === 1 ? 'كارت' : 'كارت'} — النشط فيهم: ${activeCount}`;
+      $('cardsTableBody').innerHTML = allCards.length ? allCards.map((c, i) => `
+        <tr style="--i:${Math.min(i, 12)};${i < 12 ? '' : 'animation:none'}">
+          <td class="mono" style="color:var(--text-3);font-size:12px">#${c.id}</td>
+          <td data-label="الكارت">
+            <div style="display:flex;align-items:center;gap:8px"><span class="tag shift"><i data-ico="msg"></i></span> <b>${DAS.esc(c.title)}</b></div>
+            ${c.body ? `<div class="desc-cell" style="font-size:12px;color:var(--text-2);white-space:pre-line" data-i18n-raw>${DAS.esc(c.body)}</div>` : ''}
+            ${c.button_url ? `<div style="font-size:12px;color:var(--accent)">${DAS.esc(c.button_text)} — ${DAS.esc(c.button_url)}</div>` : ''}
+          </td>
+          <td data-label="الجمهور"><span class="badge info">${cardAudienceLabel(c)}</span></td>
+          <td data-label="الفترة" style="font-size:12px">${DAS.esc(cardPeriodLabel(c))}</td>
+          <td data-label="الحالة">
+            ${c.active
+              ? `<span class="badge ok"><span class="dot"></span>نشط</span>`
+              : `<span class="badge bad"><span class="dot"></span>متوقف</span>`}
+          </td>
+          <td data-label="تحكم">
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <button class="btn btn-ghost btn-sm" onclick="openCardEdit(${c.id})"><i data-ico="refresh"></i> تعديل</button>
+              <button class="btn btn-ghost btn-sm" onclick="cardToggle(${c.id}, ${c.active ? 0 : 1})">${c.active ? 'إيقاف' : 'تشغيل'}</button>
+              <button class="btn btn-ghost btn-sm" style="color:var(--bad)" onclick="cardDelete(${c.id})"><i data-ico="trash"></i></button>
+            </div>
+          </td>
+        </tr>`).join('')
+        : `<tr><td colspan="6"><div class="empty fade"><div class="eic">${DAS.icon('msg', 'ico-lg')}</div><b>مفيش كروت</b>اضغط "كارت جديد" وازود أول كارت لصفحة المندوب</div></td></tr>`;
+    }
+
+    function renderCardAudienceValue(sel) {
+      const a = $('cardAudience').value;
+      const wrap = $('cardAudienceValueWrap');
+      if (a === 'branch') {
+        wrap.innerHTML = `<label>الفرع</label><select id="cardAudienceValue" class="input"><option value="QCD 1">QCD 1</option><option value="QCD 2">QCD 2</option></select>`;
+      } else if (a === 'type') {
+        wrap.innerHTML = `<label>نوع الدوام</label><select id="cardAudienceValue" class="input"><option value="FT">دوام كامل (Full time)</option><option value="PT">دوام جزئي (Part time)</option></select>`;
+      } else if (a === 'code') {
+        wrap.innerHTML = `<label>أكواد المناديب (فاصلة بينهم)</label><input type="text" id="cardAudienceValue" class="input mono" style="text-transform:uppercase" placeholder="DAS-105, DAS-120">`;
+      } else {
+        wrap.innerHTML = '<label>&nbsp;</label><div style="font-size:13px;color:var(--text-3);padding:10px 0">هيظهر لكل المناديب المسجلين من غير شرط إضافي</div>';
+      }
+      if (sel != null) {
+        const el = $('cardAudienceValue');
+        if (el) el.value = sel;
+      }
+    }
+
+    function openCardModalEmpty() {
+      editingCardId = null;
+      $('cardModalTitle').textContent = 'كارت جديد';
+      $('cardSubmitLabel').textContent = 'حفظ الكارت';
+      $('cardTitle').value = '';
+      $('cardBody').value = '';
+      $('cardBtnText').value = '';
+      $('cardBtnUrl').value = '';
+      $('cardAudience').value = 'all';
+      renderCardAudienceValue();
+      $('cardStart').value = '';
+      $('cardEnd').value = '';
+      $('cardActive').checked = true;
+      $('cardErr').textContent = '';
+    }
+
+    function toggleCardModal() {
+      const opening = !$('cardModal').classList.contains('open');
+      if (opening) openCardModalEmpty();
+      toggleModal('cardModal');
+    }
+
+    function openCardEdit(id) {
+      const c = allCards.find(x => x.id === id);
+      if (!c) return;
+      editingCardId = id;
+      $('cardModalTitle').textContent = 'تعديل الكارت #' + id;
+      $('cardSubmitLabel').textContent = 'حفظ التعديل';
+      $('cardTitle').value = c.title || '';
+      $('cardBody').value = c.body || '';
+      $('cardBtnText').value = c.button_text || '';
+      $('cardBtnUrl').value = c.button_url || '';
+      $('cardAudience').value = c.audience || 'all';
+      renderCardAudienceValue(c.audience_value || null);
+      $('cardStart').value = c.start_date || '';
+      $('cardEnd').value = c.end_date || '';
+      $('cardActive').checked = !!c.active;
+      $('cardErr').textContent = '';
+      toggleModal('cardModal');
+    }
+
+    $('cardForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = e.target.querySelector('.btn-ok');
+      $('cardErr').textContent = '';
+      const payload = {
+        title: $('cardTitle').value.trim(),
+        body: $('cardBody').value.trim(),
+        button_text: $('cardBtnText').value.trim(),
+        button_url: $('cardBtnUrl').value.trim(),
+        audience: $('cardAudience').value,
+        audience_value: ($('cardAudienceValue') || {}).value || '',
+        start_date: $('cardStart').value,
+        end_date: $('cardEnd').value,
+        active: $('cardActive').checked
+      };
+      DAS.busy(btn, true);
+      try {
+        const res = await adminFetch(editingCardId ? '/api/admin/cards/' + editingCardId : '/api/admin/cards', {
+          method: editingCardId ? 'PUT' : 'POST',
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          $('cardErr').textContent = data.error || 'فشل حفظ الكارت';
+          return;
+        }
+        DAS.toast(editingCardId ? 'الكارت اتعدل' : 'الكارت اتسجل وبقى ظاهر حسب شروطه');
+        toggleModal('cardModal');
+        fetchCards(true);
+      } catch (err) {
+        $('cardErr').textContent = 'تعذر الاتصال بالسيرفر';
+      } finally {
+        DAS.busy(btn, false);
+      }
+    });
+
+    async function cardToggle(id, active) {
+      try {
+        const res = await adminFetch('/api/admin/cards/' + id, { method: 'PUT', body: JSON.stringify({ active: !!active }) });
+        if (!res.ok) throw new Error();
+        allCards = allCards.map(c => c.id === id ? { ...c, active: active ? 1 : 0 } : c);
+        renderCards();
+        DAS.toast(active ? 'الكارت اتشغل' : 'الكارت اتوقف — مش هيظهر لحد ما تشغله');
+      } catch (e) { DAS.toast('فشل تحديث الكارت', 'err'); }
+    }
+
+    async function cardDelete(id) {
+      if (!confirm(DAS.t('متأكد من مسح الكارت ده نهائياً؟'))) return;
+      try {
+        const res = await adminFetch('/api/admin/cards/' + id, { method: 'DELETE' });
+        if (!res.ok) throw new Error();
+        allCards = allCards.filter(c => c.id !== id);
+        renderCards();
+        DAS.toast('الكارت اتمسح');
+      } catch (e) { DAS.toast('فشل مسح الكارت', 'err'); }
+    }
+
     // ---------- عرض السلف ----------
     const ADV_CLS = { 'تمت الصرف': 'ok', 'مرفوضة': 'bad', 'قيد المراجعة': 'warn' };
     const ADV_OPTS = ['قيد المراجعة', 'تمت الصرف', 'مرفوضة'];
 
     function switchView(v) {
-      const adv = v === 'advances';
-      const show = adv ? $('advancesView') : $('ticketsView');
+      const adv = v === 'advances', cards = v === 'cards';
+      const show = cards ? $('cardsView') : (adv ? $('advancesView') : $('ticketsView'));
       show.classList.remove('hidden');
-      (adv ? $('ticketsView') : $('advancesView')).classList.add('hidden');
+      [ 'ticketsView', 'advancesView', 'cardsView' ].forEach(id => {
+        if (id !== show.id) $(id).classList.add('hidden');
+      });
       // إعادة تشغيل أنيميشن الدخول مع كل تبديل
       show.classList.remove('panel-in');
       void show.offsetWidth;
       show.classList.add('panel-in');
-      $('tabTickets').classList.toggle('active', !adv);
+      $('tabTickets').classList.toggle('active', v === 'tickets');
       $('tabAdvances').classList.toggle('active', adv);
-      if (adv) fetchAdvances(true); else fetchTickets(true);
+      $('tabCards').classList.toggle('active', cards);
+      if (adv) fetchAdvances(true); else if (cards) fetchCards(true); else fetchTickets(true);
     }
 
     async function fetchAdvances(force) {

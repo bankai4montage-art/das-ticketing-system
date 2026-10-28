@@ -142,6 +142,23 @@ db.serialize(() => {
     )
   `);
 
+  // كروت مخصصة الأدمن بيعملها وتظهر لصفحة المندوب بشروط ظهور (جمهور + فترة)
+  db.run(`
+    CREATE TABLE IF NOT EXISTS cards (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL,
+      body TEXT NOT NULL DEFAULT '',
+      button_text TEXT DEFAULT '',
+      button_url TEXT DEFAULT '',
+      audience TEXT DEFAULT 'all',
+      audience_value TEXT DEFAULT '',
+      start_date TEXT DEFAULT '',
+      end_date TEXT DEFAULT '',
+      active INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
   // قاعدة قديمة؟ نزود الأعمدة الناقصة تلقائي (بعد إنشاء الجدول)
   db.all("PRAGMA table_info(tickets)", (err, cols) => {
     if (err || !cols) return;
@@ -313,6 +330,42 @@ app.get('/api/courier/advances/:das_code', (req, res) => {
       res.json({ advances: rows });
     }
   );
+});
+
+// 5-ب. الكروت المخصصة الظاهرة للمندوب — فلترة بالجمهور (الكل/الفرع/نوع الدوام/أكواد) وبفترة السريان
+// جمهور الفرع/النوع محتاج بيانات المندوب من الروستر — لو الروستر مش مربوط أو الكود مش متطابق الكروت دي بتتخفي
+app.get('/api/courier/cards/:das_code', async (req, res) => {
+  const code = String(req.params.das_code || '').trim().toUpperCase();
+  try {
+    const cards = await new Promise((resolve, reject) => {
+      db.all("SELECT * FROM cards WHERE active = 1 ORDER BY id DESC", [], (err, rows) => err ? reject(err) : resolve(rows));
+    });
+    const today = new Date().toISOString().slice(0, 10);
+    let visible = cards.filter(c => (!c.start_date || today >= c.start_date) && (!c.end_date || today <= c.end_date));
+
+    const needRoster = visible.some(c => c.audience === 'branch' || c.audience === 'type');
+    let emp = null;
+    if (needRoster && rosterConfigured()) {
+      try {
+        const emps = await rosterEmployees();
+        const name = String(req.query.name || '').trim();
+        emp = emps.find(x => String(x.employee_code || '').trim().toUpperCase() === code) ||
+              (name ? emps.find(x => String(x.name || '').trim() === name) : null);
+      } catch (e) { emp = null; }
+    }
+
+    visible = visible.filter(c => {
+      if (c.audience === 'all') return true;
+      if (c.audience === 'code') return String(c.audience_value || '').split(',').includes(code);
+      if (c.audience === 'branch') return !!emp && emp.branch === c.audience_value;
+      if (c.audience === 'type') return !!emp && emp.employment_type === c.audience_value;
+      return false;
+    });
+
+    res.json({ cards: visible });
+  } catch (e) {
+    res.status(500).json({ error: 'خطأ في جلب الكروت' });
+  }
 });
 
 // ================= API للإدارة (Admin) =================
@@ -527,6 +580,106 @@ app.put('/api/admin/advances/:id', (req, res) => {
 app.delete('/api/admin/advances/:id', (req, res) => {
   db.run("DELETE FROM advances WHERE id = ?", [req.params.id], function (err) {
     if (err) return res.status(500).json({ error: 'فشل مسح السلفة' });
+    res.json({ success: true });
+  });
+});
+
+// ================= كروت صفحة المندوب (إعلانات بشروط) =================
+const CARD_AUDIENCES = ['all', 'branch', 'type', 'code'];
+
+// تدقيق بيانات الكارت من الأدمن — إنشاء أو تعديل في نفس القواعد
+function cardPayload(b) {
+  const title = String(b.title || '').trim().slice(0, 120);
+  if (!title) return { error: 'عنوان الكارت مطلوب' };
+
+  const body = String(b.body || '').trim().slice(0, 800);
+  const btnText = String(b.button_text || '').trim().slice(0, 60);
+  let btnUrl = String(b.button_url || '').trim();
+  if (btnUrl && !/^[a-z]+:\/\//i.test(btnUrl)) btnUrl = 'https://' + btnUrl;
+  if (btnUrl && !/^https?:\/\/[^\s]+\.[^\s]+/i.test(btnUrl)) return { error: 'رابط الزرار غير صحيح' };
+  if (btnUrl && !btnText) return { error: 'لو هتحط رابط، اكتب نص للزرار' };
+
+  const audience = CARD_AUDIENCES.includes(b.audience) ? b.audience : 'all';
+  let audienceValue = String(b.audience_value || '').trim();
+  if (audience === 'branch') {
+    if (!['QCD 1', 'QCD 2'].includes(audienceValue)) return { error: 'الفرع لازم يكون QCD 1 أو QCD 2' };
+  } else if (audience === 'type') {
+    if (!['FT', 'PT'].includes(audienceValue)) return { error: 'نوع الدوام لازم يكون FT أو PT' };
+  } else if (audience === 'code') {
+    const codes = [...new Set(audienceValue.split(/[,;\n]+/).map(s => s.trim().toUpperCase()).filter(Boolean))];
+    if (!codes.length) return { error: 'اكتب كود مندوب واحد على الأقل' };
+    if (codes.length > 200) return { error: 'أقصى 200 كود في الكارت' };
+    audienceValue = codes.join(',');
+  } else {
+    audienceValue = '';
+  }
+
+  let startDate = ISO_DATE.test(String(b.start_date || '')) ? String(b.start_date) : '';
+  let endDate = ISO_DATE.test(String(b.end_date || '')) ? String(b.end_date) : '';
+  if (startDate && endDate && endDate < startDate) return { error: 'تاريخ النهاية لازم يكون بعد تاريخ البداية' };
+
+  return { title, body, btnText, btnUrl, audience, audienceValue, startDate, endDate };
+}
+
+// 19-ب. جلب كل الكروت (شاملة المتوقفة والمستحقة تواريخها) للإدارة
+app.get('/api/admin/cards', (req, res) => {
+  db.all("SELECT * FROM cards ORDER BY id DESC", [], (err, rows) => {
+    if (err) return res.status(500).json({ error: 'خطأ في جلب الكروت' });
+    res.json({ cards: rows });
+  });
+});
+
+// 19-ج. إنشاء كارت جديد
+app.post('/api/admin/cards', (req, res) => {
+  const p = cardPayload(req.body || {});
+  if (p.error) return res.status(400).json({ error: p.error });
+  const active = (req.body && req.body.active === false) ? 0 : 1;
+  db.run(
+    `INSERT INTO cards (title, body, button_text, button_url, audience, audience_value, start_date, end_date, active)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [p.title, p.body, p.btnText, p.btnUrl, p.audience, p.audienceValue, p.startDate, p.endDate, active],
+    function (err) {
+      if (err) return res.status(500).json({ error: 'فشل حفظ الكارت' });
+      res.json({ success: true, card_id: this.lastID });
+    }
+  );
+});
+
+// 19-د. تعديل كارت — أو إيقاف/تشغيل لو الحقل الوحيد اللي راجع هو active
+app.put('/api/admin/cards/:id', (req, res) => {
+  const id = req.params.id;
+  const b = req.body || {};
+  db.get("SELECT * FROM cards WHERE id = ?", [id], (err, before) => {
+    if (err) return res.status(500).json({ error: 'خطأ في السيرفر' });
+    if (!before) return res.status(404).json({ error: 'الكارت غير موجود' });
+
+    if (Object.keys(b).length === 1 && 'active' in b) {
+      db.run("UPDATE cards SET active = ? WHERE id = ?", [b.active ? 1 : 0, id], (err2) => {
+        if (err2) return res.status(500).json({ error: 'فشل تحديث الكارت' });
+        res.json({ success: true });
+      });
+      return;
+    }
+
+    const p = cardPayload(b);
+    if (p.error) return res.status(400).json({ error: p.error });
+    const active = ('active' in b) ? (b.active ? 1 : 0) : before.active;
+    db.run(
+      `UPDATE cards SET title=?, body=?, button_text=?, button_url=?, audience=?, audience_value=?, start_date=?, end_date=?, active=? WHERE id=?`,
+      [p.title, p.body, p.btnText, p.btnUrl, p.audience, p.audienceValue, p.startDate, p.endDate, active, id],
+      (err2) => {
+        if (err2) return res.status(500).json({ error: 'فشل تحديث الكارت' });
+        res.json({ success: true });
+      }
+    );
+  });
+});
+
+// 19-هـ. مسح كارت
+app.delete('/api/admin/cards/:id', (req, res) => {
+  db.run("DELETE FROM cards WHERE id = ?", [req.params.id], function (err) {
+    if (err) return res.status(500).json({ error: 'فشل حذف الكارت' });
+    if (this.changes === 0) return res.status(404).json({ error: 'الكارت غير موجود' });
     res.json({ success: true });
   });
 });

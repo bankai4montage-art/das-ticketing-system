@@ -635,3 +635,22 @@ input[type="file"].visually-hidden { position: absolute; width: 1px; height: 1px
 [dir="ltr"] .tbl thead th { text-align: left; }
 [dir="ltr"] .kpi { text-align: left; }
 [dir="ltr"] .dd-item { text-align: left; }
+
+/* ===== ???? ??????? ??????? ??? ??????? ===== */
+.cards-box { padding: 16px 20px; }
+.cards-rail { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: thin; }
+.cards-rail::-webkit-scrollbar { height: 6px; }
+.cards-rail::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 3px; }
+.c-card {
+  flex: 0 0 auto; min-width: 250px; max-width: 320px;
+  display: flex; flex-direction: column; gap: 8px;
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--border));
+  border-radius: 16px; padding: 14px 16px;
+  animation: riseIn .5s var(--ease) both; animation-delay: calc(var(--i, 0) * 60ms);
+}
+.c-badge { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; padding: 3px 10px; font-size: 11px; font-weight: 700; color: var(--accent); background: var(--accent-soft); border-radius: 8px; }
+.c-badge .ico, .c-badge svg { width: 13px; height: 13px; }
+.c-card b { font-size: 14.5px; font-weight: 800; line-height: 1.4; }
+.c-card p { margin: 0; font-size: 12.5px; line-height: 1.6; color: var(--text-2); white-space: pre-line; }
+.c-btn { align-self: flex-start; margin-top: 2px; }

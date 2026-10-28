@@ -69,6 +69,15 @@
         <div class="mini-stat ok" style="--i:3"><b id="sDone">0</b><span data-i18n="اتحلت">اتحلت</span></div>
       </section>
 
+      <!-- كروت الإدارة المخصصة (بيبان بس لو في كروت مطابقة ليك) -->
+      <section id="cardsBox" class="glass cards-box rise hidden" style="animation-delay:.14s">
+        <div class="section-title" style="margin:0 0 10px">
+          <span style="font-size:15px;color:var(--text);font-weight:800" data-i18n="إعلانات وتنبيهات">إعلانات وتنبيهات</span>
+          <span class="live"><i></i> من الإدارة</span>
+        </div>
+        <div id="cardsRail" class="cards-rail"></div>
+      </section>
+
       <div class="section-title rise" style="animation-delay:.15s" data-i18n="اختر القسم لتسجيل شكوى أو طلب">اختر القسم لتسجيل شكوى أو طلب</div>
       <section class="cat-grid">
         <button class="cat-card rise" style="animation-delay:.2s" onclick="openForm('الشيفت')" id="cardShift">
@@ -183,6 +192,7 @@
     let advSig = null;
     let advPrevMap = {};
     let advFirstLoad = true;
+    let cardsCache = null;
 
     $('issueDateInput').valueAsDate = new Date();
 
@@ -229,11 +239,38 @@
       av.textContent = DAS.initials(currentCourier.name);
       firstLoad = true; lastSig = null; prevMap = {};
       advFirstLoad = true; advSig = null; advPrevMap = {};
+      cardsCache = null;
       loadMyTickets();
       loadMyAdvances();
+      loadMyCards();
       initPushUI();
       if (pollInterval) clearInterval(pollInterval);
-      pollInterval = setInterval(() => { loadMyTickets(); loadMyAdvances(); }, 4000);
+      pollInterval = setInterval(() => { loadMyTickets(); loadMyAdvances(); loadMyCards(); }, 4000);
+    }
+
+    // ================= كروت الإدارة المخصصة =================
+    // بتتطلع بس لو الكارت نشط وفي فترته ومش مطابق جمهور الكارت (الكل/الفرع/نوع الدوام/كود)
+    async function loadMyCards() {
+      if (!currentCourier || !currentCourier.das_code) return;
+      try {
+        const res = await fetch('/api/courier/cards/' + encodeURIComponent(currentCourier.das_code) +
+          '?name=' + encodeURIComponent(currentCourier.name || ''));
+        const data = await res.json();
+        const cards = (data && data.cards) || [];
+        const sig = JSON.stringify(cards.map(c => [c.id, c.title, c.body, c.button_text, c.button_url]));
+        if (sig === cardsCache) return;
+        cardsCache = sig;
+        const box = $('cardsBox'), rail = $('cardsRail');
+        if (!cards.length) { box.classList.add('hidden'); rail.innerHTML = ''; return; }
+        rail.innerHTML = cards.map((c, i) => `
+          <div class="c-card" style="--i:${Math.min(i, 8)}" data-i18n-raw>
+            <span class="c-badge"><i data-ico="msg"></i> إعلان</span>
+            <b>${DAS.esc(c.title)}</b>
+            ${c.body ? `<p>${DAS.esc(c.body)}</p>` : ''}
+            ${c.button_url ? `<a class="btn btn-primary btn-sm c-btn" href="${DAS.esc(c.button_url)}" target="_blank" rel="noopener">${DAS.esc(c.button_text || 'فتح')} <i data-ico="arrow"></i></a>` : ''}
+          </div>`).join('');
+        box.classList.remove('hidden');
+      } catch (e) { /* تجاهل — جولة البولل الجاية هتعيد المحاولة */ }
     }
 
     // ================= إشعارات المتصفح (Web Push) =================
