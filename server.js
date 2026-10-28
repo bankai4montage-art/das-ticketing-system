@@ -568,6 +568,138 @@ app.post('/api/push/unsubscribe', (req, res) => {
   });
 });
 
+// ================= جسر الروستر (الحضور لايف) =================
+// الربط مع سيستم الروستر والحضور: الرابط وباسورد الأدمن من Variables على Railway
+// (ROSTER_URL + ROSTER_ADMIN_PASSWORD). من غيرهم السيرفر بيشتغل عادي —
+// بس قسم الحضور في بروفايل المندوب هياخد "الروستر مش مربوط".
+// السيرفر هنا وسيط بس: التوكن بيفضل جواه ومفيش أي باسورد بيروح للمتصفح.
+const ROSTER_URL = (process.env.ROSTER_URL || '').replace(/\/+$/, '');
+const ROSTER_ADMIN_PASSWORD = process.env.ROSTER_ADMIN_PASSWORD || '';
+const rosterState = { connected: false, rev: 0, employees: 0 };
+
+let rosterToken = '';
+let rosterLoginAt = 0;
+let rosterEmployeesCache = null;
+let rosterEmployeesAt = 0;
+
+function rosterConfigured() {
+  return !!ROSTER_URL && !!ROSTER_ADMIN_PASSWORD;
+}
+
+async function rosterLogin(retried = false) {
+  rosterLoginAt = Date.now();
+  const res = await fetch(ROSTER_URL + '/api/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: ROSTER_ADMIN_PASSWORD })
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.token) {
+    if (res.status === 429 && !retried) {
+      // قفل IP مؤقت من الروستر — نستنى ونجرّب مرة واحدة
+      await new Promise((r) => setTimeout(r, 65e3));
+      return rosterLogin(true);
+    }
+    throw new Error('فشل تسجيل الدخول للروستر (' + res.status + ')');
+  }
+  rosterToken = data.token;
+}
+
+async function rosterFetch(path, opts = {}) {
+  const res = await fetch(ROSTER_URL + path, {
+    ...opts,
+    headers: { Authorization: 'Bearer ' + rosterToken, ...(opts.headers || {}) }
+  });
+  if (res.status === 401) {
+    await rosterLogin();
+    return rosterFetch(path, opts);
+  }
+  return res;
+}
+
+// حلقة لايف: long-poll على أمثال الروستر — أي تسجيل حضور في أي تاب بيجي هنا فورًا
+// وبيزوّد rev، وواجهة الأدمن بتقارن rev كل 4 ثواني فبتحدّث قسم الحضور نفسها.
+async function rosterLiveLoop() {
+  if (!rosterConfigured()) {
+    console.warn('[DAS] ROSTER_URL/ROSTER_ADMIN_PASSWORD not set — roster bridge disabled');
+    return;
+  }
+  let since = 0;
+  for (;;) {
+    try {
+      const res = await fetch(ROSTER_URL + `/api/events?since=${since}&wait=28`, { headers: { Authorization: 'Bearer ' + rosterToken } });
+      if (res.status === 401) { await rosterLogin(); continue; }
+      const data = await res.json().catch(() => null);
+      if (!data) throw new Error('bad payload');
+      since = data.rev || since;
+      rosterState.connected = true;
+      rosterState.rev = data.rev;
+      rosterState.employees = rosterEmployeesCache ? rosterEmployeesCache.length : 0;
+      await new Promise((r) => setTimeout(r, 400)); // نبضة خفيفة قبل الجولة اللي جاية
+    } catch (e) {
+      rosterState.connected = false;
+      await new Promise((r) => setTimeout(r, 5000));
+      // إعادة تسجيل الدخول مرة كل دقيقة بالكتير — الروستر بيقفل الـIP لو المحاولات كترت
+      if (Date.now() - rosterLoginAt > 60e3) {
+        try { await rosterLogin(); } catch (e2) {}
+      }
+    }
+  }
+}
+
+// كاش الموظفين من الروستر — بنمشي عليه لربط كود المندوب بمعرّف موظف الروستر
+async function rosterEmployees() {
+  if (rosterEmployeesCache && Date.now() - rosterEmployeesAt < 60e3) return rosterEmployeesCache;
+  const res = await rosterFetch('/api/employees?active_only=false');
+  if (!res.ok) throw new Error('فشل جلب موظفي الروستر (' + res.status + ')');
+  const data = await res.json().catch(() => ([]));
+  rosterEmployeesCache = Array.isArray(data) ? data : [];
+  rosterEmployeesAt = Date.now();
+  rosterState.employees = rosterEmployeesCache.length;
+  return rosterEmployeesCache;
+}
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+// نبضة حالة الجسر — الواجهة بتسأل كل 4 ثواني وبتقارن rev عشان تعرف تحدّط قسم الحضور
+app.get('/api/admin/roster-status', (req, res) => {
+  res.json({ roster: rosterState, configured: rosterConfigured() });
+});
+
+// 20. الحضور بتاع مندوب من الروستر — المندوب بيتطابق بالكود (das_code = كود الموظف)
+// ولو الكود فاضي بيتطابق بالاسم. الأسبوع بيتحدد بـ start/end من الواجهة.
+app.get('/api/admin/roster-attendance/:dasCode', async (req, res) => {
+  if (!rosterConfigured()) return res.status(503).json({ error: 'الروستر مش مربوط — ظبّط ROSTER_URL و ROSTER_ADMIN_PASSWORD من Variables' });
+  const code = String(req.params.dasCode || '').trim().toUpperCase();
+  const name = String(req.query.name || '').trim();
+  try {
+    const emps = await rosterEmployees();
+    let emp = emps.find((x) => String(x.employee_code || '').trim().toUpperCase() === code);
+    let matchedBy = 'code';
+    if (!emp && name) {
+      emp = emps.find((x) => String(x.name || '').trim() === name) || emps.find((x) => String(x.name || '').trim() === name && x.active);
+      matchedBy = 'name';
+    }
+    if (!emp) return res.json({ found: false, roster: rosterState });
+
+    const start = ISO_DATE.test(String(req.query.start || '')) ? String(req.query.start) : '';
+    const end = ISO_DATE.test(String(req.query.end || '')) ? String(req.query.end) : '';
+    let path = '/api/reports/employee/' + emp.id;
+    if (start && end) path += `?start=${start}&end=${end}`;
+
+    const r = await rosterFetch(path);
+    if (!r.ok) return res.status(502).json({ error: 'الروستر رد بخطأ (' + r.status + ') — جرب تاني' });
+    const data = await r.json();
+    res.json({ found: true, matched_by: matchedBy, roster: rosterState,
+      employee: data.employee, stats: data.stats, records: data.records, weeks: data.weeks || [] });
+  } catch (e) {
+    rosterState.connected = false;
+    res.status(502).json({ error: 'مفيش اتصال بالروستر دلوقتي — جرب تاني بعد ثواني' });
+  }
+});
+
+rosterLiveLoop().catch(() => {});
+
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });

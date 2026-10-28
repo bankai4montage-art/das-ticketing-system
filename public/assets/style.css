@@ -203,6 +203,7 @@ html.scrolling .orb, html.scrolling .bg-fx::before { animation-play-state: pause
 .badge.warn { color: var(--warn); background: var(--warn-soft); border-color: color-mix(in srgb, var(--warn) 30%, transparent); }
 .badge.ok { color: var(--ok); background: var(--ok-soft); border-color: color-mix(in srgb, var(--ok) 30%, transparent); }
 .badge.bad { color: var(--bad); background: var(--bad-soft); border-color: color-mix(in srgb, var(--bad) 30%, transparent); }
+.badge.info { color: var(--accent); background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 30%, transparent); }
 .badge.warn .dot, .badge.bad .dot { animation: pulseDot 1.6s ease-in-out infinite; }
 @keyframes pulseDot { 0%,100% { box-shadow: 0 0 0 0 currentColor; opacity: 1; } 50% { box-shadow: 0 0 0 5px transparent; opacity: 0.6; } }
 .tag { display: inline-block; padding: 3px 10px; font-size: 11.5px; font-weight: 700; border-radius: 8px; }

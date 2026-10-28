@@ -343,7 +343,28 @@
         fetchTickets();
         if (archiveMode) fetchArchiveTickets();
         fetchAdvances();
+        refreshProfileAttendanceIfChanged();
       }, 4000);
+    }
+
+    /* الربط اللايف: الروستر بينشر rev جديد مع كل تسجيل حضور.
+       لو بروفايل مندوب مفتوح وrev اتغيّر، بنحدّث قسم الحضور من غير ما المستخدم يعمل حاجة. */
+    let rosterPulseBusy = false;
+    async function refreshProfileAttendanceIfChanged() {
+      if (rosterPulseBusy || !$('profileModal').classList.contains('open') || !profileCode || profAtt.rev == null) return;
+      rosterPulseBusy = true;
+      try {
+        const res = await adminFetch('/api/admin/roster-status');
+        if (res.ok) {
+          const rv = (await res.json()).roster || {};
+          if (rv.connected === false) {
+            const live = $('profAttLive');
+            if (live) { live.className = 'badge bad'; live.innerHTML = '<span class="dot"></span>غير متصل بالروستر'; }
+          } else if (rv.rev !== profAtt.rev) {
+            loadProfileAttendance(true);
+          }
+        }
+      } catch (e) {} finally { rosterPulseBusy = false; }
     }
 
     function adminLogout() {
@@ -777,6 +798,9 @@
       const advs = allAdvances.filter(a => a.das_code === code);
       const courier = (couriersCache || []).find(c => c.das_code === code);
       renderProfile(code, courier, tickets, advs);
+      /* الحضور من الروستر: جولة جديدة لكل فتح بروفايل — بتجيب أسابيع الموظف من الروستر */
+      profAtt = { week: null, weeks: [], rev: null, name: courier ? courier.name : '' };
+      loadProfileAttendance();
     }
 
     function renderProfile(code, courier, tickets, advs) {
@@ -812,6 +836,8 @@
         ${tickets.length ? profileTicketsTable(tickets) : `<div class="empty fade"><b>مفيش شكاوى</b></div>`}
         <div class="section-title" style="margin:18px 0 10px">السلف</div>
         ${advs.length ? profileAdvancesTable(advs) : `<div class="empty fade"><b>مفيش سلف</b></div>`}
+        <div class="section-title" style="margin:18px 0 10px">الحضور — من سيستم الروستر</div>
+        <div id="profAttBox"><div class="skeleton" style="height:100px"></div></div>
       `;
     }
 
@@ -848,6 +874,98 @@
             <tbody>${rows}</tbody>
           </table>
         </div>`;
+    }
+
+    // ---------- الحضور من الروستر (لايف) ----------
+    // بروفايل المندوب فيه قسم "الحضور" بيجيب داتا سيستم الروستر مباشرة.
+    // السيرفر بتاعنا هو الوسيط: توكن الروستر بيفضل جوه السيرفر ومش بيوصل للمتصفح.
+    // أي تسجيل في الروستر بيزوّد rev، واللوب بتاع 4 ثواني بيقارن وبيحدّث القسم لوحده.
+    let profAtt = { week: null, weeks: [], rev: null, name: '' };
+
+    const rISO = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const rAddDays = (s, n) => { const d = new Date(s + 'T00:00:00'); d.setDate(d.getDate() + n); return rISO(d); };
+    /* الأسبوع زي الجدول: أحد → سبت، وأول أسبوع في السنة هو اللي فيه 1 يناير */
+    const rWeekStart = (s) => { const d = new Date(s + 'T00:00:00'); d.setDate(d.getDate() - d.getDay()); return rISO(d); };
+    const rWeekNo = (ws) => {
+      const ye = +rAddDays(ws, 6).slice(0, 4), first = rWeekStart(`${ye}-01-01`);
+      return Math.round((new Date(ws + 'T00:00:00') - new Date(first + 'T00:00:00')) / 864e5 / 7) + 1;
+    };
+    const rRangeLabel = (ws) => `${new Date(ws + 'T00:00:00').toLocaleDateString('ar-EG-u-nu-latn', { day: 'numeric', month: 'short' })} – ${new Date(rAddDays(ws, 6) + 'T00:00:00').toLocaleDateString('ar-EG-u-nu-latn', { day: 'numeric', month: 'short', year: 'numeric' })}`;
+
+    const ATT_STATUS = { Present: ['حاضر', 'ok'], Late: ['متأخر', 'warn'], Absent: ['غائب', 'bad'], Excused: ['بعذر', 'info'], none: ['لم يُسجل', 'warn'] };
+
+    function setProfAttWeek(ws) {
+      profAtt.week = ws;
+      loadProfileAttendance(true);
+    }
+
+    async function loadProfileAttendance(silent = false) {
+      const box = $('profAttBox');
+      if (!box || !$('profileModal').classList.contains('open') || !profileCode) return;
+      if (!silent) box.innerHTML = '<div class="skeleton" style="height:100px"></div>';
+      const params = new URLSearchParams();
+      if (profAtt.week) { params.set('end', rAddDays(profAtt.week, 6)); params.set('start', profAtt.week); }
+      if (profAtt.name) params.set('name', profAtt.name);
+      try {
+        const qs = params.toString();
+        const res = await adminFetch('/api/admin/roster-attendance/' + encodeURIComponent(profileCode) + (qs ? '?' + qs : ''));
+        const data = await res.json();
+        if (data && data.roster && data.roster.rev != null) profAtt.rev = data.roster.rev;
+        if (!res.ok) {
+          box.innerHTML = `<div class="empty fade"><div class="eic">${DAS.icon('alert', 'ico-lg')}</div><b>${DAS.esc((data && data.error) || 'تعذر الاتصال بالروستر')}</b>ظبّط ROSTER_URL و ROSTER_ADMIN_PASSWORD من Variables على Railway</div>`;
+          return;
+        }
+        if (data.found === false) {
+          box.innerHTML = `<div class="empty fade"><div class="eic">${DAS.icon('search', 'ico-lg')}</div><b>مش متطابق في الروستر</b>اتأكد إن كود الموظف في الروستر هو نفسه كود المندوب (${DAS.esc(profileCode)}) — لو الكود مش موجود بيتطابق بالاسم بنفس الشكل</div>`;
+          return;
+        }
+        profAtt.weeks = (data.weeks || []).map(w => w.start);
+        const s = data.stats || {}, t = s.fine_total || 0;
+        const statusCls = ST => (ATT_STATUS[ST] || ATT_STATUS.none)[1];
+        const statusName = STn => (ATT_STATUS[STn] || ATT_STATUS.none)[0];
+        const weekOptions = () => {
+          const cur = rWeekStart(rISO(new Date())), starts = profAtt.weeks.slice();
+          if (!starts.includes(cur)) starts.unshift(cur);
+          return starts.map(ws => `<option value="${ws}"${ws === profAtt.week ? ' selected' : ''}>Week ${rWeekNo(ws)} · ${rRangeLabel(ws)}</option>`).join('');
+        };
+        box.innerHTML = `
+          <div class="row" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+            <span id="profAttLive" class="badge ${data.roster.connected ? 'ok' : 'bad'}"><span class="dot"></span>${data.roster.connected ? 'لايف — متصل بالروستر' : 'غير متصل بالروستر'}</span>
+            <select id="profAttWeek" class="input" style="max-width:280px" onchange="setProfAttWeek(this.value)">${weekOptions()}</select>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+            <span class="badge"><b>${s.total ?? 0}</b> تسجيلات</span>
+            <span class="badge ${statusCls('Present')}"><span class="dot"></span><b>${s.present ?? 0}</b> ${statusName('Present')}</span>
+            <span class="badge ${statusCls('Late')}"><span class="dot"></span><b>${s.late ?? 0}</b> ${statusName('Late')}</span>
+            <span class="badge ${statusCls('Absent')}"><span class="dot"></span><b>${s.absent ?? 0}</b> ${statusName('Absent')}</span>
+            <span class="badge ${statusCls('Excused')}"><span class="dot"></span><b>${s.excused ?? 0}</b> ${statusName('Excused')}</span>
+            <span class="badge bad"><span class="dot"></span><b>${t}</b> ج غرامات</span>
+          </div>
+          ${data.records.length ? `
+          <div class="table-wrap" style="border:none;box-shadow:none;background:transparent;padding:0;max-height:260px;overflow:auto">
+            <table class="tbl">
+              <thead><tr><th>اليوم</th><th>الحالة</th><th>السبب</th><th>ملاحظة</th></tr></thead>
+              <tbody>${data.records.map(a => `
+                <tr>
+                  <td data-label="اليوم">${(new Date(a.attendance_date + 'T00:00:00').toLocaleDateString('ar-EG-u-nu-latn', { weekday: 'long' }))} ${new Date(a.attendance_date + 'T00:00:00').toLocaleDateString('ar-EG-u-nu-latn', { day: 'numeric', month: 'short' })}</td>
+                  <td data-label="الحالة"><span class="badge ${statusCls(a.status)}"><span class="dot"></span>${statusName(a.status)}</span></td>
+                  <td data-label="السبب" class="desc-cell">${DAS.esc(a.reason || '—')}</td>
+                  <td data-label="ملاحظة" class="desc-cell">${DAS.esc(a.note || '—')}</td>
+                </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>` : `<div class="empty fade"><b>مفيش تسجيلات في الأسبوع ده</b>سجّل الحضور من سيستم الروستر وهيظهر هنا لوحده</div>`}
+        `;
+        if (!profAtt.week) {
+          /* أول جولة: من غير فترة — بنملي القايمة ونجيب أسابيع الأسبوع اللي فيه النهارده لو له تسجيلات، وإلا الأحدث */
+          const cur = rWeekStart(rISO(new Date()));
+          profAtt.week = profAtt.weeks.includes(cur) ? cur : profAtt.weeks[0];
+          if (profAtt.week) loadProfileAttendance(true);
+        }
+      } catch (e) {
+        if (!box.querySelector) return;
+        box.innerHTML = `<div class="empty fade"><b>تعذر الاتصال بالسيرفر</b>جرب تاني بعد ثواني</div>`;
+      }
     }
 
     // ---------- التقرير الشهري للسلف ----------
