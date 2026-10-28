@@ -1329,7 +1329,7 @@
           return `<div class="pick-opt-res">
             <div class="por-head"><b data-i18n-raw dir="auto">${DAS.esc(o.label)}</b><span class="badge ${o.count ? 'info' : ''}"><span class="mono">${o.count}</span> · ${pct}%</span></div>
             <div class="por-bar"><span class="por-fill" style="width:${pct}%"></span></div>
-            ${o.who.length ? `<div class="por-who">${o.who.map(w => `<span class="who-pill" dir="auto" title="${DAS.esc(w.name || '')}"><b>${DAS.esc(w.das_code)}</b>${w.name ? ' · ' + DAS.esc(w.name) : ''}</span>`).join('')}</div>` : `<div class="por-none">${DAS.t('لسه مفيش حدا اختارها')}</div>`}
+            ${o.who.length ? `<div class="por-who">${o.who.map(w => `<span class="who-pill" data-i18n-raw dir="auto" title="${DAS.esc(w.das_code)}">${DAS.esc(w.name || w.das_code)}</span>`).join('')}</div>` : `<div class="por-none">${DAS.t('لسه مفيش حدا اختارها')}</div>`}
           </div>`;
         }).join('')}</div>` : `<div class="por-none">${DAS.t('لسه مفيش أصوات')}</div>`}`;
     }
