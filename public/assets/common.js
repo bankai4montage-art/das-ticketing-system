@@ -323,6 +323,39 @@
     }
   };
 
+
+  // ---- dynamic translation helper (AR <-> EN) ----
+  const TICK_TRANS = [];
+  function T(s){ if (document.documentElement.lang !== 'en') return s; return s; }
+
+  function translateTree(root) {
+    if (!root) return;
+    try {
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+      let n;
+      while ((n = walker.nextNode())) {
+        if (n.parentNode && n.parentNode.nodeName !== 'SCRIPT' && n.parentNode.nodeName !== 'STYLE') {
+          const v = n.nodeValue;
+          const t = (v || '').trim();
+          if (t && DAS._dict && DAS._dict[t] && t !== DAS._dict[t]) {
+            n.nodeValue = v.replace(t, DAS._dict[t]);
+          }
+        }
+      }
+      root.querySelectorAll && root.querySelectorAll('*').forEach(el => {
+        ['placeholder','title','aria-label'].forEach(a => {
+          if (el.hasAttribute(a)) {
+            const v = el.getAttribute(a);
+            if (DAS._dict && DAS._dict[v]) el.setAttribute(a, DAS._dict[v]);
+          }
+        });
+      });
+    } catch (e) {}
+  }
+
+  // expose dict reference (populated by toggleLang)
+  DAS._dict = {};
+
   document.addEventListener('DOMContentLoaded', () => { DAS.hydrateIcons(); const l = localStorage.getItem('das_lang'); if (l === 'en') DAS.toggleLang('en'); });
 
   // قفل الـ dropdown لما تدوس بره / resize / scroll / Escape
