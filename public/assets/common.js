@@ -233,7 +233,7 @@
       return `linear-gradient(135deg, hsl(${base} 75% 58%), hsl(${base + 14} 70% 48%))`;
     },
 
-    toast(msg, type) {
+    toast(msg, type, raw) {
       let box = document.getElementById('toasts');
       if (!box) {
         box = document.createElement('div');
@@ -242,7 +242,11 @@
       }
       const el = document.createElement('div');
       el.className = 'toast ' + (type === 'err' ? 'err' : 'ok');
-      el.innerHTML = this.icon(type === 'err' ? 'alert' : 'checkCircle') + '<span>' + this.esc(this.t ? this.t(msg) : msg) + '</span>';
+      // raw=true: الرسالة جاهزة ومترجمة من قبل المستدعي — جوها بيانات مستخدم
+      // (اسم مندوب مثلاً) ماتترجمش تاني، والـ i18n observer مايلمسهاش
+      if (raw) el.setAttribute('data-i18n-raw', '');
+      const text = raw ? msg : (this.t ? this.t(msg) : msg);
+      el.innerHTML = this.icon(type === 'err' ? 'alert' : 'checkCircle') + '<span>' + this.esc(text) + '</span>';
       box.appendChild(el);
       setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 380); }, 2800);
     },

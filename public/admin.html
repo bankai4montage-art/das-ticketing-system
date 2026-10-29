@@ -225,8 +225,16 @@
         </div>
       </div>
       <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
-        <h4 style="font-size:12px;color:var(--text-3);margin-bottom:10px" id="couriersCount">المناديب المسجلين</h4>
-        <div id="couriersList" style="max-height:230px;overflow-y:auto;display:grid;gap:8px"></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+          <h4 style="font-size:12px;color:var(--text-3);margin:0" id="couriersCount">المناديب المسجلين</h4>
+          <span id="couriersSearchInfo" class="badge info" style="display:none"></span>
+        </div>
+        <div class="cs-search">
+          <input type="text" id="courierSearch" class="input" placeholder="ابحث بكود أو اسم أو موبايل..." aria-label="بحث في المناديب" data-i18n-placeholder="ابحث بكود أو اسم أو موبايل..." data-i18n-aria="بحث في المناديب" autocomplete="off" spellcheck="false">
+          <i data-ico="search"></i>
+          <button type="button" id="courierSearchClear" class="cs-clear" aria-label="مسح البحث" title="مسح البحث" data-i18n-aria="مسح البحث" data-i18n-title="مسح البحث" style="display:none">✕</button>
+        </div>
+        <div id="couriersList" style="max-height:260px;overflow-y:auto;display:grid;gap:8px"></div>
       </div>
     </div>
   </div>
@@ -494,7 +502,9 @@
         const fresh = tickets.filter(t => !prevIds.has(t.id));
         if (fresh.length) {
           fresh.forEach(t => pendingFlash.add(t.id));
-          DAS.toast(fresh.length === 1 ? `شكوى جديدة من ${fresh[0].courier_name}` : `${fresh.length} شكاوى جديدة`);
+          DAS.toast(fresh.length === 1
+            ? `${DAS.t('شكوى جديدة من')} ${fresh[0].courier_name}`
+            : `${fresh.length} ${DAS.t('شكاوى جديدة')}`, 'ok', fresh.length === 1);
         }
       }
       prevIds = new Set(tickets.map(t => t.id));
@@ -581,8 +591,8 @@
           </td>
           <td data-label="المندوب">
             <div class="cell-courier clickable" data-profile-code="${DAS.esc(t.das_code)}" title="فتح بروفايل المندوب">
-              <div class="av" style="background:${DAS.gradient(t.das_code)}">${DAS.esc(DAS.initials(t.courier_name))}</div>
-              <div><b>${DAS.esc(t.courier_name)}</b><small class="mono">${DAS.esc(t.das_code)}</small></div>
+              <div class="av" style="background:${DAS.gradient(t.das_code)}" data-i18n-raw>${DAS.esc(DAS.initials(t.courier_name))}</div>
+              <div><b data-i18n-raw>${DAS.esc(t.courier_name)}</b><small class="mono">${DAS.esc(t.das_code)}</small></div>
             </div>
           </td>
           <td data-label="القسم والنوع">
@@ -817,20 +827,59 @@
       if (opening) loadCouriers();
     }
 
+    let couriersData = []; // كاش قائمة المندوبين — البحث بيشتغل عليه فوراً
+
     async function loadCouriers() {
       const res = await adminFetch('/api/admin/couriers');
       const data = await res.json();
-      const list = data.couriers || [];
-      $('couriersCount').textContent = `المناديب المسجلين (${list.length})`;
-      $('couriersList').innerHTML = list.map((c, i) => `
+      couriersData = data.couriers || [];
+      renderCouriers();
+    }
+
+    /* فلترة قائمة المناديب بالبحث: كود / اسم / موبايل — فوراً من الكاش
+       من غير إعادة طلب من السيرفر (القائمة 140+ مندوب) */
+    function renderCouriers() {
+      const inp = $('courierSearch');
+      const q = (inp ? inp.value : '').trim().toLowerCase();
+      const list = couriersData || [];
+      const filtered = q
+        ? list.filter(c => [c.das_code, c.name, c.phone].some(v => String(v || '').toLowerCase().includes(q)))
+        : list;
+
+      const clearBtn = $('courierSearchClear');
+      if (clearBtn) clearBtn.style.display = q ? 'flex' : 'none';
+
+      $('couriersCount').textContent = `${DAS.t('المناديب المسجلين')} (${list.length})`;
+
+      const info = $('couriersSearchInfo');
+      if (info) {
+        info.style.display = q ? 'inline-flex' : 'none';
+        info.textContent = q ? `${filtered.length} ${DAS.t('من')} ${list.length}` : '';
+      }
+
+      $('couriersList').innerHTML = filtered.length ? filtered.map((c, i) => `
         <div class="courier-row clickable-row" style="--i:${Math.min(i, 12)};${i < 12 ? '' : 'animation:none'}" data-profile-code="${DAS.esc(c.das_code)}" title="فتح بروفايل المندوب">
           <div class="cell-courier">
-            <div class="av" style="width:34px;height:34px;border-radius:11px;font-size:12px;background:${DAS.gradient(c.das_code)}">${DAS.esc(DAS.initials(c.name))}</div>
-            <div><span class="c mono">${DAS.esc(c.das_code)}</span><small>${DAS.esc(c.name)}</small></div>
+            <div class="av" style="width:34px;height:34px;border-radius:11px;font-size:12px;background:${DAS.gradient(c.das_code)}" data-i18n-raw>${DAS.esc(DAS.initials(c.name))}</div>
+            <div><span class="c mono">${DAS.esc(c.das_code)}</span><small data-i18n-raw>${DAS.esc(c.name)}</small></div>
           </div>
           <small class="mono">${DAS.esc(c.phone || '')}</small>
-        </div>`).join('');
+        </div>`).join('') : `
+        <div class="empty fade" style="padding:22px 10px">
+          <div class="eic">${DAS.icon('search', 'ico-lg')}</div>
+          <b>${DAS.t('مفيش مندوب بالبحث ده')}</b>${DAS.t('جرّب كلمة بحث مختلفة')}
+        </div>`;
     }
+
+    $('courierSearch').addEventListener('input', renderCouriers);
+    $('courierSearch').addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { $('courierSearch').value = ''; renderCouriers(); }
+    });
+    $('courierSearchClear').addEventListener('click', () => {
+      $('courierSearch').value = '';
+      renderCouriers();
+      $('courierSearch').focus();
+    });
 
     $('addCourierForm').addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -918,9 +967,9 @@
 
       $('profileBody').innerHTML = `
         <div class="profile-head">
-          <div class="av" style="background:${DAS.gradient(code)}">${DAS.esc(DAS.initials(courier ? courier.name : code))}</div>
+          <div class="av" style="background:${DAS.gradient(code)}" data-i18n-raw>${DAS.esc(DAS.initials(courier ? courier.name : code))}</div>
           <div>
-            <b style="font-size:17px">${DAS.esc(courier ? courier.name : 'مندوب غير معروف')}</b>
+            <b style="font-size:17px" ${courier ? 'data-i18n-raw' : ''}>${DAS.esc(courier ? courier.name : DAS.t('مندوب غير معروف'))}</b>
             <div class="mono" style="color:var(--accent);font-size:13px">${DAS.esc(code)}</div>
             ${courier && courier.phone ? `<div style="font-size:13px;color:var(--text-2)">${DAS.esc(courier.phone)}</div>` : ''}
           </div>
@@ -1139,7 +1188,7 @@
             <thead><tr><th>المندوب</th><th>عدد السلف</th><th>مصروف (ج)</th><th>قيد المراجعة (ج)</th><th>مرفوض (ج)</th></tr></thead>
             <tbody>${couriers.map(c => `
               <tr>
-                <td data-label="المندوب"><div class="cell-courier clickable" data-profile-code="${DAS.esc(c.das_code)}" title="فتح بروفايل المندوب"><div class="av" style="background:${DAS.gradient(c.das_code)}">${DAS.esc(DAS.initials(c.name))}</div><div><b>${DAS.esc(c.name)}</b><small class="mono">${DAS.esc(c.das_code)}</small></div></div></td>
+                <td data-label="المندوب"><div class="cell-courier clickable" data-profile-code="${DAS.esc(c.das_code)}" title="فتح بروفايل المندوب"><div class="av" style="background:${DAS.gradient(c.das_code)}" data-i18n-raw>${DAS.esc(DAS.initials(c.name))}</div><div><b data-i18n-raw>${DAS.esc(c.name)}</b><small class="mono">${DAS.esc(c.das_code)}</small></div></div></td>
                 <td data-label="عدد السلف">${c.count}</td>
                 <td data-label="مصروف (ج)"><span class="amt">${c.paid}</span></td>
                 <td data-label="قيد المراجعة (ج)" style="color:var(--warn);font-weight:700">${c.pending}</td>
@@ -1616,7 +1665,9 @@
       if (!advFirstRender) {
         const fresh = advances.filter(a => !advPrevIds.has(a.id));
         if (fresh.length) {
-          DAS.toast(fresh.length === 1 ? `طلب سلفة جديد من ${fresh[0].courier_name} بمبلغ ${fresh[0].amount} ج` : `${fresh.length} طلبات سلف جديدة`);
+          DAS.toast(fresh.length === 1
+            ? `${DAS.t('طلب سلفة جديد من')} ${fresh[0].courier_name} ${DAS.t('بمبلغ')} ${fresh[0].amount} ${DAS.lang === 'en' ? 'EGP' : 'ج'}`
+            : `${fresh.length} ${DAS.t('طلبات سلف جديدة')}`, 'ok', fresh.length === 1);
         }
         // فلش للسلف اللي اتغيرت (حالة أو ملاحظة)
         const prevStatus = new Map(allAdvances.map(a => [a.id, a.status + '|' + (a.admin_note || '')]));
@@ -1673,8 +1724,8 @@
           </td>
           <td data-label="المندوب">
             <div class="cell-courier clickable" data-profile-code="${DAS.esc(a.das_code)}" title="فتح بروفايل المندوب">
-              <div class="av" style="background:${DAS.gradient(a.das_code)}">${DAS.esc(DAS.initials(a.courier_name))}</div>
-              <div><b>${DAS.esc(a.courier_name)}</b><small class="mono">${DAS.esc(a.das_code)}</small></div>
+              <div class="av" style="background:${DAS.gradient(a.das_code)}" data-i18n-raw>${DAS.esc(DAS.initials(a.courier_name))}</div>
+              <div><b data-i18n-raw>${DAS.esc(a.courier_name)}</b><small class="mono">${DAS.esc(a.das_code)}</small></div>
             </div>
           </td>
           <td data-label="المبلغ"><span class="amt">${DAS.esc(a.amount)} ج</span></td>
