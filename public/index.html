@@ -626,9 +626,10 @@
     }
 
     const STATUS = {
-      'اتحلت':            { cls: 'ok',   icon: 'checkCircle', label: 'اتحلت' },
-      'لازم تيجي المكتب': { cls: 'bad',  icon: 'building',    label: 'لازم تيجي المكتب' },
-      'يتم المراجعة':     { cls: 'warn', icon: 'clock',       label: 'يتم المراجعة' }
+      'اتحلت':            { cls: 'ok',   icon: 'checkCircle', label: 'اتحلت', final: 'اتحلت' },
+      'لازم تيجي المكتب': { cls: 'bad',  icon: 'building',    label: 'لازم تيجي المكتب', final: 'المكتب' },
+      'يتم المراجعة':     { cls: 'warn', icon: 'clock',       label: 'يتم المراجعة', final: 'القرار' },
+      'مرفوض بسبب الروستر': { cls: 'bad', icon: 'alert',     label: 'مرفوض بسبب الروستر', final: 'مرفوض' }
     };
     const st = (s) => STATUS[s] || STATUS['يتم المراجعة'];
 
@@ -640,7 +641,7 @@
     // شريط التقدم: تم الإرسال → المراجعة → النتيجة
     function steps(status) {
       const s = st(status);
-      const finalLabel = s.cls === 'ok' ? 'اتحلت' : s.cls === 'bad' ? 'المكتب' : 'القرار';
+      const finalLabel = s.final || (s.cls === 'ok' ? 'اتحلت' : s.cls === 'bad' ? 'المكتب' : 'القرار');
       const c = s.cls === 'warn' ? 'var(--warn)' : s.cls === 'ok' ? 'var(--ok)' : 'var(--bad)';
       const reviewed = s.cls !== 'warn';
       return `

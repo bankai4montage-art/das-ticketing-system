@@ -75,7 +75,7 @@ setInterval(() => {
   for (const [k, v] of hits) if (!v.some((t) => now - t < 3600e3)) hits.delete(k);
 }, 3600e3).unref();
 
-const STATUSES = ['يتم المراجعة', 'اتحلت', 'لازم تيجي المكتب'];
+const STATUSES = ['يتم المراجعة', 'اتحلت', 'لازم تيجي المكتب', 'مرفوض بسبب الروستر'];
 const ADV_STATUSES = ['قيد المراجعة', 'تمت الصرف', 'مرفوضة'];
 
 // الأرشفة التلقائية: الشكوى اللي اتحلت ومعدّش على حلها 30 يوم بتتأرشف (بتخرج من الجدول الرئيسي)
@@ -496,6 +496,7 @@ app.put('/api/admin/tickets/:id', (req, res) => {
         if (statusChanged) {
           if (status === 'اتحلت') title = 'مبروك — شكواك اتحلت';
           else if (status === 'لازم تيجي المكتب') title = 'لازم تيجي المكتب بخصوص شكواك';
+          else if (status === 'مرفوض بسبب الروستر') title = 'شكواك مرفوضة بسبب بيانات الروستر';
         } else if (noteChanged && note) {
           title = 'الإدارة ردت على شكواك';
         }

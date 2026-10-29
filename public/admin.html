@@ -119,6 +119,7 @@
         </div>
         <div class="chips">
           <button class="chip" id="weakChip" onclick="toggleWeak()"><i data-ico="star"></i> تقييم ضعيف</button>
+          <button class="chip" id="rosterRejChip" onclick="toggleStatusFilter('مرفوض بسبب الروستر')"><i data-ico="alert"></i> مرفوض بسبب الروستر</button>
           <button class="chip" id="archiveChip" onclick="toggleArchive()"><i data-ico="inbox"></i> الأرشيف</button>
           <button class="chip" onclick="exportTickets()"><i data-ico="download"></i> تصدير CSV</button>
         </div>
@@ -415,8 +416,8 @@
 
   <script>
     const $ = (id) => document.getElementById(id);
-    const STATUS_CLS = { 'اتحلت': 'ok', 'لازم تيجي المكتب': 'bad', 'يتم المراجعة': 'warn' };
-    const STATUS_OPTS = ['يتم المراجعة', 'اتحلت', 'لازم تيجي المكتب'];
+    const STATUS_CLS = { 'اتحلت': 'ok', 'لازم تيجي المكتب': 'bad', 'يتم المراجعة': 'warn', 'مرفوض بسبب الروستر': 'bad' };
+    const STATUS_OPTS = ['يتم المراجعة', 'اتحلت', 'لازم تيجي المكتب', 'مرفوض بسبب الروستر'];
 
     let allTickets = [];
     let allAdvances = [];
@@ -706,6 +707,17 @@
       renderTickets();
     }
 
+    // فلتر بالحالة من الشيب (الحالة اللي مش موجودة في كروت الـ KPI)
+    function toggleStatusFilter(status) {
+      const chip = $('rosterRejChip');
+      const on = filterStatus !== status;
+      filterStatus = on ? status : 'all';
+      if (chip) chip.classList.toggle('active', on);
+      // كروت الـ KPI مش هما اللي مفعّلين دلوقتي
+      document.querySelectorAll('.kpi').forEach(x => x.classList.toggle('active', on ? false : x.dataset.status === 'all'));
+      renderTickets();
+    }
+
     function toggleArchive() {
       archiveMode = !archiveMode;
       $('archiveChip').classList.toggle('active', archiveMode);
@@ -843,6 +855,9 @@
     document.querySelectorAll('.kpi').forEach(k => k.addEventListener('click', () => {
       filterStatus = k.dataset.status;
       document.querySelectorAll('.kpi').forEach(x => x.classList.toggle('active', x === k));
+      // شيب "مرفوض بسبب الروستر" بيترجع لما فلتر الـ KPI يشتغل
+      const rj = $('rosterRejChip');
+      if (rj) rj.classList.remove('active');
       // أنيميشن الضغطة على الكارت نفسه
       k.classList.remove('pop-anim');
       void k.offsetWidth;
