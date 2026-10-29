@@ -854,7 +854,8 @@
       const info = $('couriersSearchInfo');
       if (info) {
         info.style.display = q ? 'inline-flex' : 'none';
-        info.textContent = q ? `${filtered.length} ${DAS.t('من')} ${list.length}` : '';
+        /* نسبة رقمية (2 / 142) — محايدة في كل اللغات ومفيش ambiguities */
+        info.textContent = q ? `${filtered.length} / ${list.length}` : '';
       }
 
       $('couriersList').innerHTML = filtered.length ? filtered.map((c, i) => `

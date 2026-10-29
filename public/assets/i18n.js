@@ -146,7 +146,6 @@
     'بحث في المناديب': 'Search couriers',
     'مسح البحث': 'Clear search',
     'مفيش مندوب بالبحث ده': 'No courier matches this search',
-    'من': 'of',
     'بحث': 'Search',
     'بحث في السلف': 'Search advances',
     'المندوب': 'Courier',
