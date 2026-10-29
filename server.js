@@ -30,8 +30,13 @@ if (pushEnabled) {
   webpush.setVapidDetails('mailto:admin@das-portal', PUSH_PUBLIC_KEY, PUSH_PRIVATE_KEY);
 }
 
-// توكن إدمن عشوائي لكل تشغيل — بيتسلم بعد نجاح اللوجين وبيتفحص على كل مسار أدمن
-const ADMIN_TOKEN = crypto.randomBytes(24).toString('hex');
+// توكن الأدمن — ثابت عبر إعادة التشغيل وإعادة النشر (مش عشوائي)
+// قبل كده كان crypto.randomBytes كل مرة السيرفر يقلع، فأي redeploy (أو لو
+// السيرفر بيشغّل أكتر من نسخة ورا load balancer) كان بيبطّل جلسة الأدمن:
+// كل طلب بيرجع 401 والصفحة بتعمل reload → 401 تاني → حلقة إعادة تحميل
+// لا نهائية ("retry loop"). دلوقتي بيتحسب من الباسورد نفسه فيفضل ثابت
+// ما دام الباسورد ما اتغيّرش.
+const ADMIN_TOKEN = crypto.createHmac('sha256', adminPass).update('das-admin-session-v1').digest('hex');
 
 // مقارنة ثابتة الزمن — بتقفل هجوم التوقيت على الباسورد والتوكن
 function safeEq(a, b) {

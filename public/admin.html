@@ -382,13 +382,25 @@
     let prevTicketState = {}; // id → status|note — عشان نعمل فلاش على الصفوف اللي اتغيرت في الجدول
 
     // ---------- Auth ----------
-    // كل نداءات الأدمن بتمر من هنا: بتبعت التوكن، ولو اترفض (401) بترجّع للوجين بدل ما الداشبورد تفضل مكسورة
+    // حماية من حلقة إعادة التحميل (retry loop): لو التوكن مرفوض بنرجع للوجين
+    // مرة واحدة بس. قبل كده كل نداء 401 بيعمل location.reload() — فلو الـ
+    // storage محظور في المتصفح أو السيرفر رافض التوكن بشكل مستمر، الصفحة
+    // كانت بتعمل إعادة تحميل لا نهائية ومش بتخلص.
+    const AUTH_RELOAD_KEY = 'das_401_reload';
+    function showLoginScreen(msg) {
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+      $('adminLoginBox').classList.remove('hidden');
+      $('dashboardContent').classList.add('hidden');
+      if (msg) $('adminErr').textContent = msg;
+    }
     async function adminFetch(url, opts = {}) {
+      let token = '';
+      try { token = sessionStorage.getItem('das_admin_token') || ''; } catch (e) {}
       const res = await fetch(url, {
         ...opts,
         headers: {
           'Content-Type': 'application/json',
-          'X-Admin-Token': sessionStorage.getItem('das_admin_token') || '',
+          'X-Admin-Token': token,
           ...(opts.headers || {})
         }
       });
@@ -397,7 +409,17 @@
           sessionStorage.removeItem('das_admin_auth');
           sessionStorage.removeItem('das_admin_token');
         } catch (e) {}
-        location.reload();
+        let tries = 0;
+        try { tries = parseInt(sessionStorage.getItem(AUTH_RELOAD_KEY) || '0', 10) || 0; } catch (e) {}
+        if (tries < 1) {
+          // أول رفض: إعادة تحميل واحدة بس (عشان كل حاجة ترجع لنقطة الصفر)
+          try { sessionStorage.setItem(AUTH_RELOAD_KEY, String(tries + 1)); } catch (e) {}
+          location.reload();
+        } else {
+          // تاني رفض: نوقف ونرجع لشاشة اللوجين — من غير reload تاني
+          try { sessionStorage.removeItem(AUTH_RELOAD_KEY); } catch (e) {}
+          showLoginScreen('انتهت الجلسة — سجل دخول تاني');
+        }
         throw new Error('unauthorized');
       }
       return res;
@@ -424,6 +446,7 @@
           try {
             sessionStorage.setItem('das_admin_auth', 'true');
             sessionStorage.setItem('das_admin_token', data.token);
+            sessionStorage.setItem(AUTH_RELOAD_KEY, '0'); // جلسة جديدة = عدّاد الرفض اتصفّر
           } catch (e) {}
           unlockDashboard();
         } else {
@@ -475,6 +498,7 @@
       try {
         sessionStorage.removeItem('das_admin_auth');
         sessionStorage.removeItem('das_admin_token');
+        sessionStorage.removeItem(AUTH_RELOAD_KEY);
       } catch (e) {}
       location.reload();
     }
