@@ -444,6 +444,12 @@
 
     // ===== قسم مزامنة الروستر (DAS ⇄ الروستر) =====
     'مزامنة الروستر': 'Roster sync',
+    'كل الأفرع': 'All branches',
+    'مندوبين مالهمش فرع في الروستر': 'Couriers with no branch in the roster',
+    'الروستر مش مربوط — الفلتر مش هيشتغل': 'Roster not connected — the filter is disabled',
+    'شكاوى لسه مفتوحة': 'Open complaints',
+    'سلف مردتش عليها': 'Unanswered advances',
+    'كروت اتجاوب عليها': 'Cards with replies',
     'مزامنة مناديب DAS مع الروستر': 'Sync DAS couriers with the roster',
     'تحديث': 'Refresh',
     'تطبيق المحدد': 'Apply selected',

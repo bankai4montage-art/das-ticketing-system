@@ -67,9 +67,9 @@
 
       <!-- تبويبات العرض: الشكاوى / السلف -->
       <section class="view-tabs rise">
-        <button class="chip active" id="tabTickets" onclick="switchView('tickets')"><i data-ico="layers"></i> <span data-i18n="الشكاوى">الشكاوى</span></button>
-        <button class="chip" id="tabAdvances" onclick="switchView('advances')"><i data-ico="banknote"></i> <span data-i18n="السلف">السلف</span></button>
-        <button class="chip" id="tabCards" onclick="switchView('cards')"><i data-ico="msg"></i> <span data-i18n="الكروت">الكروت</span></button>
+        <button class="chip active" id="tabTickets" onclick="switchView('tickets')"><i data-ico="layers"></i> <span data-i18n="الشكاوى">الشكاوى</span><span class="tab-badge bad" id="badgeTickets">0</span></button>
+        <button class="chip" id="tabAdvances" onclick="switchView('advances')"><i data-ico="banknote"></i> <span data-i18n="السلف">السلف</span><span class="tab-badge warn" id="badgeAdvances">0</span></button>
+        <button class="chip" id="tabCards" onclick="switchView('cards')"><i data-ico="msg"></i> <span data-i18n="الكروت">الكروت</span><span class="tab-badge info" id="badgeCards">0</span></button>
         <button class="chip" id="tabSync" onclick="switchView('sync')"><i data-ico="refresh"></i> <span data-i18n="مزامنة الروستر">مزامنة الروستر</span></button>
       </section>
 
@@ -117,6 +117,11 @@
           <button class="chip" data-period="week" data-i18n="آخر 7 أيام">آخر 7 أيام</button>
           <button class="chip" data-period="month" data-i18n="هذا الشهر">هذا الشهر</button>
         </div>
+        <div class="chips" data-branch-target="tickets">
+          <button class="chip active" data-branch="all" data-i18n="كل الأفرع">كل الأفرع</button>
+          <button class="chip" data-branch="QCD 1">QCD 1</button>
+          <button class="chip" data-branch="QCD 2">QCD 2</button>
+        </div>
         <div class="chips">
           <button class="chip" id="weakChip" onclick="toggleWeak()"><i data-ico="star"></i> تقييم ضعيف</button>
           <button class="chip" id="rosterRejChip" onclick="toggleStatusFilter('مرفوض بسبب الروستر')"><i data-ico="alert"></i> مرفوض بسبب الروستر</button>
@@ -157,6 +162,11 @@
             <div class="adv-summary" id="advSummary">—</div>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <div class="chips" data-branch-target="advances">
+              <button class="chip active" data-branch="all" data-i18n="كل الأفرع">كل الأفرع</button>
+              <button class="chip" data-branch="QCD 1">QCD 1</button>
+              <button class="chip" data-branch="QCD 2">QCD 2</button>
+            </div>
             <div class="search">
               <input type="text" id="advSearchInput" class="input" placeholder="ابحث بكود/اسم/سبب/محفظة..." aria-label="بحث في السلف">
               <i data-ico="search"></i>
@@ -432,6 +442,9 @@
     let filterStatus = 'all';
     let filterPeriod = 'all';
     let filterWeak = false;
+    let filterBranchTickets = 'all';
+    let filterBranchAdvances = 'all';
+    let syncBranchMap = {};        // كود DAS → الفرع (QCD 1 / QCD 2) من الروستر
     let archiveMode = false;
     let archiveTickets = [];
     let pendingFlash = new Set();
@@ -519,14 +532,17 @@
       $('dashboardContent').classList.remove('hidden');
       fetchTickets(true);
       fetchAdvances(true);
+      fetchCards(true);
+      // خريطة الأفرع (QCD 1 / QCD 2) من الروستر — للفلتر في الشكاوى والسلف
+      ensureBranchMap();
       if (pollTimer) clearInterval(pollTimer);
       pollTimer = setInterval(() => {
         fetchTickets();
         if (archiveMode) fetchArchiveTickets();
         fetchAdvances();
         refreshProfileAttendanceIfChanged();
-        // لايف للأصوات: لو تاب الكروت مفتوح نبعت له جولة تحديث (fetchCards بيترندر بس لو في تغيير)
-        if (!$('cardsView').classList.contains('hidden')) fetchCards();
+        // الكروت: بنجيبها كل جولة عشان رقم "كروت اتجاوب عليها" في التبويب يفضل مظبوط
+        fetchCards();
       }, 4000);
     }
 
@@ -617,21 +633,59 @@
       $('dBarBad').style.width = pct(off) + '%';
       $('dBarWarn').style.width = pct(rev) + '%';
       $('resolveRate').textContent = Math.round(pct(ok)) + '% اتحلت';
+      updateTabBadges();
+    }
+
+    // ===== الأرقام على تبويبات العرض =====
+    // الشكاوى: اللي لسه مفتوحة (تحت المراجعة + لازم تيجي المكتب)
+    // السلف: اللي لسه قيد المراجعة (مردتش عليها)
+    // الكروت: الكروت اللي حد جاوب عليها (صوت/تصويت)
+    function updateTabBadges() {
+      const openTickets = allTickets.filter(t => t.status === 'يتم المراجعة' || t.status === 'لازم تيجي المكتب').length;
+      const pendingAdv = allAdvances.filter(a => a.status === 'قيد المراجعة').length;
+      const votedCards = allCards.filter(c => (((c.picks || {}).total) || 0) > 0).length;
+      setTabBadge('badgeTickets', openTickets, DAS.t('شكاوى لسه مفتوحة'));
+      setTabBadge('badgeAdvances', pendingAdv, DAS.t('سلف مردتش عليها'));
+      setTabBadge('badgeCards', votedCards, DAS.t('كروت اتجاوب عليها'));
+    }
+
+    function setTabBadge(id, n, title) {
+      const el = $(id);
+      if (!el) return;
+      const prev = el.dataset.n;
+      el.textContent = n;
+      el.title = title + ': ' + n;
+      el.classList.toggle('zero', !n);
+      el.dataset.n = String(n);
+      // أنيميشن بس لما الرقم يتغيّر فعلاً
+      if (prev !== undefined && prev !== String(n)) {
+        el.classList.remove('pop');
+        void el.offsetWidth;
+        el.classList.add('pop');
+      }
     }
 
     function renderTickets() {
       const q = $('searchInput').value.trim().toLowerCase();
       const source = archiveMode ? archiveTickets : allTickets;
       const start = archiveMode ? null : periodStart();
-      const filtered = source.filter(t => {
+      const branchReady = Object.keys(syncBranchMap).length > 0;
+      const filtered = [];
+      const bCounts = { all: 0, 'QCD 1': 0, 'QCD 2': 0, none: 0 };
+      source.forEach(t => {
         const mc = archiveMode || filterCat === 'all' || t.category === filterCat;
         const ms = archiveMode || filterStatus === 'all' || t.status === filterStatus;
         const mw = !filterWeak || (t.rating != null && t.rating <= 2);
         const created = DAS.parseUtc(t.created_at);
         const mp = !start || (created && created >= start);
         const mq = !q || t.das_code.toLowerCase().includes(q) || t.courier_name.toLowerCase().includes(q);
-        return mc && ms && mw && mp && mq;
+        if (!(mc && ms && mw && mp && mq)) return;
+        const br = syncBranchMap[t.das_code] || '';
+        bCounts.all++;
+        if (br === 'QCD 1' || br === 'QCD 2') bCounts[br]++; else bCounts.none++;
+        if (!branchReady || filterBranchTickets === 'all' || br === filterBranchTickets) filtered.push(t);
       });
+      setBranchChipCounts('tickets', bCounts, branchReady);
 
       const tbody = $('ticketsTableBody');
       if (!filtered.length) {
@@ -673,7 +727,8 @@
           <td data-label="المندوب">
             <div class="cell-courier clickable" data-profile-code="${DAS.esc(t.das_code)}" title="فتح بروفايل المندوب">
               <div class="av" style="background:${DAS.gradient(t.das_code)}" data-i18n-raw>${DAS.esc(DAS.initials(t.courier_name))}</div>
-              <div><b data-i18n-raw>${DAS.esc(t.courier_name)}</b><small class="mono">${DAS.esc(t.das_code)}</small></div>
+              <div><b data-i18n-raw>${DAS.esc(t.courier_name)}</b><small class="mono">${DAS.esc(t.das_code)}</small>
+              ${syncBranchMap[t.das_code] ? `<span class="branch-tag">${DAS.esc(syncBranchMap[t.das_code])}</span>` : ''}</div>
             </div>
           </td>
           <td data-label="القسم والنوع">
@@ -874,6 +929,21 @@
       document.querySelectorAll('#periodChips [data-period]').forEach(x => x.classList.toggle('active', x === c));
       renderTickets();
     }));
+
+    // فلتر الفرع (QCD 1 / QCD 2) — في الشكاوى والسلف
+    document.querySelectorAll('[data-branch-target]').forEach(group => {
+      group.addEventListener('click', (e) => {
+        const chip = e.target.closest('.chip');
+        if (!chip || !group.contains(chip) || !chip.dataset.branch) return;
+        // الهدف على الـ group نفسه (data-branch-target) مش على الـ chip
+        const target = group.dataset.branchTarget;
+        if (target === 'tickets') filterBranchTickets = chip.dataset.branch;
+        else if (target === 'advances') filterBranchAdvances = chip.dataset.branch;
+        else return;
+        [].forEach.call(group.querySelectorAll('.chip'), x => x.classList.toggle('active', x === chip));
+        if (target === 'tickets') renderTickets(); else renderAdvances();
+      });
+    });
     $('searchInput').addEventListener('input', renderTickets);
     $('advSearchInput').addEventListener('input', renderAdvances);
 
@@ -1351,6 +1421,7 @@
         data = await res.json();
       } catch (e) { return; }
       allCards = data.cards || [];
+      updateTabBadges();
       const newSig = JSON.stringify(allCards.map(c => [c.id, c.title, c.body, c.button_text, c.button_url, c.active, c.sort_order, c.audience, c.audience_value, c.picks]));
       if (newSig === cardsSig && !force) return;
       cardsSig = newSig;
@@ -1762,6 +1833,32 @@
     let syncRows = [];
     let syncFilter = 'all';
     let syncSelected = new Set();
+    let syncLoadedAt = 0;
+    const SYNC_CACHE_MS = 120e3;   // الكاش: دقيقتين
+
+    // جلب بيانات الروستر (مناديب DAS + موظفي الروستر) — بيتخزّن لحد دقيقتين
+    async function fetchSyncPayload(force) {
+      if (!force && syncLoadedAt && Date.now() - syncLoadedAt < SYNC_CACHE_MS && syncCouriers.length) {
+        return { couriers: syncCouriers, employees: syncEmployees };
+      }
+      const res = await adminFetch('/api/admin/roster-sync');
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'فشل تحميل بيانات الروستر');
+      syncCouriers = data.couriers || [];
+      syncEmployees = data.employees || [];
+      syncLoadedAt = Date.now();
+      return { couriers: syncCouriers, employees: syncEmployees };
+    }
+
+    // خريطة الأفرع: كود المندوب في DAS → فرعه في الروستر
+    function buildBranchMap() {
+      const map = {};
+      syncRows.forEach(r => {
+        if (r.kind === 'das' && r.emp && r.emp.branch) map[r.courier.das_code] = r.emp.branch;
+      });
+      syncBranchMap = map;
+      return map;
+    }
 
     const SYNC_STRONG = 0.9;   // من هنا لفوق: مطابقة مضمونة
     const SYNC_MIN = 0.55;     // أقل من كده: مفيش مطابقة خالص
@@ -1861,6 +1958,7 @@
         name: e.name || '',
         code: e.employee_code || '',
         employee_code: e.employee_code || '',
+        branch: e.branch || '',
         normCode: syncNormCode(e.employee_code),
         tokens: syncTokens(e.name),
         emp: e
@@ -2035,16 +2133,9 @@
       const btn = $('syncRefreshBtn');
       if (btn) DAS.busy(btn, true);
       try {
-        const res = await adminFetch('/api/admin/roster-sync');
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          DAS.toast(data.error || 'فشل تحميل بيانات المزامنة', 'err');
-          $('syncSummary').innerHTML = `<span class="badge bad">${DAS.t('الروستر مش مربوط')}</span>`;
-          return;
-        }
-        syncCouriers = data.couriers || [];
-        syncEmployees = data.employees || [];
+        await fetchSyncPayload(true);
         syncRows = buildSyncRows();
+        buildBranchMap();
         // التحديد الافتراضي: المطابقات القوية (بالاسم أو بالكود) — الصفوف "محتاج تأكيد" تفضل للتأكيد اليدوي
         syncSelected = new Set();
         syncRows.forEach(r => {
@@ -2052,9 +2143,26 @@
         });
         renderSync();
         updateSyncSelection();
+        updateTabBadges();
       } catch (e) {
-        DAS.toast('مفيش اتصال بالسيرفر', 'err');
+        DAS.toast(e.message || 'مفيش اتصال بالسيرفر', 'err');
       } finally { if (btn) DAS.busy(btn, false); }
+    }
+
+    // تحميل خريطة الأفرع لوحدها (من غير ما نفتح تاب المزامنة) — للفلتر في الشكاوى والسلف
+    let branchLoading = false;
+    async function ensureBranchMap() {
+      if (branchLoading) return;
+      if (syncLoadedAt && Date.now() - syncLoadedAt < SYNC_CACHE_MS && Object.keys(syncBranchMap).length) return;
+      branchLoading = true;
+      try {
+        await fetchSyncPayload(false);
+        syncRows = buildSyncRows();
+        buildBranchMap();
+        renderTickets();
+        renderAdvances();
+      } catch (e) { /* الروستر مش مربوط — الفلتر هيفضل فاضي */ }
+      finally { branchLoading = false; }
     }
 
     function selectAllSync(on) {
@@ -2158,14 +2266,43 @@
       advPrevIds = new Set(advances.map(a => a.id));
       allAdvances = advances;
       renderAdvances();
+      updateTabBadges();
     }
 
     function advSearchList() {
       const q = $('advSearchInput').value.trim().toLowerCase();
-      if (!q) return allAdvances;
-      return allAdvances.filter(a =>
-        [a.das_code, a.courier_name, a.reason, a.wallet].some(v => String(v || '').toLowerCase().includes(q))
-      );
+      const branchReady = Object.keys(syncBranchMap).length > 0;
+      const out = [];
+      const bCounts = { all: 0, 'QCD 1': 0, 'QCD 2': 0, none: 0 };
+      allAdvances.forEach(a => {
+        const mq = !q || [a.das_code, a.courier_name, a.reason, a.wallet].some(v => String(v || '').toLowerCase().includes(q));
+        if (!mq) return;
+        const br = syncBranchMap[a.das_code] || '';
+        bCounts.all++;
+        if (br === 'QCD 1' || br === 'QCD 2') bCounts[br]++; else bCounts.none++;
+        if (!branchReady || filterBranchAdvances === 'all' || br === filterBranchAdvances) out.push(a);
+      });
+      setBranchChipCounts('advances', bCounts, branchReady);
+      return out;
+    }
+
+    // عدّاد كل شيب فرع + تنبيه للمندوبين مالهمش فرع في الروستر
+    function setBranchChipCounts(target, counts, ready) {
+      const group = document.querySelector('[data-branch-target="' + target + '"]');
+      if (!group) return;
+      group.querySelectorAll('.chip').forEach(chip => {
+        const br = chip.dataset.branch;
+        const n = counts[br];
+        if (n === undefined) return;
+        let s = chip.querySelector('.chip-count');
+        if (!s) { s = document.createElement('span'); s.className = 'chip-count'; chip.appendChild(s); }
+        s.textContent = n;
+        if (br === 'all') {
+          chip.title = ready
+            ? (counts.none ? DAS.t('مندوبين مالهمش فرع في الروستر') + ': ' + counts.none : '')
+            : DAS.t('الروستر مش مربوط — الفلتر مش هيشتغل');
+        }
+      });
     }
 
     function renderAdvances() {
@@ -2204,7 +2341,8 @@
           <td data-label="المندوب">
             <div class="cell-courier clickable" data-profile-code="${DAS.esc(a.das_code)}" title="فتح بروفايل المندوب">
               <div class="av" style="background:${DAS.gradient(a.das_code)}" data-i18n-raw>${DAS.esc(DAS.initials(a.courier_name))}</div>
-              <div><b data-i18n-raw>${DAS.esc(a.courier_name)}</b><small class="mono">${DAS.esc(a.das_code)}</small></div>
+              <div><b data-i18n-raw>${DAS.esc(a.courier_name)}</b><small class="mono">${DAS.esc(a.das_code)}</small>
+              ${syncBranchMap[a.das_code] ? `<span class="branch-tag">${DAS.esc(syncBranchMap[a.das_code])}</span>` : ''}</div>
             </div>
           </td>
           <td data-label="المبلغ"><span class="amt">${DAS.esc(a.amount)} ج</span></td>

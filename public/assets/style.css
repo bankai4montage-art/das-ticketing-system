@@ -923,9 +923,48 @@ input[type="file"].visually-hidden { position: absolute; width: 1px; height: 1px
 :root[data-theme="dark"] .toast { background: #0d1424; border-color: var(--border-strong); }
 
 /* ==========================================================
-   قسم مزامنة الروستر (DAS ⇄ الروستر)
+   الأرقام على تبويبات العرض + تاج الفرع
    ========================================================== */
-.sync-tbl tbody td { vertical-align: middle; }
+.tab-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 21px; height: 21px; padding: 0 6px; margin-inline-start: 7px;
+  border-radius: 999px; font-size: 11px; font-weight: 800; line-height: 1;
+  font-variant-numeric: tabular-nums;
+  background: var(--bad-soft); color: var(--bad);
+  border: 1px solid color-mix(in srgb, var(--bad) 30%, transparent);
+  transition: transform .2s var(--ease);
+}
+.tab-badge.warn { background: var(--warn-soft); color: var(--warn); border-color: color-mix(in srgb, var(--warn) 30%, transparent); }
+.tab-badge.info { background: var(--accent-soft); color: var(--accent); border-color: color-mix(in srgb, var(--accent) 30%, transparent); }
+.tab-badge.zero { opacity: .32; }
+.tab-badge.pop { animation: badgePop .35s var(--ease); }
+@keyframes badgePop { 0% { transform: scale(.6); } 100% { transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) { .tab-badge.pop { animation: none; } }
+
+.branch-tag {
+  display: inline-block; margin-top: 3px; padding: 1px 7px;
+  border-radius: 6px; font-size: 10.5px; font-weight: 700; letter-spacing: .02em;
+  color: var(--text-3); background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+
+/* عدّاد شيب الفرع */
+.chip-count {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; height: 18px; padding: 0 5px; margin-inline-start: 6px;
+  border-radius: 999px; font-size: 10.5px; font-weight: 800;
+  font-variant-numeric: tabular-nums; line-height: 1;
+  background: var(--surface-2); color: var(--text-3);
+  border: 1px solid var(--border);
+}
+.chip.active .chip-count {
+  background: rgba(255, 255, 255, .18); color: #fff; border-color: transparent;
+}
+:root[data-theme="dark"] .chip.active .chip-count { background: rgba(0, 0, 0, .28); color: #dbe7ff; }
+
+/* ==========================================================
+   قسم مزامنة الروستر (DAS ⇄ الروستر)
+   ========================================================== */.sync-tbl tbody td { vertical-align: middle; }
 .sync-tbl td b { font-weight: 700; }
 .sync-chk {
   width: 17px; height: 17px; accent-color: var(--accent);
