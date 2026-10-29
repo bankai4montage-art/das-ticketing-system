@@ -1015,6 +1015,119 @@ app.get('/api/admin/roster-attendance/:dasCode', async (req, res) => {
   }
 });
 
+// ================= مزامنة مناديب DAS مع موظفي الروستر =================
+// DAS هو مصدر الحقيقة: الاسم والكود بتوع DAS هي اللي بتتكتب في الروستر.
+// المقارنة (فرق الأسماء) بتحصل في الواجهة — هنا جسر آمن بس:
+// السيرفر بيجيب البيانات ويطبّق التحديثات المختارة، من غير ما يقرّر في المقارنة.
+
+function localISO(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+// كل موظفي الروستر — بندمج 4 أسابيع ورا بعض عشان مايفوتش حد متشال من جدول أسبوع معيّن
+async function rosterEmployeesAll() {
+  const map = new Map();
+  const base = await rosterEmployees();
+  (Array.isArray(base) ? base : []).forEach(e => map.set(Number(e.id), e));
+  for (let k = 1; k <= 3; k++) {
+    const d = new Date();
+    d.setDate(d.getDate() + k * 7);
+    try {
+      const res = await rosterFetch('/api/employees?active_only=false&week=' + localISO(d));
+      if (!res.ok) continue;
+      const list = await res.json().catch(() => []);
+      (Array.isArray(list) ? list : []).forEach(e => {
+        if (!map.has(Number(e.id))) map.set(Number(e.id), e);
+      });
+    } catch (e) { /* أسبوع مش متاح — نكمل بالباقي */ }
+  }
+  return Array.from(map.values());
+}
+
+// 21. بيانات المقارنة: مناديب DAS + موظفو الروستر
+app.get('/api/admin/roster-sync', async (req, res) => {
+  if (!rosterConfigured()) return res.status(503).json({ error: 'الروستر مش مربوط — ظبّط ROSTER_URL و ROSTER_ADMIN_PASSWORD من Variables' });
+  try {
+    const couriers = await new Promise((resolve, reject) => {
+      db.all("SELECT das_code, name, phone FROM couriers ORDER BY name COLLATE NOCASE ASC", [], (err, rows) => {
+        if (err) return reject(err);
+        resolve(rows || []);
+      });
+    });
+    const employees = await rosterEmployeesAll();
+    res.json({ couriers, employees, roster: rosterState });
+  } catch (e) {
+    rosterState.connected = false;
+    res.status(502).json({ error: 'مفيش اتصال بالروستر دلوقتي — جرب تاني بعد ثواني' });
+  }
+});
+
+// 22. تطبيق التحديثات المختارة على موظفي الروستر (الاسم والكود من DAS)
+// التحديث المختار: { id, name, employee_code }
+app.post('/api/admin/roster-sync/apply', async (req, res) => {
+  if (!rosterConfigured()) return res.status(503).json({ error: 'الروستر مش مربوط — ظبّط ROSTER_URL و ROSTER_ADMIN_PASSWORD من Variables' });
+  const updates = Array.isArray(req.body && req.body.updates) ? req.body.updates : [];
+  if (!updates.length) return res.status(400).json({ error: 'مفيش تحديثات مختارة' });
+  if (updates.length > 500) return res.status(400).json({ error: 'عدد التحديثات كبير أوي' });
+
+  let emps = [];
+  try { emps = await rosterEmployeesAll(); } catch (e) {
+    rosterState.connected = false;
+    return res.status(502).json({ error: 'مفيش اتصال بالروستر دلوقتي — جرب تاني بعد ثواني' });
+  }
+  const byId = new Map(emps.map(e => [Number(e.id), e]));
+  const results = [];
+
+  for (const u of updates) {
+    const id = Number(u && u.id);
+    const emp = byId.get(id);
+    const name = String((u && u.name) || '').trim();
+    const code = String((u && u.employee_code) || '').trim();
+    if (!emp) { results.push({ id, ok: false, error: 'الموظف غير موجود في الروستر' }); continue; }
+    if (!name) { results.push({ id, ok: false, error: 'الاسم فاضي' }); continue; }
+
+    // بنبعت كل بيانات الموظف تانية (الروستر بيستبدل السجل بالكامل)
+    // وبناخد الفرع والشيفت من نفس الموظف عشان ما يتغيرش حاجة غير الاسم والكود
+    const payload = {
+      name,
+      employee_code: code || null,
+      branch: emp.branch,
+      shift: String(emp.shift || '').trim() || 'Morning',
+      employment_type: emp.employment_type || 'FT',
+      day_off: emp.day_off || 'Friday',
+      active: !!emp.active,
+      phone: emp.phone || null
+    };
+    try {
+      const r = await rosterFetch('/api/employees/' + id, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        let msg = d.detail || d.error || ('الروستر رد بخطأ (' + r.status + ')');
+        if (typeof msg === 'object' && Array.isArray(msg)) msg = msg.map(x => x.msg || '').join(' • ') || String(r.status);
+        results.push({ id, ok: false, error: String(msg) });
+        continue;
+      }
+      const updated = await r.json().catch(() => ({}));
+      results.push({ id, ok: true, name: updated.name || name, employee_code: updated.employee_code || code });
+    } catch (e) {
+      results.push({ id, ok: false, error: e.message || 'فشل الاتصال بالروستر' });
+    }
+  }
+
+  // البيانات اتغيّرت — نمسح الكاش عشان التحميل الجاي يجد الحالة الجديدة
+  rosterEmployeesCache = null;
+  rosterEmployeesAt = 0;
+  const okCount = results.filter(r => r.ok).length;
+  res.json({ ok: okCount, failed: results.length - okCount, results });
+});
+
 rosterLiveLoop().catch(() => {});
 
 app.listen(PORT, () => {

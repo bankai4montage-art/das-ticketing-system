@@ -70,6 +70,7 @@
         <button class="chip active" id="tabTickets" onclick="switchView('tickets')"><i data-ico="layers"></i> <span data-i18n="الشكاوى">الشكاوى</span></button>
         <button class="chip" id="tabAdvances" onclick="switchView('advances')"><i data-ico="banknote"></i> <span data-i18n="السلف">السلف</span></button>
         <button class="chip" id="tabCards" onclick="switchView('cards')"><i data-ico="msg"></i> <span data-i18n="الكروت">الكروت</span></button>
+        <button class="chip" id="tabSync" onclick="switchView('sync')"><i data-ico="refresh"></i> <span data-i18n="مزامنة الروستر">مزامنة الروستر</span></button>
       </section>
 
       <div id="ticketsView" class="view-panel">
@@ -198,6 +199,60 @@
         <div class="hint" style="margin-bottom:12px;display:flex;align-items:center;gap:8px" data-i18n="اسحب الكارت من أي مكان وارميه مكانه عشان تترتيب طريقة ظهورهم للمندوب"><i data-ico="arrow"></i> اسحب الكارت من أي مكان وارميه مكانه عشان تترتيب طريقة ظهورهم للمندوب</div>
 
         <section class="glass table-wrap rise" id="cardsDeck" style="padding:14px;display:grid;gap:10px"></section>
+      </div>
+
+      <!-- ============ مزامنة الروستر ============ -->
+      <div id="syncView" class="view-panel hidden">
+        <section class="glass adv-head rise">
+          <div>
+            <b>مزامنة مناديب DAS مع الروستر</b>
+            <div class="adv-summary" id="syncSummary">—</div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <button class="btn btn-ghost btn-sm" id="syncRefreshBtn" onclick="loadSync(true)"><span class="spinner"></span><i data-ico="refresh"></i><span class="label">تحديث</span></button>
+            <button class="btn btn-ok btn-sm" id="syncApplyBtn" onclick="applySync()" disabled><span class="spinner"></span><i data-ico="check"></i><span class="label">تطبيق المحدد (<span id="syncSelectedCount">0</span>)</span></button>
+          </div>
+        </section>
+
+        <div class="hint" style="margin-bottom:12px;display:flex;align-items:center;gap:8px">
+          <i data-ico="alert"></i>
+          DAS هو المرجع: الاسم والكود بتوع DAS هيتكتبوا في الروستر. لو الاسم مختلف شوية، الصف بياخد علامة "محتاج تأكيد" وانت اللي بتقرّر.
+        </div>
+
+        <section class="glass toolbar rise" style="animation-delay:.3s">
+          <div class="chips" id="syncChips">
+            <button class="chip active" data-sfilter="all">الكل</button>
+            <button class="chip" data-sfilter="change">محتاج تعديل</button>
+            <button class="chip" data-sfilter="maybe">محتاج تأكيد</button>
+            <button class="chip" data-sfilter="none">غير موجود</button>
+            <button class="chip" data-sfilter="extra">موجود بس في الروستر</button>
+          </div>
+          <div class="chips">
+            <button class="chip" onclick="selectAllSync(true)">تحديد المطابقات</button>
+            <button class="chip" onclick="selectAllSync(false)">إلغاء التحديد</button>
+          </div>
+          <div class="search">
+            <input type="text" id="syncSearch" class="input" placeholder="ابحث بكود أو اسم..." aria-label="بحث في المزامنة">
+            <i data-ico="search"></i>
+          </div>
+        </section>
+
+        <section class="glass table-wrap rise" style="animation-delay:.38s">
+          <table class="tbl sync-tbl">
+            <thead>
+              <tr>
+                <th style="width:46px"></th>
+                <th>كود DAS</th>
+                <th>اسم DAS</th>
+                <th>كود الروستر</th>
+                <th>اسم الروستر</th>
+                <th>المطابقة</th>
+                <th>التغيير</th>
+              </tr>
+            </thead>
+            <tbody id="syncTableBody"></tbody>
+          </table>
+        </section>
       </div>
 
     </div>
@@ -1663,10 +1718,10 @@
     const ADV_OPTS = ['قيد المراجعة', 'تمت الصرف', 'مرفوضة'];
 
     function switchView(v) {
-      const adv = v === 'advances', cards = v === 'cards';
-      const show = cards ? $('cardsView') : (adv ? $('advancesView') : $('ticketsView'));
+      const adv = v === 'advances', cards = v === 'cards', sync = v === 'sync';
+      const show = sync ? $('syncView') : (cards ? $('cardsView') : (adv ? $('advancesView') : $('ticketsView')));
       show.classList.remove('hidden');
-      [ 'ticketsView', 'advancesView', 'cardsView' ].forEach(id => {
+      [ 'ticketsView', 'advancesView', 'cardsView', 'syncView' ].forEach(id => {
         if (id !== show.id) $(id).classList.add('hidden');
       });
       // إعادة تشغيل أنيميشن الدخول مع كل تبديل
@@ -1676,8 +1731,389 @@
       $('tabTickets').classList.toggle('active', v === 'tickets');
       $('tabAdvances').classList.toggle('active', adv);
       $('tabCards').classList.toggle('active', cards);
-      if (adv) fetchAdvances(true); else if (cards) fetchCards(true); else fetchTickets(true);
+      $('tabSync').classList.toggle('active', sync);
+      if (adv) fetchAdvances(true);
+      else if (cards) fetchCards(true);
+      else if (sync) loadSync();
+      else fetchTickets(true);
     }
+
+    // ================= مزامنة DAS ⇄ الروستر =================
+    // DAS هو مصدر الحقيقة: الاسم والكود بتوع DAS هيتكتبوا في الروستر.
+    // المقارنة هنا في الواجهة عشان تشوف كل حالة (مطابق / مختلف شوية / غير موجود)
+    // وتقرّر بنفسك قبل ما يتكتب أي حاجة.
+    let syncCouriers = [];
+    let syncEmployees = [];
+    let syncRows = [];
+    let syncFilter = 'all';
+    let syncSelected = new Set();
+
+    const SYNC_STRONG = 0.9;   // من هنا لفوق: مطابقة مضمونة
+    const SYNC_MIN = 0.55;     // أقل من كده: مفيش مطابقة خالص
+
+    const SYNC_STATUS = {
+      same:  { cls: 'ok',   label: 'مطابق' },
+      code:  { cls: 'ok',   label: 'مطابق بالكود' },
+      name:  { cls: 'ok',   label: 'مطابق بالاسم' },
+      maybe: { cls: 'warn', label: 'محتاج تأكيد' },
+      none:  { cls: 'bad',  label: 'غير موجود في الروستر' },
+      extra: { cls: 'info', label: 'موجود بس في الروستر' }
+    };
+
+    // تطبيع الاسم العربي: نشيل التشكيل والتطويل، ونوحّد الألف والياء والتاء المربوطة
+    function syncNorm(s) {
+      return String(s == null ? '' : s)
+        .replace(/[\u064B-\u0652\u0670\u0640]/g, '')
+        .replace(/[\u0622\u0623\u0625\u0671]/g, '\u0627')
+        .replace(/\u0649/g, '\u064A')
+        .replace(/\u0624/g, '\u0648')
+        .replace(/\u0626/g, '\u064A')
+        .replace(/\u0629/g, '\u0647')
+        .replace(/[^\u0600-\u06FFa-zA-Z0-9]+/g, ' ')
+        .trim()
+        .toLowerCase();
+    }
+
+    // تطبيع الكود: حروف كبيرة ومن غير مسافات أو شرطات
+    function syncNormCode(c) {
+      return String(c == null ? '' : c).toUpperCase().replace(/[\s\-_.]/g, '');
+    }
+
+    function syncLev(a, b) {
+      const m = a.length, n = b.length;
+      if (!m) return n;
+      if (!n) return m;
+      let prev = new Array(n + 1);
+      for (let j = 0; j <= n; j++) prev[j] = j;
+      for (let i = 1; i <= m; i++) {
+        const cur = [i];
+        for (let j = 1; j <= n; j++) {
+          cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+        }
+        prev = cur;
+      }
+      return prev[n];
+    }
+
+    function syncTokenSim(a, b) {
+      if (a === b) return 1;
+      const m = Math.max(a.length, b.length);
+      if (!m) return 1;
+      return Math.max(0, 1 - syncLev(a, b) / m);
+    }
+
+    // تقسيم الاسم ل(words) بعد التطبيع
+    function syncTokens(name) {
+      return syncNorm(name).split(' ').filter(Boolean);
+    }
+
+    // نسبة تشابه اسمين (0..1): على مستوى النص كله + على مستوى كل كلمة
+    function syncSimTokens(A, B) {
+      if (!A.length || !B.length) return 0;
+      // لازم فيه كلمة واحدة على الأقل قريبة جدًا — من غير كده بنعتبرهم أشخاص مختلفين
+      let near = 0;
+      for (const ta of A) {
+        for (const tb of B) {
+          if (ta === tb || syncTokenSim(ta, tb) >= 0.86) { near = 1; break; }
+        }
+        if (near) break;
+      }
+      if (!near) return 0;
+      const full = syncTokenSim(A.join(' '), B.join(' '));
+      const used = new Array(B.length).fill(false);
+      let sum = 0;
+      for (const ta of A) {
+        let bestJ = -1, bestSim = 0;
+        for (let j = 0; j < B.length; j++) {
+          if (used[j]) continue;
+          const s = syncTokenSim(ta, B[j]);
+          if (s > bestSim) { bestSim = s; bestJ = j; }
+        }
+        if (bestJ >= 0 && bestSim >= 0.7) { used[bestJ] = true; sum += bestSim; }
+      }
+      const tokenScore = sum / Math.max(A.length, B.length);
+      return Math.max(full, tokenScore);
+    }
+
+    function syncNameSim(nameA, nameB) {
+      return syncSimTokens(syncTokens(nameA), syncTokens(nameB));
+    }
+
+    // بناء صفوف المقارنة: كل مندوب DAS × أقرب موظف في الروستر
+    function buildSyncRows() {
+      const emps = syncEmployees.map(e => ({
+        id: Number(e.id),
+        name: e.name || '',
+        code: e.employee_code || '',
+        employee_code: e.employee_code || '',
+        normCode: syncNormCode(e.employee_code),
+        tokens: syncTokens(e.name),
+        emp: e
+      }));
+      const byCode = new Map();
+      emps.forEach(e => { if (e.normCode && !byCode.has(e.normCode)) byCode.set(e.normCode, e); });
+
+      const taken = new Set();
+      const matched = new Map();
+
+      // 1) الكود أضمن من الاسم — نطابق بيه الأول
+      syncCouriers.forEach(c => {
+        const emp = byCode.get(syncNormCode(c.das_code));
+        if (emp && !taken.has(emp.id)) {
+          taken.add(emp.id);
+          matched.set(c.das_code, { emp, by: 'code', score: 1 });
+        }
+      });
+
+      // 2) الباقي بالاسم — بنحسب كل الاحتمالات ونرتبها من الأعلى للأقل،
+      //    عشان المندوب اللي اسمه شبهه 100% ياخد الموظف بتاعه، ومحدش ياخده قبله
+      const cands = [];
+      syncCouriers.forEach(c => {
+        if (matched.has(c.das_code)) return;
+        const ct = syncTokens(c.name);
+        if (!ct.length) return;
+        for (const e of emps) {
+          if (taken.has(e.id) || !e.tokens.length) continue;
+          const s = syncSimTokens(ct, e.tokens);
+          if (s >= SYNC_MIN) cands.push({ code: c.das_code, emp: e, score: s });
+        }
+      });
+      cands.sort((a, b) => b.score - a.score);
+      const usedCodes = new Set();
+      cands.forEach(cand => {
+        if (matched.has(cand.code) || usedCodes.has(cand.code)) return;
+        if (taken.has(cand.emp.id)) return;
+        taken.add(cand.emp.id);
+        usedCodes.add(cand.code);
+        matched.set(cand.code, { emp: cand.emp, by: 'name', score: cand.score });
+      });
+      syncCouriers.forEach(c => {
+        if (!matched.has(c.das_code)) matched.set(c.das_code, { emp: null, by: 'none', score: 0 });
+      });
+
+      const rows = [];
+      syncCouriers.forEach(c => {
+        const m = matched.get(c.das_code) || { emp: null, by: 'none', score: 0 };
+        const emp = m.emp;
+        const nameSim = emp ? syncNameSim(c.name, emp.name) : 0;
+        const nameDiff = !!emp && syncNorm(emp.name) !== syncNorm(c.name);
+        const codeDiff = !!emp && syncNormCode(emp.code) !== syncNormCode(c.das_code);
+        // الكود مستخدم في موظف تاني؟ الروستر هيرفض — يبقى ماينفعش نكتبه
+        const codeConflict = !!(codeDiff && emp && emps.some(e => e.id !== emp.id && e.normCode === syncNormCode(c.das_code)));
+
+        let status;
+        if (!emp) status = 'none';
+        else if (!nameDiff && !codeDiff) status = 'same';
+        // الكود مطابق بس الاسم مختلف تمامًا → تأكيد يدوي (ممكن يكون شخص تاني خد الكود)
+        else if (m.by === 'code' && nameSim < SYNC_MIN) status = 'maybe';
+        else if (m.by === 'code') status = 'code';
+        else if (m.score >= SYNC_STRONG) status = 'name';
+        else status = 'maybe';
+
+        rows.push({
+          key: 'c:' + c.das_code,
+          kind: 'das',
+          courier: c,
+          emp,
+          status,
+          score: m.by === 'code' ? nameSim : (m.score || 0),
+          nameSim,
+          nameDiff,
+          codeDiff,
+          codeConflict,
+          selectable: !!(emp && (nameDiff || (codeDiff && !codeConflict)))
+        });
+      });
+
+      // موظفين موجودين في الروستر بس (مش في DAS)
+      emps.forEach(e => {
+        if (taken.has(e.id)) return;
+        rows.push({
+          key: 'e:' + e.id,
+          kind: 'extra',
+          courier: null,
+          emp: e,
+          status: 'extra',
+          score: 0,
+          nameDiff: false,
+          codeDiff: false,
+          codeConflict: false,
+          selectable: false
+        });
+      });
+
+      return rows;
+    }
+
+    function renderSync() {
+      const q = ($('syncSearch').value || '').trim().toLowerCase();
+      const rows = syncRows.filter(r => {
+        if (syncFilter === 'change' && !r.selectable) return false;
+        if (syncFilter === 'maybe' && r.status !== 'maybe') return false;
+        if (syncFilter === 'none' && r.status !== 'none') return false;
+        if (syncFilter === 'extra' && r.status !== 'extra') return false;
+        if (q) {
+          const hay = [
+            r.courier && r.courier.das_code, r.courier && r.courier.name,
+            r.emp && r.emp.name, r.emp && r.emp.employee_code
+          ].filter(Boolean).join(' ').toLowerCase();
+          if (hay.indexOf(q) < 0) return false;
+        }
+        return true;
+      });
+
+      const tb = $('syncTableBody');
+      if (!rows.length) {
+        tb.innerHTML = `<tr><td colspan="7"><div class="empty fade" style="padding:28px 10px">
+          <div class="eic">${DAS.icon('search', 'ico-lg')}</div><b>${DAS.t('مفيش نتائج')}</b></div></td></tr>`;
+      } else {
+        tb.innerHTML = rows.map((r, i) => {
+          const st = SYNC_STATUS[r.status] || SYNC_STATUS.none;
+          const c = r.courier;
+          const e = r.emp;
+          const chg = [];
+          if (r.nameDiff) chg.push(`<span class="sync-chg">${DAS.t('الاسم')} ← <b data-i18n-raw>${DAS.esc(c.name)}</b></span>`);
+          if (r.codeDiff) {
+            chg.push(r.codeConflict
+              ? `<span class="sync-chg bad">${DAS.t('الكود مستخدم في موظف تاني')}</span>`
+              : `<span class="sync-chg">${DAS.t('الكود')} ← <b class="mono" data-i18n-raw>${DAS.esc(c.das_code)}</b></span>`);
+          }
+          const checked = syncSelected.has(r.key);
+          const pct = (r.status === 'none' || r.status === 'extra') ? '' : `<small class="sync-pct mono">${Math.round(r.score * 100)}%</small>`;
+          return `<tr style="--i:${Math.min(i, 12)}"${r.status === 'maybe' ? ' class="maybe-row"' : ''}>
+            <td>${r.selectable ? `<input type="checkbox" class="sync-chk" data-key="${DAS.esc(r.key)}"${checked ? ' checked' : ''} aria-label="${DAS.esc(DAS.t('تطبيق التعديل على هذا الموظف'))}">` : ''}</td>
+            <td><span class="mono" data-i18n-raw>${DAS.esc(c ? c.das_code : '—')}</span></td>
+            <td><b data-i18n-raw>${DAS.esc(c ? c.name : '—')}</b></td>
+            <td><span class="mono" data-i18n-raw>${DAS.esc(e ? (e.employee_code || '—') : '—')}</span></td>
+            <td><span data-i18n-raw>${DAS.esc(e ? e.name : '—')}</span></td>
+            <td><span class="badge ${st.cls}">${DAS.t(st.label)}</span>${pct}</td>
+            <td>${chg.length ? chg.join('') : `<small class="sync-none">${DAS.t(r.status === 'extra' ? 'مش موجود في DAS' : 'مفيش تغيير')}</small>`}</td>
+          </tr>`;
+        }).join('');
+      }
+
+      // ملخص الأرقام فوق
+      const cnt = {
+        same: syncRows.filter(r => r.status === 'same').length,
+        change: syncRows.filter(r => r.selectable).length,
+        maybe: syncRows.filter(r => r.status === 'maybe').length,
+        none: syncRows.filter(r => r.status === 'none').length,
+        extra: syncRows.filter(r => r.status === 'extra').length
+      };
+      $('syncSummary').innerHTML = `
+        <span class="badge ok">${DAS.t('مطابق')} ${cnt.same}</span>
+        <span class="badge info">${DAS.t('محتاج تعديل')} ${cnt.change}</span>
+        <span class="badge warn">${DAS.t('محتاج تأكيد')} ${cnt.maybe}</span>
+        <span class="badge bad">${DAS.t('غير موجود')} ${cnt.none}</span>
+        <span class="badge">${DAS.t('موجود بس في الروستر')} ${cnt.extra}</span>`;
+    }
+
+    function updateSyncSelection() {
+      const n = syncSelected.size;
+      const cnt = $('syncSelectedCount');
+      if (cnt) cnt.textContent = n;
+      const btn = $('syncApplyBtn');
+      if (btn) btn.disabled = n === 0;
+    }
+
+    async function loadSync() {
+      const btn = $('syncRefreshBtn');
+      if (btn) DAS.busy(btn, true);
+      try {
+        const res = await adminFetch('/api/admin/roster-sync');
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          DAS.toast(data.error || 'فشل تحميل بيانات المزامنة', 'err');
+          $('syncSummary').innerHTML = `<span class="badge bad">${DAS.t('الروستر مش مربوط')}</span>`;
+          return;
+        }
+        syncCouriers = data.couriers || [];
+        syncEmployees = data.employees || [];
+        syncRows = buildSyncRows();
+        // التحديد الافتراضي: المطابقات القوية (بالاسم أو بالكود) — الصفوف "محتاج تأكيد" تفضل للتأكيد اليدوي
+        syncSelected = new Set();
+        syncRows.forEach(r => {
+          if (r.selectable && (r.status === 'code' || r.status === 'name')) syncSelected.add(r.key);
+        });
+        renderSync();
+        updateSyncSelection();
+      } catch (e) {
+        DAS.toast('مفيش اتصال بالسيرفر', 'err');
+      } finally { if (btn) DAS.busy(btn, false); }
+    }
+
+    function selectAllSync(on) {
+      syncRows.forEach(r => {
+        if (!r.selectable) return;
+        if (on) {
+          // "محتاج تأكيد" مش بيتحدد أوتوماتيك — لازم دوس عليه بإيدك
+          if (r.status === 'maybe') return;
+          syncSelected.add(r.key);
+        } else {
+          syncSelected.delete(r.key);
+        }
+      });
+      renderSync();
+      updateSyncSelection();
+    }
+
+    async function applySync() {
+      const picks = syncRows.filter(r => r.selectable && syncSelected.has(r.key));
+      if (!picks.length) { DAS.toast('مفيش تحديثات مختارة'); return; }
+      const preview = picks.slice(0, 4).map(r => r.courier.name).join('، ');
+      const msg = DAS.t('هتعدّل') + ' ' + picks.length + ' ' + DAS.t('موظف في الروستر بالاسم والكود من DAS') + ':\n' +
+        preview + (picks.length > 4 ? '\n' + DAS.t('وتانيين كمان') : '') +
+        '\n\n' + DAS.t('تأكيد؟');
+      if (!confirm(msg)) return;
+
+      const btn = $('syncApplyBtn');
+      DAS.busy(btn, true);
+      try {
+        const updates = picks.map(r => ({
+          id: r.emp.id,
+          name: r.courier.name,
+          employee_code: r.courier.das_code
+        }));
+        const res = await adminFetch('/api/admin/roster-sync/apply', {
+          method: 'POST',
+          body: JSON.stringify({ updates })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { DAS.toast(data.error || 'فشل تطبيق التحديثات', 'err'); return; }
+        const ok = data.ok || 0, failed = data.failed || 0;
+        if (ok && !failed) DAS.toast('اتحدّث ' + ok + ' موظف في الروستر');
+        else if (ok && failed) DAS.toast('اتحدّث ' + ok + ' — فشل ' + failed, 'err');
+        else DAS.toast('فشل تطبيق التحديثات', 'err');
+        await loadSync();
+      } catch (e) {
+        DAS.toast('فشل تطبيق التحديثات', 'err');
+      } finally {
+        DAS.busy(btn, false);
+        updateSyncSelection();
+      }
+    }
+
+    // الأحداث بتاعت قسم المزامنة
+    document.addEventListener('change', (e) => {
+      const chk = e.target && e.target.closest ? e.target.closest('.sync-chk') : null;
+      if (!chk) return;
+      const key = chk.dataset.key;
+      if (chk.checked) syncSelected.add(key); else syncSelected.delete(key);
+      updateSyncSelection();
+    });
+
+    $('syncChips').addEventListener('click', (e) => {
+      const chip = e.target.closest('.chip');
+      if (!chip || !chip.dataset.sfilter) return;
+      syncFilter = chip.dataset.sfilter;
+      [].forEach.call($('syncChips').children, c => c.classList.toggle('active', c === chip));
+      renderSync();
+    });
+
+    $('syncSearch').addEventListener('input', renderSync);
+    $('syncSearch').addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { $('syncSearch').value = ''; renderSync(); }
+    });
 
     async function fetchAdvances(force) {
       let data;

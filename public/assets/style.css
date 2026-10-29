@@ -921,3 +921,30 @@ input[type="file"].visually-hidden { position: absolute; width: 1px; height: 1px
 
 /* ---------- التوست ---------- */
 :root[data-theme="dark"] .toast { background: #0d1424; border-color: var(--border-strong); }
+
+/* ==========================================================
+   قسم مزامنة الروستر (DAS ⇄ الروستر)
+   ========================================================== */
+.sync-tbl tbody td { vertical-align: middle; }
+.sync-tbl td b { font-weight: 700; }
+.sync-chk {
+  width: 17px; height: 17px; accent-color: var(--accent);
+  cursor: pointer; vertical-align: middle;
+}
+.sync-pct { display: block; margin-top: 4px; font-size: 10.5px; color: var(--text-3); }
+.sync-chg {
+  display: inline-block; margin: 2px 4px 2px 0; padding: 3px 9px;
+  border-radius: 999px; font-size: 11.5px; font-weight: 600;
+  background: var(--accent-soft); color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, transparent);
+}
+.sync-chg.bad {
+  background: var(--bad-soft); color: var(--bad);
+  border-color: color-mix(in srgb, var(--bad) 28%, transparent);
+}
+.sync-chg b { font-weight: 800; }
+.sync-none { color: var(--text-3); font-size: 12px; }
+tr.maybe-row td { background: color-mix(in srgb, var(--warn) 6%, transparent); }
+#syncSummary { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+#syncSummary .badge { font-size: 11px; }
+
