@@ -962,6 +962,18 @@ input[type="file"].visually-hidden { position: absolute; width: 1px; height: 1px
 }
 :root[data-theme="dark"] .chip.active .chip-count { background: rgba(0, 0, 0, .28); color: #dbe7ff; }
 
+/* ملاحظة جنب شيبات الفرع + تعطيل الشيب لحد ما الخريطة تتحمّل */
+.branch-note {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 0 2px; font-size: 11.5px; font-weight: 600; color: var(--warn);
+  white-space: nowrap;
+}
+.branch-note:empty { display: none; }
+.chip.disabled, .chip:disabled {
+  opacity: .42; cursor: not-allowed; filter: saturate(.4);
+  pointer-events: none;
+}
+
 /* ==========================================================
    قسم مزامنة الروستر (DAS ⇄ الروستر)
    ========================================================== */.sync-tbl tbody td { vertical-align: middle; }

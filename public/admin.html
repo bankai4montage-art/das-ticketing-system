@@ -121,6 +121,7 @@
           <button class="chip active" data-branch="all" data-i18n="كل الأفرع">كل الأفرع</button>
           <button class="chip" data-branch="QCD 1">QCD 1</button>
           <button class="chip" data-branch="QCD 2">QCD 2</button>
+          <span class="branch-note" data-branch-note="tickets"></span>
         </div>
         <div class="chips">
           <button class="chip" id="weakChip" onclick="toggleWeak()"><i data-ico="star"></i> تقييم ضعيف</button>
@@ -166,6 +167,7 @@
               <button class="chip active" data-branch="all" data-i18n="كل الأفرع">كل الأفرع</button>
               <button class="chip" data-branch="QCD 1">QCD 1</button>
               <button class="chip" data-branch="QCD 2">QCD 2</button>
+              <span class="branch-note" data-branch-note="advances"></span>
             </div>
             <div class="search">
               <input type="text" id="advSearchInput" class="input" placeholder="ابحث بكود/اسم/سبب/محفظة..." aria-label="بحث في السلف">
@@ -445,6 +447,9 @@
     let filterBranchTickets = 'all';
     let filterBranchAdvances = 'all';
     let syncBranchMap = {};        // كود DAS → الفرع (QCD 1 / QCD 2) من الروستر
+    let branchLoading = false;     // خريطة الأفرع بتتحمّل دلوقتي؟
+    let branchRetryAt = 0;         // وقت إعادة المحاولة الجاية
+    let branchError = '';          // آخر رسالة خطأ من الروستر
     let archiveMode = false;
     let archiveTickets = [];
     let pendingFlash = new Set();
@@ -494,10 +499,8 @@
       return res;
     }
 
-    // منفتحش الداشبورد من غير علامة الدخول والتوكن مع بعض — لو التوكن قديم/مفقود نرجع للوجين
-    try {
-      if (sessionStorage.getItem('das_admin_auth') === 'true' && sessionStorage.getItem('das_admin_token')) unlockDashboard();
-    } catch (e) {}
+    // ملحوظة: فتح الداشبورد تلقائيًا (الجلسة المحفوظة) بيتم في آخر السكربت —
+    // لازم كل الـ let تكون اتعرّفت قبل كده، وإلا هنقع في TDZ ونوقف الـ polling.
 
     $('adminLoginForm').addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -530,20 +533,25 @@
     function unlockDashboard() {
       $('adminLoginBox').classList.add('hidden');
       $('dashboardContent').classList.remove('hidden');
-      fetchTickets(true);
-      fetchAdvances(true);
-      fetchCards(true);
-      // خريطة الأفرع (QCD 1 / QCD 2) من الروستر — للفلتر في الشكاوى والسلف
-      ensureBranchMap();
+      // الـ polling يبدأ الأول — عشان أي خطأ في جولة تحميل ما يوقّفش التحديث
       if (pollTimer) clearInterval(pollTimer);
       pollTimer = setInterval(() => {
-        fetchTickets();
-        if (archiveMode) fetchArchiveTickets();
-        fetchAdvances();
-        refreshProfileAttendanceIfChanged();
+        const safe = (fn) => { try { fn(); } catch (e) { console.warn('[DAS] poll:', e); } };
+        safe(() => fetchTickets());
+        safe(() => { if (archiveMode) fetchArchiveTickets(); });
+        safe(() => fetchAdvances());
+        safe(() => refreshProfileAttendanceIfChanged());
         // الكروت: بنجيبها كل جولة عشان رقم "كروت اتجاوب عليها" في التبويب يفضل مظبوط
-        fetchCards();
+        safe(() => fetchCards());
+        // خريطة الأفرع: لو مش جاهزة بنجرب تاني (مع فاصل وقت)
+        safe(() => ensureBranchMap());
       }, 4000);
+      const safe = (fn) => { try { fn(); } catch (e) { console.warn('[DAS] load:', e); } };
+      safe(() => fetchTickets(true));
+      safe(() => fetchAdvances(true));
+      safe(() => fetchCards(true));
+      // خريطة الأفرع (QCD 1 / QCD 2) من الروستر — للفلتر في الشكاوى والسلف
+      safe(() => ensureBranchMap());
     }
 
     /* الربط اللايف: الروستر بينشر rev جديد مع كل تسجيل حضور.
@@ -2150,19 +2158,50 @@
     }
 
     // تحميل خريطة الأفرع لوحدها (من غير ما نفتح تاب المزامنة) — للفلتر في الشكاوى والسلف
-    let branchLoading = false;
     async function ensureBranchMap() {
       if (branchLoading) return;
+      // الكاش: دقيقتين (زي بيانات المزامنة) — من غير كده بنرجّع كل 4 ثواني
       if (syncLoadedAt && Date.now() - syncLoadedAt < SYNC_CACHE_MS && Object.keys(syncBranchMap).length) return;
+      // لو فشل قبل كده، نستنى شوية قبل إعادة المحاولة (من غير ما نضغط على السيرفر)
+      if (branchRetryAt && Date.now() < branchRetryAt) return;
       branchLoading = true;
+      updateBranchNote();
       try {
         await fetchSyncPayload(false);
         syncRows = buildSyncRows();
         buildBranchMap();
+        branchError = '';
+        branchRetryAt = 0;
         renderTickets();
         renderAdvances();
-      } catch (e) { /* الروستر مش مربوط — الفلتر هيفضل فاضي */ }
-      finally { branchLoading = false; }
+      } catch (e) {
+        branchError = (e && e.message) || 'فشل تحميل بيانات الروستر';
+        branchRetryAt = Date.now() + 15e3;   // هنجرب تاني بعد 15 ثانية
+        console.warn('[DAS] branch map:', branchError);
+      } finally {
+        branchLoading = false;
+        updateBranchNote();
+      }
+    }
+
+    // حالة شيبات الفرع: بنحمّل / مش مربوط / عادي
+    function updateBranchNote() {
+      const ready = Object.keys(syncBranchMap).length > 0;
+      document.querySelectorAll('[data-branch-target]').forEach(group => {
+        const note = group.querySelector('[data-branch-note]');
+        if (note && !note.dataset.custom) {
+          note.textContent = ready ? '' : (branchLoading || !branchError
+            ? DAS.t('جاري تحميل الأفرع…')
+            : DAS.t('الروستر مش مربوط — الفلتر مش هيشتغل'));
+        }
+        if (!ready && note) { note.dataset.custom = ''; note.textContent = branchLoading || !branchError ? DAS.t('جاري تحميل الأفرع…') : DAS.t('الروستر مش مربوط — الفلتر مش هيشتغل'); }
+        // شيبات QCD تتفعّل بس لما الخريطة تكون جاهزة
+        group.querySelectorAll('.chip[data-branch]').forEach(chip => {
+          const isAll = chip.dataset.branch === 'all';
+          chip.classList.toggle('disabled', !ready && !isAll);
+          chip.disabled = !ready && !isAll;
+        });
+      });
     }
 
     function selectAllSync(on) {
@@ -2303,6 +2342,21 @@
             : DAS.t('الروستر مش مربوط — الفلتر مش هيشتغل');
         }
       });
+      // ملاحظة صغيرة جنب الشيبات: عدد الصفوف اللي مالها فرع في الروستر
+      const note = group.querySelector('[data-branch-note]');
+      if (note) {
+        if (!ready) {
+          note.textContent = '';
+          note.dataset.custom = '';
+        } else if (counts.none) {
+          note.textContent = (target === 'tickets' ? DAS.t('شكوى بدون فرع في الروستر') : DAS.t('سلفة بدون فرع في الروستر')) + ': ' + counts.none;
+          note.dataset.custom = '1';
+        } else {
+          note.textContent = '';
+          note.dataset.custom = '';
+        }
+      }
+      updateBranchNote();
     }
 
     function renderAdvances() {
@@ -2448,6 +2502,16 @@
       if ($('reportModal').classList.contains('open')) renderReport();
       if ($('profileModal').classList.contains('open') && profileCode) openProfile(profileCode);
     });
+
+    // ===== فتح الداشبورد تلقائيًا (الجلسة المحفوظة) =====
+    // لازم يكون في آخر السكربت: كل الـ let لازم تكون اتعرّفت قبل الاستدعاء (TDZ).
+    setTimeout(() => {
+      try {
+        if (sessionStorage.getItem('das_admin_auth') === 'true' && sessionStorage.getItem('das_admin_token')) {
+          unlockDashboard();
+        }
+      } catch (e) {}
+    }, 0);
   </script>
 </body>
 </html>
