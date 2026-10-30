@@ -308,6 +308,23 @@
     </div>
   </div>
 
+  <!-- ============ نافذة تعديل مندوب (الاسم / الكود) ============ -->
+  <div id="courierEditModal" class="modal-back" style="z-index:75" onclick="if(event.target===this)closeCourierEdit()">
+    <div class="modal">
+      <div class="form-head">
+        <h3>تعديل بيانات المندوب</h3>
+        <button class="btn btn-ghost btn-icon" onclick="closeCourierEdit()" aria-label="إغلاق"><i data-ico="close"></i></button>
+      </div>
+      <form id="editCourierForm" style="display:grid;gap:12px">
+        <input type="text" id="editCourierCode" class="input mono" style="text-transform:uppercase" placeholder="كود المندوب" required>
+        <input type="text" id="editCourierName" class="input" placeholder="اسم المندوب" required>
+        <input type="text" id="editCourierPhone" class="input" placeholder="رقم الموبايل" inputmode="tel">
+        <p class="hint" style="margin:0">تغيير الكود بيحدّث كل الشكاوى والسلف والاشعارات المرتبطة بالمندوب.</p>
+        <button type="submit" class="btn btn-ok" id="editCourierBtn"><span class="spinner"></span><i data-ico="check"></i><span class="label">حفظ التعديل</span></button>
+      </form>
+    </div>
+  </div>
+
   <!-- ============ نافذة تسجيل سلفة ============ -->
   <div id="advanceModal" class="modal-back" onclick="if(event.target===this)toggleAdvanceModal()">
     <div class="modal">
@@ -1039,7 +1056,10 @@
             <div class="av" style="width:34px;height:34px;border-radius:11px;font-size:12px;background:${DAS.gradient(c.das_code)}" data-i18n-raw>${DAS.esc(DAS.initials(c.name))}</div>
             <div><span class="c mono">${DAS.esc(c.das_code)}</span><small data-i18n-raw>${DAS.esc(c.name)}</small></div>
           </div>
-          <small class="mono">${DAS.esc(c.phone || '')}</small>
+          <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+            <small class="mono">${DAS.esc(c.phone || '')}</small>
+            <button type="button" class="btn btn-ghost btn-icon" style="width:32px;height:32px;border-radius:10px" title="تعديل" aria-label="تعديل" onclick="openCourierEdit('${DAS.esc(c.das_code)}', event)">${DAS.icon('edit')}</button>
+          </div>
         </div>`).join('') : `
         <div class="empty fade" style="padding:22px 10px">
           <div class="eic">${DAS.icon('search', 'ico-lg')}</div>
@@ -1083,8 +1103,79 @@
       } finally { DAS.busy(btn, false); }
     });
 
+    // ---------- تعديل مندوب: الاسم / الكود / الموبايل ----------
+    let editCourierOldCode = null;
+
+    async function openCourierEdit(code, ev) {
+      // الزر جوه صف المندوب — نمنع فتح البروفايل بالضغط عليه
+      if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+      let c = (couriersData || []).find(x => x.das_code === code);
+      if (!c) c = (couriersCache || []).find(x => x.das_code === code);
+      if (!c) {
+        // الكاش فاضي (فتحنا بروفايل من جدول التذاكر) — نجيب القائمة من السيرفر
+        try {
+          const res = await adminFetch('/api/admin/couriers');
+          const data = await res.json();
+          couriersData = data.couriers || [];
+          c = couriersData.find(x => x.das_code === code);
+        } catch (e) {}
+      }
+      if (!c) return DAS.toast('المندوب مش موجود', 'err');
+      editCourierOldCode = code;
+      $('editCourierCode').value = c.das_code || '';
+      $('editCourierName').value = c.name || '';
+      $('editCourierPhone').value = c.phone || '';
+      toggleModal('courierEditModal');
+      setTimeout(() => $('editCourierName').focus(), 160);
+    }
+
+    function closeCourierEdit() {
+      editCourierOldCode = null;
+      closeModal('courierEditModal');
+    }
+
+    $('editCourierForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = $('editCourierBtn');
+      const oldCode = editCourierOldCode;
+      if (!oldCode) return;
+      const newCode = $('editCourierCode').value.trim().toUpperCase();
+      const name = $('editCourierName').value.trim();
+      const phone = $('editCourierPhone').value.trim();
+      if (!newCode) return DAS.toast('الكود فاضي', 'err');
+      if (!name) return DAS.toast('الاسم فاضي', 'err');
+
+      DAS.busy(btn, true);
+      try {
+        const res = await adminFetch('/api/admin/couriers/' + encodeURIComponent(oldCode), {
+          method: 'PUT',
+          body: JSON.stringify({ das_code: newCode, name, phone })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { DAS.toast(data.error || 'فشل حفظ التعديل', 'err'); return; }
+
+        closeCourierEdit();
+        DAS.toast(data.code_changed ? 'تم تعديل المندوب وتحديث الكود في كل السجلات' : 'تم تعديل بيانات المندوب');
+
+        couriersCache = null;               // كاش البروفايل
+        syncLoadedAt = 0;                   // كاش مزامنة الروستر وخريطة الأفرع
+        await loadCouriers();
+        if (data.code_changed || data.name_changed) {   // التذاكر والسلف فيها الاسم/الكود
+          await fetchTickets(true);
+          await fetchAdvances(true);
+        }
+        // لو بروفايل المندوب مفتوح — نحدّثه بالاسم/الكود الجديد
+        if (profileCode && (profileCode === oldCode || profileCode === newCode)) {
+          openProfile((data.courier && data.courier.das_code) || newCode);
+        }
+      } catch (err) {
+        DAS.toast('فشل حفظ التعديل', 'err');
+      } finally { DAS.busy(btn, false); }
+    });
+
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
+        if ($('courierEditModal').classList.contains('open')) { closeCourierEdit(); return; }
         if ($('courierModal').classList.contains('open')) toggleCourierModal();
         if ($('advanceModal').classList.contains('open')) toggleAdvanceModal();
         if ($('reportModal').classList.contains('open')) toggleReportModal();
@@ -1149,7 +1240,10 @@
             <div class="mono" style="color:var(--accent);font-size:13px">${DAS.esc(code)}</div>
             ${courier && courier.phone ? `<div style="font-size:13px;color:var(--text-2)">${DAS.esc(courier.phone)}</div>` : ''}
           </div>
-          <button class="btn btn-ok btn-sm" style="margin-inline-start:auto" onclick="newAdvanceFromProfile()"><i data-ico="plus"></i> سلفة جديدة</button>
+          <div style="display:flex;gap:8px;flex-shrink:0">
+            <button class="btn btn-ghost btn-sm" onclick="openCourierEdit('${DAS.esc(code)}', event)">${DAS.icon('edit')} تعديل</button>
+            <button class="btn btn-ok btn-sm" onclick="newAdvanceFromProfile()">${DAS.icon('plus')} سلفة جديدة</button>
+          </div>
         </div>
         <div class="profile-sum">
           <div class="mini-stat"><b>${tickets.length}</b><span>إجمالي الشكاوى (شامل الأرشيف)</span></div>

@@ -575,6 +575,98 @@ app.get('/api/admin/couriers', (req, res) => {
   });
 });
 
+// 12.b تعديل مندوب: الاسم / الكود / الموبايل
+// تغيير الكود بيتحدّث في كل السجلات المرتبطة (تذاكر، سلف، اختيارات الكروت، اشعارات البوش)
+// والاسم بيتحدّث في السجلات اللي فيها الاسم متكرر (عشان كل الشاشات والتقارير تبقى متسقة)
+app.put('/api/admin/couriers/:das_code', (req, res) => {
+  const oldCode = String(req.params.das_code || '').trim().toUpperCase();
+  const body = req.body || {};
+  const hasName = body.name != null;
+  const hasPhone = body.phone != null;
+  const newCode = String(body.das_code != null && body.das_code !== '' ? body.das_code : oldCode).trim().toUpperCase();
+  const name = hasName ? String(body.name).trim() : '';
+  const phone = hasPhone ? String(body.phone).trim() : '';
+
+  if (!oldCode) return res.status(400).json({ error: 'كود المندوب مطلوب' });
+  if (!newCode) return res.status(400).json({ error: 'الكود الجديد فاضي' });
+  if (hasName && !name) return res.status(400).json({ error: 'الاسم فاضي' });
+
+  const qGet = (sql, params) => new Promise((resolve, reject) =>
+    db.get(sql, params, (err, row) => (err ? reject(err) : resolve(row))));
+  const qAll = (sql, params) => new Promise((resolve, reject) =>
+    db.all(sql, params, (err, rows) => (err ? reject(err) : resolve(rows || []))));
+
+  // خطوات متسلسلة جوه transaction واحدة — لو أي خطوة فشلت بنعمل rollback وبنوقف
+  const runTx = (steps) => new Promise((resolve, reject) => {
+    db.serialize(() => {
+      let i = 0;
+      const next = () => {
+        if (i >= steps.length) return resolve();
+        const step = steps[i++];
+        db.run(step.sql, step.params || [], function (err) {
+          if (err) { db.run("ROLLBACK", () => reject(err)); return; }
+          next();
+        });
+      };
+      next();
+    });
+  });
+
+  (async () => {
+    try {
+      const current = await qGet("SELECT * FROM couriers WHERE das_code = ?", [oldCode]);
+      if (!current) return res.status(404).json({ error: 'المندوب مش موجود' });
+
+      const finalName = hasName ? name : current.name;
+      const finalPhone = hasPhone ? phone : (current.phone || '');
+      const codeChanged = newCode !== oldCode;
+
+      if (codeChanged) {
+        const clash = await qGet("SELECT das_code FROM couriers WHERE das_code = ?", [newCode]);
+        if (clash) return res.status(409).json({ error: 'الكود الجديد مسجل بالفعل لمندوب تاني' });
+      }
+
+      // كروت مظبوطة على audience = code — لازم الكود القديم يتبدّل بالجديد جواها
+      const codeCards = await qAll("SELECT id, audience_value FROM cards WHERE audience = 'code'", []);
+      const cardUpdates = codeCards.map(c => {
+        const raw = String(c.audience_value || '');
+        const parts = raw.split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
+        if (!parts.includes(oldCode)) return null;
+        const nextValue = parts.map(p => (p === oldCode ? newCode : p)).join(',');
+        return nextValue === raw ? null : { id: c.id, value: nextValue };
+      }).filter(Boolean);
+
+      const steps = [{ sql: "BEGIN TRANSACTION" }];
+      steps.push({ sql: "UPDATE couriers SET das_code = ?, name = ?, phone = ? WHERE das_code = ?", params: [newCode, finalName, finalPhone, oldCode] });
+      if (codeChanged) {
+        steps.push({ sql: "UPDATE tickets SET das_code = ? WHERE das_code = ?", params: [newCode, oldCode] });
+        steps.push({ sql: "UPDATE advances SET das_code = ? WHERE das_code = ?", params: [newCode, oldCode] });
+        steps.push({ sql: "UPDATE card_picks SET das_code = ? WHERE das_code = ?", params: [newCode, oldCode] });
+        steps.push({ sql: "UPDATE push_subs SET das_code = ? WHERE das_code = ?", params: [newCode, oldCode] });
+        cardUpdates.forEach(c => steps.push({ sql: "UPDATE cards SET audience_value = ? WHERE id = ?", params: [c.value, c.id] }));
+      }
+      // الاسم متكرر في السجلات — نحدّثه عشان كل الشاشات تبقى متسقة
+      steps.push({ sql: "UPDATE tickets SET courier_name = ? WHERE das_code = ?", params: [finalName, newCode] });
+      steps.push({ sql: "UPDATE advances SET courier_name = ? WHERE das_code = ?", params: [finalName, newCode] });
+      steps.push({ sql: "UPDATE card_picks SET courier_name = ? WHERE das_code = ?", params: [finalName, newCode] });
+      steps.push({ sql: "COMMIT" });
+
+      await runTx(steps);
+
+      const updated = await qGet("SELECT * FROM couriers WHERE das_code = ?", [newCode]);
+      res.json({
+        success: true,
+        courier: updated,
+        code_changed: codeChanged,
+        name_changed: finalName !== current.name,
+        old_code: oldCode
+      });
+    } catch (e) {
+      res.status(500).json({ error: 'خطأ في حفظ التعديل: ' + (e && e.message ? e.message : '') });
+    }
+  })();
+});
+
 // 13. جلب كل طلبات السلف للإدارة
 app.get('/api/admin/advances', (req, res) => {
   db.all("SELECT * FROM advances ORDER BY id DESC", [], (err, rows) => {
