@@ -38,6 +38,7 @@
     bell: '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>',
     bellOff: '<path d="M13.73 21a2 2 0 0 1-3.46 0"/><path d="M18.63 13A17.89 17.89 0 0 1 18 8"/><path d="M6.26 6.26A5.86 5.86 0 0 0 6 8c0 7-3 9-3 9h14"/><path d="M18 8a6 6 0 0 0-9.33-5"/><path d="M1 1l22 22"/>',
     download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5M12 15V3"/>',
+    copy: '<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
     chev: '<path d="M6 9l6 6 6-6"/>'
   };
 
@@ -218,6 +219,33 @@
       a.click();
       a.remove();
       setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    },
+
+    // نسخ نص للحافظة — Clipboard API مع بديل بالمكتبة القديمة
+    // (بعض المتصفحات/السياقات غير الآمنة بترفض الـ Clipboard API)
+    // بيرجع Promise<boolean>: true = النص اتنسخ فعلاً
+    copy(text) {
+      const val = String(text == null ? '' : text);
+      const fallback = () => {
+        const prev = document.activeElement;
+        const ta = document.createElement('textarea');
+        ta.value = val;
+        ta.setAttribute('readonly', '');
+        ta.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;pointer-events:none';
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        try { ta.setSelectionRange(0, val.length); } catch (e) {}
+        let ok = false;
+        try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+        ta.remove();
+        if (prev && prev.focus) { try { prev.focus(); } catch (e) {} }
+        return ok;
+      };
+      if (navigator.clipboard && window.isSecureContext) {
+        return navigator.clipboard.writeText(val).then(() => true).catch(() => fallback());
+      }
+      return Promise.resolve(fallback());
     },
 
     initials(name) {

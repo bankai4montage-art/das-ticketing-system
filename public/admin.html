@@ -1328,7 +1328,9 @@
       $('reportMonthWrap').innerHTML = keys.length
         ? DAS.ddHtml('dd-reportMonth', keys[0], keys, null, (k) => DAS.fmtMonthLabel(k))
         : '<span style="font-size:13px;color:var(--text-3)">— مفيش سلف لسه —</span>';
-      $('dd-reportMonth').setAttribute('data-inline', '');
+      // لما مفيش سلف مفيش dropdown أصلاً — فالعنصر مش موجود (كان بيقع null.setAttribute)
+      const ddMonth = $('dd-reportMonth');
+      if (ddMonth) ddMonth.setAttribute('data-inline', '');
     }
 
     function reportData() {
@@ -1559,6 +1561,15 @@
       else openPicks.delete(id);
     }
 
+    // شريحة اسم المندوب — زرار عشان تتنسخ بالضغط (الاسم) أو Shift+دوس (الكود)
+    function whoPillHTML(w) {
+      const name = w.name || w.das_code || '';
+      const code = w.das_code || '';
+      return `<button type="button" class="who-pill" data-i18n-raw dir="auto"
+        data-copy-name="${DAS.esc(name)}" data-copy-code="${DAS.esc(code)}"
+        title="${DAS.esc(code)}" aria-label="${DAS.esc(name)} — ${DAS.esc(code)}">${DAS.esc(name)}</button>`;
+    }
+
     function renderCardPicksBody(id) {
       const c = allCards.find(x => x.id === id);
       const el = document.getElementById('cardPicks' + id);
@@ -1571,10 +1582,31 @@
           return `<div class="pick-opt-res">
             <div class="por-head"><b data-i18n-raw dir="auto">${DAS.esc(o.label)}</b><span class="badge ${o.count ? 'info' : ''}"><span class="mono">${o.count}</span> · ${pct}%</span></div>
             <div class="por-bar"><span class="por-fill" style="width:${pct}%"></span></div>
-            ${o.who.length ? `<div class="por-who">${o.who.map(w => `<span class="who-pill" data-i18n-raw dir="auto" title="${DAS.esc(w.das_code)}">${DAS.esc(w.name || w.das_code)}</span>`).join('')}</div>` : `<div class="por-none">${DAS.t('لسه مفيش حدا اختارها')}</div>`}
+            ${o.who.length ? `<div class="por-who">${o.who.map(whoPillHTML).join('')}</div>` : `<div class="por-none">${DAS.t('لسه مفيش حدا اختارها')}</div>`}
           </div>`;
-        }).join('')}</div>` : `<div class="por-none">${DAS.t('لسه مفيش أصوات')}</div>`}`;
+        }).join('')}</div>` : `<div class="por-none">${DAS.t('لسه مفيش أصوات')}</div>`}
+        ${t.total ? `<div class="por-hint">${DAS.icon('copy')}<span>${DAS.t('اضغط على أي اسم عشان تنسخه')}</span><span class="por-hint-k">(<kbd data-i18n-raw>Shift</kbd> + <span>${DAS.t('دوس = الكود')}</span>)</span></div>` : ''}`;
     }
+
+    // ---- نسخ اسم المندوب بالضغط على شريحته ----
+    // التفويض على document لأن لوحة الأصوات بتترندر من جديد كل ما الداتا تتغير،
+    // فأي مستمع مت 직접 على العنصر هيتوه مع أول رندر.
+    document.addEventListener('click', async (e) => {
+      const el = e.target;
+      if (!el || !el.closest) return;
+      const pill = el.closest('.who-pill[data-copy-name]');
+      if (!pill) return;
+      const name = pill.dataset.copyName || '';
+      const code = pill.dataset.copyCode || '';
+      const wantCode = e.shiftKey;
+      const val = wantCode ? (code || name) : name;
+      if (!val) return;
+      const ok = await DAS.copy(val);
+      if (!ok) { DAS.toast(DAS.t('مقدرناش ننسخ — انسخ يدوي'), 'err'); return; }
+      pill.classList.add('copied');
+      setTimeout(() => pill.classList.remove('copied'), 1200);
+      DAS.toast((wantCode && code ? DAS.t('تم نسخ الكود') : DAS.t('تم نسخ الاسم')) + ': ' + val, 'ok', true);
+    });
 
     function renderCards() {
       const activeCount = allCards.filter(c => c.active).length;

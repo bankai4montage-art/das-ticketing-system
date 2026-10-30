@@ -790,7 +790,17 @@ input[type="file"].visually-hidden { position: absolute; width: 1px; height: 1px
 .por-fill { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 55%, #fff)); transition: width .4s var(--ease); }
 .por-who { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 8px; }
 .who-pill { font-size: 11px; padding: 2px 9px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--border)); max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* شريحة الاسم بقت زرار عشان تتنسخ بالضغط — بنرجّع شكل الـ button للـ span */
+.who-pill { font-weight: inherit; line-height: inherit; margin: 0; display: inline-block; text-align: start; appearance: none; -webkit-appearance: none; cursor: pointer; transition: transform .14s var(--ease), border-color .18s, background .18s, color .18s, box-shadow .18s; }
+.who-pill:hover { transform: translateY(-1px); border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); box-shadow: 0 2px 8px rgba(15, 23, 42, .12); }
+.who-pill:active { transform: translateY(0); }
+.who-pill:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.who-pill.copied { background: var(--ok-soft); color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, var(--border)); }
 .who-pill b { font-weight: 700; }
+.por-hint { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 8px; font-size: 11.5px; color: var(--text-3); }
+.por-hint .ico { width: 13px; height: 13px; opacity: .7; }
+.por-hint-k { opacity: .8; }
+.por-hint kbd { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 10px; padding: 1px 5px; border-radius: 5px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text-2); }
 .por-none { font-size: 11.5px; color: var(--text-3); }
 
 /* ==========================================================
