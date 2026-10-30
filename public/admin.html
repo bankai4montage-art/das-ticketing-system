@@ -1224,7 +1224,7 @@
     const rRangeLabel = (ws) => `${new Date(ws + 'T00:00:00').toLocaleDateString(rLocale(), { day: 'numeric', month: 'short' })} – ${new Date(rAddDays(ws, 6) + 'T00:00:00').toLocaleDateString(rLocale(), { day: 'numeric', month: 'short', year: 'numeric' })}`;
     const rWeekLabel = (ws) => `${(window.DAS && DAS.lang === 'en') ? 'Week' : 'الأسبوع'} ${rWeekNo(ws)} · ${rRangeLabel(ws)}`;
 
-    const ATT_STATUS = { Present: ['حاضر', 'ok'], Late: ['متأخر', 'warn'], Absent: ['غائب', 'bad'], Excused: ['بعذر', 'info'], none: ['لم يُسجل', 'warn'] };
+    const ATT_STATUS = { Present: ['حاضر', 'ok'], Late: ['متأخر', 'warn'], Absent: ['غائب', 'bad'], Excused: ['بعذر', 'info'], Fine: ['غرامة إدارية', 'info'], none: ['لم يُسجل', 'warn'] };
 
     function setProfAttWeek(ws) {
       profAtt.week = ws;
@@ -1278,6 +1278,7 @@
             <span class="badge ${statusCls('Late')}"><span class="dot"></span><b id="pattLate">${s.late ?? 0}</b> ${statusName('Late')}</span>
             <span class="badge ${statusCls('Absent')}"><span class="dot"></span><b id="pattAbs">${s.absent ?? 0}</b> ${statusName('Absent')}</span>
             <span class="badge ${statusCls('Excused')}"><span class="dot"></span><b id="pattExc">${s.excused ?? 0}</b> ${statusName('Excused')}</span>
+            <span class="badge ${statusCls('Fine')}"><span class="dot"></span><b id="pattAdm">${s.standalone ?? 0}</b> ${statusName('Fine')}</span>
             <span class="badge bad"><span class="dot"></span><b id="pattFine">${t}</b> ج غرامات</span>
           </div>
           ${data.records.length ? `
@@ -1296,9 +1297,9 @@
           </div>` : `<div class="empty fade"><b>مفيش تسجيلات في الأسبوع ده</b>سجّل الحضور من سيستم الروستر وهيظهر هنا لوحده</div>`}
         `;
         // عدّ تصاعدي لعناصر الإحصائيات — إحساس حي عند تبديل الأسبوع أو تحديث لايف
-        ['pattTotal', 'pattPre', 'pattLate', 'pattAbs', 'pattExc', 'pattFine'].forEach((id, k) => {
+        ['pattTotal', 'pattPre', 'pattLate', 'pattAbs', 'pattExc', 'pattAdm', 'pattFine'].forEach((id, k) => {
           const el = document.getElementById(id);
-          const src = [s.total, s.present, s.late, s.absent, s.excused, t][k];
+          const src = [s.total, s.present, s.late, s.absent, s.excused, s.standalone || 0, t][k];
           if (el && typeof src === 'number' && src > 0) DAS.countUp(el, src);
         });
         if (!profAtt.week) {

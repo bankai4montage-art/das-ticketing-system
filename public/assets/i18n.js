@@ -262,6 +262,7 @@
     'غائب': 'Absent',
     'بعذر': 'Excused',
     'لم يُسجل': 'Not marked',
+    'غرامة إدارية': 'Administrative fine',
     'ج غرامات': 'EGP fines',
     'لايف — متصل بالروستر': 'Live — connected to the roster',
     'غير متصل بالروستر': 'Not connected to the roster',
