@@ -885,13 +885,18 @@
       if (!data.enabled) {
         stateEl.innerHTML = `<div class="empty fade" style="padding:22px 12px"><div class="eic">${DAS.icon('clock', 'ico-lg')}</div><b>خدمة الحضور مش متاحة حاليًا</b>كلم الإدارة لربط صفحة الحضور بالروستر</div>`;
       } else if (data.state && data.state.blocked) {
-        stateEl.innerHTML = `<div class="att-pend">${DAS.icon('clock')}<span data-i18n-raw>${DAS.esc(data.state.why)} — هتلاقي النتيجة هنا بعد القرار</span></div>`;
+        stateEl.innerHTML = `<div class="att-pend">${DAS.icon('clock')}<span data-i18n-raw>${DAS.esc(data.state.why)}</span></div>`;
       } else if (data.state && data.state.next === 'check_in') {
         stateEl.innerHTML = `<button type="button" class="btn btn-primary att-btn" id="attNextBtn" onclick="requestAtt('check_in')"><span class="spinner"></span><span class="label" data-i18n="تسجيل حضور">تسجيل حضور</span></button><p class="hint-text" style="margin:8px 0 0;text-align:center">الطلب بيروح لمشرف فرعك في الروستر — وبعد الموافقة حضورك بيتسجّل رسمي</p>`;
       } else if (data.state && data.state.next === 'check_out') {
         stateEl.innerHTML = `<button type="button" class="btn btn-primary att-btn" id="attNextBtn" onclick="requestAtt('check_out')"><span class="spinner"></span><span class="label" data-i18n="تسجيل انصراف">تسجيل انصراف</span></button><p class="hint-text" style="margin:8px 0 0;text-align:center">إنت مسجّل حضور — سجّل الانصراف قبل ما تسيب الشيفت، أو بعد الرجوع من الشيفت الليلي</p>`;
       } else {
         stateEl.innerHTML = '';
+      }
+      // شيفت المندوب الحالي — الحضور بيفتح قبل بدايته بربع ساعة والانصراف وقت نهايته
+      if (data.enabled && data.shift && data.shift.text) {
+        stateEl.insertAdjacentHTML('beforeend',
+          `<p class="hint-text" style="margin:10px 0 0;text-align:center">شيفتك: <b>${DAS.esc(data.shift.text)}</b> — الحضور يفتح قبل البداية بربع ساعة، والانصراف من وقت النهاية</p>`);
       }
 
       // سجل الطلبات
