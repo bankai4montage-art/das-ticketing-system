@@ -1038,3 +1038,15 @@ tr.maybe-row td { background: color-mix(in srgb, var(--warn) 6%, transparent); }
   border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent);
   background: var(--warn-soft); border-radius: 14px; font-size: 13.5px; font-weight: 700; color: var(--text); }
 .att-pend svg, .att-pend .ico { width: 16px; height: 16px; color: var(--warn); flex: none; }
+
+/* ============ الشكاوى: كروت مقفولة بتتفتح بالضغط ============ */
+.ticket > summary { cursor: pointer; list-style: none; user-select: none; }
+.ticket > summary::-webkit-details-marker { display: none; }
+.ticket > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 10px; }
+.ticket:not([open]) > summary.ticket-top { margin-bottom: 0; }
+.ticket .t-right { display: flex; align-items: center; gap: 10px; margin-inline-start: auto; }
+.ticket .t-chev { display: inline-flex; color: var(--text-3); transition: transform .25s var(--ease); }
+.ticket .t-chev .ico, .ticket .t-chev svg { width: 16px; height: 16px; }
+.ticket[open] .t-chev { transform: rotate(180deg); }
+.ticket .ticket-body { animation: popIn .32s var(--ease) both; }
+@media (hover: hover) { .ticket > summary:hover .t-chev { color: var(--text); } }

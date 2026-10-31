@@ -810,31 +810,47 @@
         const s = st(t.status);
         const catCls = t.category === 'الشيفت' ? 'shift' : 'pay';
         const anim = (animate || changed.has(t.id)) ? '' : 'animation:none';
+        const isOpen = openTickets.has(String(t.id));
         return `
-<article class="ticket s-${s.cls} ${changed.has(t.id) ? 'flash' : ''}" style="--i:${animate ? i : 0};${anim}">
-            <div class="ticket-top">
-              <div class="l">
-                <span class="rawahel-badge" style="font-size:10px;padding:3px 8px"><span class="dot"></span>Rawahel</span>
-                <span class="tag ${catCls}">${DAS.esc(t.category)}</span>
-                <span class="sub">${DAS.esc(t.sub_type)}</span>
-              </div>
-              ${badge(t.status)}
+<details class="ticket s-${s.cls} ${changed.has(t.id) ? 'flash' : ''}" data-tid="${t.id}" ${isOpen ? 'open' : ''} style="--i:${animate ? i : 0};${anim}">
+          <summary class="ticket-top" aria-label="تفاصيل الشكوى ${t.id}">
+            <div class="l">
+              <span class="rawahel-badge" style="font-size:10px;padding:3px 8px"><span class="dot"></span>Rawahel</span>
+              <span class="tag ${catCls}">${DAS.esc(t.category)}</span>
+              <span class="sub">${DAS.esc(t.sub_type)}</span>
             </div>
-          <p class="desc" data-i18n-raw>${DAS.esc(t.description)}</p>
-          ${t.admin_note ? `
-            <div class="reply">
-              <strong>${DAS.icon('msg')} رد الإدارة</strong>
-              <span data-i18n-raw>${DAS.esc(t.admin_note)}</span>
-            </div>` : ''}
-          ${steps(t.status)}
-          ${t.status === 'اتحلت' ? rateBox(t) : ''}
-          <div class="ticket-foot">
-            <span>تاريخ المشكلة: ${DAS.esc(t.issue_date)}</span>
-            <span class="mono">#${t.id}</span>
+            <div class="t-right">
+              ${badge(t.status)}
+              <span class="t-chev" aria-hidden="true">${DAS.icon('chev')}</span>
+            </div>
+          </summary>
+          <div class="ticket-body">
+            <p class="desc" data-i18n-raw>${DAS.esc(t.description)}</p>
+            ${t.admin_note ? `
+              <div class="reply">
+                <strong>${DAS.icon('msg')} رد الإدارة</strong>
+                <span data-i18n-raw>${DAS.esc(t.admin_note)}</span>
+              </div>` : ''}
+            ${steps(t.status)}
+            ${t.status === 'اتحلت' ? rateBox(t) : ''}
+            <div class="ticket-foot">
+              <span>تاريخ المشكلة: ${DAS.esc(t.issue_date)}</span>
+              <span class="mono">#${t.id}</span>
+            </div>
           </div>
-        </article>`;
+        </details>`;
       }).join('');
     }
+
+    // الشكاوى مقفولة افتراضيًا وبتتفتح بالضغط — بنحافظ على اللي المستخدم فاتحه
+    // بعد أي تحديث تلقائي للقايمة (عشان مايتقفلش وهو بيقرأ رد الإدارة).
+    const openTickets = new Set();
+    $('myTicketsList').addEventListener('toggle', (e) => {
+      const card = e.target;
+      if (!card || card.tagName !== 'DETAILS' || !card.dataset.tid) return;
+      if (card.open) openTickets.add(String(card.dataset.tid));
+      else openTickets.delete(String(card.dataset.tid));
+    }, true);
 
     // ================= الحضور والانصراف (روستر Rawahel) =================
     // الطلب بيتسجّل Pending وبيروح لمشرف الفرع في الروستر. بعد الموافقة الحضور
