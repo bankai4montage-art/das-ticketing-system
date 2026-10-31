@@ -210,7 +210,12 @@
 
     // الداتابيز بتخزن UTC — العرض دايماً بتوقيت القاهرة (بيظبط التوقيت الصيفي لوحده)
     parseUtc(s) {
-      const d = new Date(String(s || '').replace(' ', 'T') + 'Z');
+      let v = String(s || '').trim();
+      if (!v) return null;
+      v = v.replace(' ', 'T');
+      // بعض الصفوف بتتخزن ISO كامل بـ Z، وبعضها "YYYY-MM-DD HH:MM:SS" — الاتنين يتقروا صح
+      if (!/([zZ]|[+-]\d{2}:?\d{2})$/.test(v)) v += 'Z';
+      const d = new Date(v);
       return isNaN(d) ? null : d;
     },
 

@@ -1436,8 +1436,9 @@ app.get('/api/courier/attendance/:das_code', async (req, res) => {
         emp = emps.find(x => String(x.employee_code || '').trim().toUpperCase() === code) || null;
       } catch (e) { emp = null; }
     }
+    const plan = emp ? shiftPlan(emp) : null;
     res.json({ enabled: dasEnabled(), requests: rows, state: attendanceState(rows, emp),
-               shift: emp ? { text: String(emp.shift || ''), day_off: String(emp.day_off || '') } : null });
+               shift: emp ? { text: plan ? plan.shift : String(emp.shift || ''), day_off: String(emp.day_off || '') } : null });
   });
 });
 
@@ -1516,6 +1517,13 @@ const CAIRO_DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Fri
 
 function pad2(n) { return String(n).padStart(2, '0'); }
 function hm(min) { const m = ((min % 1440) + 1440) % 1440; return pad2(Math.floor(m / 60)) + ':' + pad2(m % 60); }
+// عرض الوقت بنظام 12 ساعة للمندوب (5:10 ص / 4:25 م)
+function hm12(min) {
+  const m = ((min % 1440) + 1440) % 1440;
+  const h24 = Math.floor(m / 60);
+  const hh = h24 % 12 || 12;
+  return hh + ':' + pad2(m % 60) + ' ' + (h24 < 12 ? 'ص' : 'م');
+}
 
 // قراءة وقت بداية/نهاية الشيفت من اسمه ("08:00-17:00" / "8 AM - 4 PM" / "22:00-09:00")
 function parseShiftTimes(name) {
@@ -1561,9 +1569,9 @@ function shiftPlan(emp, ts = Date.now()) {
   const opensAt = parsed.start - CHECKIN_EARLY_MIN;
   const checkInOpen = !leaveToday && now.minutes >= opensAt && now.minutes < parsed.end;
   return {
-    shift: parsed.text, start: hm(parsed.start), end: hm(parsed.end),
+    shift: hm12(parsed.start) + ' - ' + hm12(parsed.end), start: hm12(parsed.start), end: hm12(parsed.end),
     startMin: parsed.start, endMin: parsed.end, now, leaveToday,
-    opensAt: hm(opensAt), closesAt: hm(parsed.end), checkInOpen
+    opensAt: hm12(opensAt), closesAt: hm12(parsed.end), checkInOpen
   };
 }
 
@@ -1576,7 +1584,7 @@ function checkoutWindow(emp, attendanceDate, ts = Date.now()) {
   const endRel = parsed.end + diff * 1440;
   return {
     open: now.minutes >= endRel && now.minutes <= endRel + CHECKOUT_GRACE_MIN,
-    opensAt: hm(endRel),
+    opensAt: hm12(endRel),
     expired: now.minutes > endRel + CHECKOUT_GRACE_MIN,
     endRel
   };
