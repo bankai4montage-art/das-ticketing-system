@@ -18,6 +18,7 @@
     clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
     check: '<path d="M20 6 9 17l-5-5"/>',
     checkCircle: '<circle cx="12" cy="12" r="10"/><path d="m8 12 3 3 5-6"/>',
+    xCircle: '<circle cx="12" cy="12" r="10"/><path d="m15 9-6 6M9 9l6 6"/>',
     building: '<rect x="4" y="2" width="16" height="20" rx="2"/><path d="M9 22v-4h6v4M8 6h.01M12 6h.01M16 6h.01M8 10h.01M12 10h.01M16 10h.01M8 14h.01M12 14h.01M16 14h.01"/>',
     inbox: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
     layers: '<path d="m12 2 10 5-10 5L2 7z"/><path d="m2 17 10 5 10-5M2 12l10 5 10-5"/>',
@@ -72,6 +73,37 @@
 
     isScrolling() {
       return document.documentElement.classList.contains('scrolling');
+    },
+
+    // ===== تحديث تلقائي بعد أي نشر =====
+    // السيرفر بيرجّع رقم بيلد بيتغيّر مع كل deploy؛ بنقارنه كل 30 ثانية
+    // وبنعمل reload أول ما يختلف — يعني التحديث يوصل من غير ما تعمل F5.
+    // isBusy() بترجّع true لو المستخدم بيكتب/مودال مفتوح، فبنأجّل الـ reload.
+    watchBuild(isBusy) {
+      let build = null;
+      const check = async () => {
+        if (document.hidden) return;
+        try {
+          const res = await fetch('/api/version', { cache: 'no-store' });
+          if (!res.ok) return;
+          const data = await res.json();
+          if (!data || !data.build) return;
+          if (!build) { build = data.build; return; }
+          if (data.build !== build) {
+            if (typeof isBusy === 'function' && isBusy()) { setTimeout(check, 15000); return; }
+            // حماية من حلقة reload: كل بيلد بيعمل reload مرة واحدة بس
+            try {
+              if (sessionStorage.getItem('das_build_reloaded') === data.build) return;
+              sessionStorage.setItem('das_build_reloaded', data.build);
+            } catch (e) { /* private mode */ }
+            window.location.reload();
+          }
+        } catch (e) { /* الشبكة قطعت — الجولة الجاية */ }
+      };
+      check();
+      setInterval(check, 30000);
+      document.addEventListener('visibilitychange', () => { if (!document.hidden) check(); });
+      window.addEventListener('focus', check);
     },
 
     // ===== Dropdown مخصوص بديل الـ select الأصلي (شكل الوندوز القديم) =====

@@ -57,6 +57,28 @@ db.run('PRAGMA journal_mode = WAL');
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+/* ------------------------- نسخة البيلد ------------------------- */
+// رقم بيتغيّر مع كل نشر. الواجهات بتقارنه كل شوية وبتعمل reload لوحدها،
+// فالتحديث بيوصل للمستخدم من غير ما يعمل refresh للصفحة بنفسه.
+const BUILD_ID = (() => {
+  const fs = require('fs');
+  const parts = [];
+  const stamp = (p) => {
+    try { parts.push(path.basename(p) + ':' + Math.round(fs.statSync(p).mtimeMs)); } catch (e) { /* ملف مش موجود */ }
+  };
+  stamp(__filename);
+  ['public/admin.html', 'public/index.html', 'public/assets/common.js',
+   'public/assets/style.css', 'public/assets/i18n.js'].forEach((f) => stamp(path.join(__dirname, f)));
+  const hash = crypto.createHash('sha1').update(parts.join('|')).digest('hex').slice(0, 10);
+  const sha = String(process.env.RAILWAY_GIT_COMMIT_SHA || '').slice(0, 7);
+  return sha ? `${sha}-${hash}` : hash;
+})();
+
+app.get('/api/version', (_req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json({ build: BUILD_ID });
+});
+
 // Rate limiting بسيط بدون مكتبات — بيقفل التخمين والسبام.
 // ورا Railway البروكسي هو اللي شايف الـ IP، فبنقرأ x-forwarded-for الأول
 const hits = new Map();
@@ -75,7 +97,7 @@ setInterval(() => {
   for (const [k, v] of hits) if (!v.some((t) => now - t < 3600e3)) hits.delete(k);
 }, 3600e3).unref();
 
-const STATUSES = ['يتم المراجعة', 'اتحلت', 'لازم تيجي المكتب', 'مرفوض بسبب الروستر'];
+const STATUSES = ['يتم المراجعة', 'اتحلت', 'لازم تيجي المكتب', 'مرفوض', 'مرفوض بسبب الروستر'];
 const ADV_STATUSES = ['قيد المراجعة', 'تمت الصرف', 'مرفوضة'];
 
 // الأرشفة التلقائية: الشكوى اللي اتحلت ومعدّش على حلها 30 يوم بتتأرشف (بتخرج من الجدول الرئيسي)
@@ -496,6 +518,7 @@ app.put('/api/admin/tickets/:id', (req, res) => {
         if (statusChanged) {
           if (status === 'اتحلت') title = 'مبروك — شكواك اتحلت';
           else if (status === 'لازم تيجي المكتب') title = 'لازم تيجي المكتب بخصوص شكواك';
+          else if (status === 'مرفوض') title = 'شكواك مرفوضة';
           else if (status === 'مرفوض بسبب الروستر') title = 'شكواك مرفوضة بسبب بيانات الروستر';
         } else if (noteChanged && note) {
           title = 'الإدارة ردت على شكواك';

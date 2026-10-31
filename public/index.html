@@ -22,7 +22,13 @@
     <!-- ============ تسجيل الدخول ============ -->
     <div id="loginScreen" class="center-wrap">
       <div class="glass login-card rise">
-        <img class="rawahel-logo" src="assets/rawahel-logo.svg" alt="Rawa7el powered by Bankai" style="width:140px;height:36px;margin:0 auto 16px" />
+        <div class="brand-lockup center login-brand">
+          <img class="rawahel-logo" src="assets/rawahel-logo.svg" alt="Rawahel" />
+          <div class="rawahel-word">
+            <span class="rw-name">Rawahel</span>
+            <span class="rw-by">Powered by <b>Bankai</b></span>
+          </div>
+        </div>
         <h1 data-i18n="بوابة دعم المناديب">بوابة دعم المناديب</h1>
         <p class="sub" data-i18n="سجّل دخولك بكود الـ DAS الخاص بك">سجّل دخولك بكود الـ DAS الخاص بك</p>
 
@@ -47,7 +53,7 @@
           <div class="code mono" id="courierCodeBadge">—</div>
           <div class="name" id="courierName" data-i18n-raw>—</div>
         </div>
-        <span class="rawahel-badge" title="Rawa7el powered by Bankai"><span class="dot"></span>Rawa7el</span>
+        <span class="rawahel-badge" title="Rawahel — Powered by Bankai"><span class="dot"></span>Rawahel</span>
         <div class="actions">
           <button class="btn btn-ghost btn-sm push-btn hidden" id="pushBtn" onclick="togglePush()" aria-label="الإشعارات" data-i18n-aria="الإشعارات" title="الإشعارات" data-i18n-title="الإشعارات">
             <span class="ico-slot" id="pushIcoSlot"></span> <span id="pushLabel" data-i18n="تفعيل الإشعارات">تفعيل الإشعارات</span>
@@ -629,6 +635,7 @@
       'اتحلت':            { cls: 'ok',   icon: 'checkCircle', label: 'اتحلت', final: 'اتحلت' },
       'لازم تيجي المكتب': { cls: 'bad',  icon: 'building',    label: 'لازم تيجي المكتب', final: 'المكتب' },
       'يتم المراجعة':     { cls: 'warn', icon: 'clock',       label: 'يتم المراجعة', final: 'القرار' },
+      'مرفوض':            { cls: 'bad',  icon: 'xCircle',     label: 'مرفوض', final: 'مرفوض' },
       'مرفوض بسبب الروستر': { cls: 'bad', icon: 'alert',     label: 'مرفوض بسبب الروستر', final: 'مرفوض' }
     };
     const st = (s) => STATUS[s] || STATUS['يتم المراجعة'];
@@ -717,7 +724,7 @@
 <article class="ticket s-${s.cls} ${changed.has(t.id) ? 'flash' : ''}" style="--i:${animate ? i : 0};${anim}">
             <div class="ticket-top">
               <div class="l">
-                <span class="rawahel-badge" style="font-size:10px;padding:3px 8px"><span class="dot"></span>Rawa7el</span>
+                <span class="rawahel-badge" style="font-size:10px;padding:3px 8px"><span class="dot"></span>Rawahel</span>
                 <span class="tag ${catCls}">${DAS.esc(t.category)}</span>
                 <span class="sub">${DAS.esc(t.sub_type)}</span>
               </div>
@@ -817,6 +824,14 @@
 
     DAS.glow('.cat-card');
     DAS.scrollCalm();
+
+    // ===== التحديث التلقائي بعد أي نشر =====
+    // الصفحة بتحدّث نفسها أول ما نسخة السيرفر تتغيّر — من غير F5.
+    // بنستنى لو المندوب بيكتب شكوى دلوقتي عشان الكتابة متتمسحش.
+    DAS.watchBuild(() => {
+      const a = document.activeElement;
+      return a && /^(INPUT|TEXTAREA)$/.test(a.tagName);
+    });
   </script>
 </body>
 </html>
