@@ -479,11 +479,136 @@ app.get('/api/courier/payroll/:das_code', (req, res) => {
 // 5-ب. رفع ملفات القبض — الأدمن: JSON rows جاهزة (الـ CSV بيتفسر في الواجهة) 
 const NUM = (v) => { const n = parseFloat(String(v ?? '').replace(/[,\s]/g, '')); return isNaN(n) ? 0 : n; };
 
-app.post('/api/admin/payroll/upload', express.json({ limit: '2mb' }), (req, res) => {
+// ================= تفسير ملفات القبض (Accounting Amazon) =================
+// ملفات "Accounting Amazon" بتيجي بعناوين عربية، وساعات بتيجي العناوين نفسها
+// متلفة (كل العربي بيطلع "?" بعد الحفظ من برامج معينة) — فبنقراها بالاسم لو
+// موجود، وإلا بنرجع لترتيب الأعمدة الثابت بتاع الفورمات. عمودي "القيمة" المكررين
+// (قيمة الأوردرات + قيمة الضمان) بيتحددوا بالمكان مش بالاسم.
+const PAYROLL_FIELDS = [
+  ['id', 0, ['Rider ID', 'rider id', 'riderid']],
+  ['name', 1, ['Rider Name', 'rider name', 'name']],
+  ['sp', 2, ['SP']],
+  ['zone', 3, ['Zone']],
+  ['days', 4, ['عدد ايام العمل', 'عدد أيام العمل', 'ايام العمل']],
+  ['orders_n', 5, ['عدد اوردرات المندوب', 'اوردرات المندوب']],
+  ['order_price', 6, ['سعر الاوردر']],
+  ['orders_value', 7, ['القيمة_اوردرات']],
+  ['amazon_n', 8, ['عدد اوردرات امازون', 'اوردرات امازون']],
+  ['guarantee_price', 9, ['سعر اوردر الضمان']],
+  ['guarantee_value', 10, ['القيمة_ضمان']],
+  ['salary', 11, ['مرتب الطيار']],
+  ['bonus', 12, ['بونص الطيار']],
+  ['distance_bonus', 13, ['بونص مسافة']],
+  ['tibas', 14, ['تبس']],
+  ['total_pilot', 15, ['اجمالى مرتب الطيار', 'اجمالي مرتب الطيار', 'اجمالى المرتب']],
+  ['prev_taken', 16, ['قبض سابق']],
+  ['office_bonus', 17, ['بونص مكتب']],
+  ['advance_deduct', 18, ['سلفة الطيار', 'سلفة']],
+  ['fine', 19, ['غرامة']],
+  ['equipment', 20, ['معدات']],
+  ['fund', 21, ['صندوق زمالة', 'صندوق']],
+  ['remaining', 22, ['الباقى', 'الباقي']],
+  ['remaining_net', 23, ['الباقي بعد خصم الرسوم', 'الباقى بعد خصم الرسوم']],
+  ['wallet', 24, ['رقم المحفظة']],
+  ['wallet_type', 25, ['نوع المحفظة']],
+  ['status', 27, ['Status']]
+];
+
+function normPayrollHeader(v) {
+  return String(v || '')
+    .replace(/[\u0640\u064B-\u0652]/g, '')           // تطويل وتشكيل
+    .replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي').replace(/ة/g, 'ه')
+    .replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+function payrollHeaderIndex(headers, names) {
+  const norm = headers.map(normPayrollHeader);
+  const squeeze = (s) => s.replace(/\s+/g, '');
+  for (const name of names) {
+    const i = norm.indexOf(normPayrollHeader(name));
+    if (i >= 0) return i;
+  }
+  for (const name of names) {
+    const n = squeeze(normPayrollHeader(name));
+    const i = norm.findIndex((h) => squeeze(h) === n);
+    if (i >= 0) return i;
+  }
+  return -1;
+}
+
+// قارئ CSV متسامح: علامات تنصيص، CRLF، وBOM
+function splitCsvRows(text) {
+  const rows = []; let cur = []; let field = ''; let inQ = false;
+  const s = String(text || '');
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (inQ) {
+      if (ch === '"') { if (s[i + 1] === '"') { field += '"'; i++; } else inQ = false; }
+      else field += ch;
+      continue;
+    }
+    if (ch === '"') { inQ = true; continue; }
+    if (ch === ',') { cur.push(field); field = ''; continue; }
+    if (ch === '\n' || ch === '\r') {
+      if (ch === '\r' && s[i + 1] === '\n') i++;
+      cur.push(field); rows.push(cur); cur = []; field = '';
+      continue;
+    }
+    field += ch;
+  }
+  if (field !== '' || cur.length) { cur.push(field); rows.push(cur); }
+  return rows.filter((r) => r.length > 1 || String(r[0] || '').trim() !== '');
+}
+
+// CSV → صفوف بالشكل اللي norm() بيفهمه
+function parsePayrollCsv(text) {
+  const rows = splitCsvRows(String(text || '').replace(/^\uFEFF/, ''));
+  if (rows.length < 2) return { rows: [], error: 'الملف فاضي أو مفيهوش صفوف' };
+  const headers = rows[0].map((h) => String(h == null ? '' : h).trim());
+  const idx = {};
+  for (const [key, pos, names] of PAYROLL_FIELDS) {
+    let i = payrollHeaderIndex(headers, names);
+    if (i < 0) i = pos;                       // العناوين متلفة أو مش موجودة؟ ترتيب الفورمات
+    idx[key] = i;
+  }
+  const out = [];
+  for (const r of rows.slice(1)) {
+    const get = (key) => { const i = idx[key]; return i >= 0 && r[i] != null ? String(r[i]).trim() : ''; };
+    if (!get('id') && !get('name')) continue;  // صفوف فاضية
+    out.push({
+      'Rider ID': get('id'), 'Rider Name': get('name'), SP: get('sp'), Zone: get('zone'),
+      'عدد ايام العمل': get('days'), 'عدد اوردرات المندوب': get('orders_n'),
+      'سعر الاوردر': get('order_price'), 'القيمة_اوردرات': get('orders_value'),
+      'عدد اوردرات امازون': get('amazon_n'), 'سعر اوردر الضمان': get('guarantee_price'),
+      'القيمة_ضمان': get('guarantee_value'), 'مرتب الطيار': get('salary'),
+      'بونص الطيار': get('bonus'), 'بونص مسافة': get('distance_bonus'), 'تبس': get('tibas'),
+      'اجمالى مرتب الطيار': get('total_pilot'), 'قبض سابق': get('prev_taken'),
+      'بونص مكتب': get('office_bonus'), 'سلفة الطيار': get('advance_deduct'),
+      'غرامة': get('fine'), 'معدات': get('equipment'), 'صندوق زمالة': get('fund'),
+      'الباقى': get('remaining'), 'الباقي بعد خصم الرسوم': get('remaining_net'),
+      'رقم المحفظة': get('wallet'), 'نوع المحفظة': get('wallet_type'),
+      Status: get('status')
+    });
+  }
+  if (!out.length) return { rows: [], error: 'الملف مفيهوش صفوف صالحة (Rider ID أو الاسم فاضي في كل الصفوف؟)' };
+  return { rows: out };
+}
+
+app.post('/api/admin/payroll/upload', express.json({ limit: '6mb' }), (req, res) => {
   if (!safeEq(String(req.headers['x-admin-token'] || ''), ADMIN_TOKEN)) return res.status(401).json({ error: 'غير مصرح' });
   if (rateLimited(req, 'payroll-upload', 30, 60e3)) return res.status(429).json({ error: 'محاولات كتير — استنى دقيقة' });
 
-  const { title = '', period = '', zone = '', rows } = req.body || {};
+  const { title = '', period = '', zone = '' } = req.body || {};
+  let rows = req.body && req.body.rows;
+  // المتصفح بيبعت الملف خام (csv) والسيرفر بيفسّره — كده العناوين العربية المتلفة
+  // (???) ما بتوقفش الرفع، والتفسير واحد لكل المستخدمين. صفوف JSON القديمة لسه مدعومة.
+  if (!Array.isArray(rows)) {
+    if (typeof (req.body && req.body.csv) === 'string') {
+      const parsed = parsePayrollCsv(req.body.csv);
+      if (!parsed.rows.length) return res.status(400).json({ error: parsed.error || 'الملف مفيهوش صفوف صالحة' });
+      rows = parsed.rows;
+    }
+  }
   if (!rows || !Array.isArray(rows) || !rows.length) return res.status(400).json({ error: 'مفيش صفوف لرفعها' });
   if (rows.length > 500) return res.status(400).json({ error: 'الملف كبير جدًا (أكتر من 500 صف)' });
 

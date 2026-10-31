@@ -2027,34 +2027,16 @@
 
     // ================= القبض: رفع CSV + عرض الملفات =================
     function payrollMeta(file) {
-      // من اسم الملف: period = W43 (18 oct- 24 Oct) — و zone من آخر جزء قبل .csv
-      const m = file.name.replace(/\.csv$/i, '').match(/W\d+\s*\([^)]*\)/i);
-      const period = m ? m[0].replace(/\s+/g, ' ').trim() : file.name.replace(/\.csv$/i, '').trim();
-      const zone = file.name.replace(/\.csv$/i, '').replace(/^[^(]*\)\s*/, '').replace(/\s+/g, ' ').trim();
+      // من اسم الملف: period = W43 (18 oct- 24 Oct) — والمنطقة هي آخر جزء بعد آخر قوس
+      // ("Accounting Amazon 2026 - W43 (...)Almandra" ⇒ Almandra)، ومفيش اقتباس زيادة.
+      const name = file.name.replace(/\.csv$/i, '').trim();
+      const m = name.match(/W\d+\s*\([^)]*\)/i);
+      const period = m ? m[0].replace(/\s+/g, ' ').trim() : name;
+      const after = name.includes(')') ? name.slice(name.lastIndexOf(')') + 1) : '';
+      const zone = after.replace(/^[-–—:\s]+/, '').replace(/\s+/g, ' ').trim();
       return { title: period + (zone ? ' — ' + zone : ''), period, zone };
     }
 
-    function parseCsvRows(text) {
-      const rows = []; const cur = []; let field = '', inQ = false;
-      for (let i = 0; i < text.length; i++) {
-        const ch = text[i];
-        if (inQ) {
-          if (ch === '"') { if (text[i + 1] === '"') { field += '"'; i++; } else inQ = false; }
-          else field += ch;
-          continue;
-        }
-        if (ch === '"') { inQ = true; continue; }
-        if (ch === ',') { cur.push(field); field = ''; continue; }
-        if (ch === '\n' || ch === '\r') {
-          if (ch === '\r' && text[i + 1] === '\n') i++;
-          cur.push(field); rows.push(cur); cur.length = 0; field = '';
-          continue;
-        }
-        field += ch;
-      }
-      if (field !== '' || cur.length) { cur.push(field); rows.push(cur); }
-      return rows.filter(r => r.length && (r.length > 1 || r[0].trim() !== ''));
-    }
 
     async function uploadPayrollFiles(files) {
       if (!files || !files.length) return;
@@ -2062,48 +2044,19 @@
       try {
         for (const file of files) {
           const meta = payrollMeta(file);
-          const matrix = parseCsvRows((await file.text()).replace(/^\uFEFF/, ''));
-          if (matrix.length < 2) { DAS.toast(`الملف فاضي: ${file.name}`, 'err'); continue; }
-          const headers = matrix[0].map(h => h.trim());
-          const pickValue = (key) => (headers.indexOf(key) >= 0 ? headers.indexOf(key) + 1 : -1);
-          const ordersValueIdx = pickValue('سعر الاوردر');
-          const guaranteeValueIdx = pickValue('سعر اوردر الضمان');
-          const rows = matrix.slice(1).map(f => ({
-            'Rider ID': f[headers.indexOf('Rider ID')] ?? '',
-            'Rider Name': f[headers.indexOf('Rider Name')] ?? '',
-            SP: f[headers.indexOf('SP')] ?? '',
-            Zone: f[headers.indexOf('Zone')] ?? meta.zone,
-            'عدد ايام العمل': f[headers.indexOf('عدد ايام العمل')] ?? '',
-            'عدد اوردرات المندوب': f[headers.indexOf('عدد اوردرات المندوب')] ?? '',
-            'سعر الاوردر': f[headers.indexOf('سعر الاوردر')] ?? '',
-            'القيمة_اوردرات': f[ordersValueIdx] ?? '',
-            'عدد اوردرات امازون': f[headers.indexOf('عدد اوردرات امازون')] ?? '',
-            'سعر اوردر الضمان': f[headers.indexOf('سعر اوردر الضمان')] ?? '',
-            'القيمة_ضمان': f[guaranteeValueIdx] ?? '',
-            'مرتب الطيار': f[headers.indexOf('مرتب الطيار')] ?? '',
-            'بونص الطيار': f[headers.indexOf('بونص الطيار')] ?? '',
-            'بونص مسافة': f[headers.indexOf('بونص مسافة')] ?? '',
-            'تبس': f[headers.indexOf('تبس')] ?? '',
-            'اجمالى مرتب الطيار': f[headers.indexOf('اجمالى مرتب الطيار')] ?? '',
-            'قبض سابق': f[headers.indexOf('قبض سابق')] ?? '',
-            'بونص مكتب': f[headers.indexOf('بونص مكتب')] ?? '',
-            'سلفة الطيار': f[headers.indexOf('سلفة الطيار')] ?? '',
-            'غرامة': f[headers.indexOf('غرامة')] ?? '',
-            'معدات': f[headers.indexOf('معدات')] ?? '',
-            'صندوق زمالة': f[headers.indexOf('صندوق زمالة')] ?? '',
-            'الباقى': f[headers.indexOf('الباقى')] ?? '',
-            'الباقي بعد خصم الرسوم': f[headers.indexOf('الباقي بعد خصم الرسوم')] ?? '',
-            'رقم المحفظة': f[headers.indexOf('رقم المحفظة')] ?? '',
-            'نوع المحفظة': f[headers.indexOf('نوع المحفظة')] ?? '',
-            Status: f[headers.indexOf('Status')] ?? ''
-          }));
-          const res = await fetch(`/api/admin/payroll/upload?title=${encodeURIComponent(meta.title)}&period=${encodeURIComponent(meta.period)}&zone=${encodeURIComponent(meta.zone)}`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-token': adminToken },
-            body: JSON.stringify({ rows })
+          // بنبعت الملف خام والسيرفر بيفسّره: بيتعامل مع العناوين العربية عادي،
+          // وحتى لو العناوين بقت "???" بيرجع لترتيب أعمدة الفورمات (Accounting Amazon).
+          let text;
+          try { text = await readCsvText(file); } catch (e) { text = await file.text(); }
+          const body = { csv: text.replace(/^\uFEFF/, ''), title: meta.title, period: meta.period, zone: meta.zone };
+          if (!body.csv || !body.csv.trim()) { DAS.toast(`الملف فاضي: ${file.name}`, 'err'); continue; }
+          const res = await adminFetch('/api/admin/payroll/upload', {
+            method: 'POST',
+            body: JSON.stringify(body)
           });
-          const body = await res.json().catch(() => ({}));
-          if (!res.ok) DAS.toast(`${meta.title}: ${body.error || 'فشل الرفع'}`, 'err');
-          else DAS.toast(`✔ ${meta.title}: ${body.rows} مندوب`);
+          const out = await res.json().catch(() => ({}));
+          if (!res.ok) DAS.toast(`${meta.title}: ${out.error || 'فشل الرفع'}`, 'err');
+          else DAS.toast(`✔ ${meta.title}: ${out.rows} مندوب`);
         }
         loadPayrollFiles(true);
       } finally {
@@ -2116,10 +2069,12 @@
 
     let payrollFilesCache = [], payrollRowsCache = [], currentFileId = null;
     async function loadPayrollFiles(force) {
-      if (!adminToken) return;
+      let authed = '';
+      try { authed = sessionStorage.getItem('das_admin_token') || ''; } catch (e) {}
+      if (!authed) return;
       if (!force && payrollFilesCache.length) return;
       try {
-        const res = await fetch('/api/admin/payroll/files', { headers: { 'x-admin-token': adminToken } });
+        const res = await adminFetch('/api/admin/payroll/files');
         const body = await res.json();
         payrollFilesCache = body.files || [];
         renderPayrollFiles();
@@ -2156,7 +2111,7 @@
       $('payrollRowsTitle').textContent = 'صفوف: ' + title;
       $('payrollRowsSearch').value = '';
       $('payrollRowsBox').style.display = 'block';
-      fetch(`/api/admin/payroll/rows/${fileId}`, { headers: { 'x-admin-token': adminToken } })
+      adminFetch(`/api/admin/payroll/rows/${fileId}`)
         .then(r => r.json())
         .then(body => { payrollRowsCache = body.rows || []; renderPayrollRows(); })
         .catch(() => {});
@@ -2186,7 +2141,7 @@
 
     function askDeletePayrollFile(id) {
       if (!confirm('تأكيد حذف الملف بكل صفوفه؟ المندوبين مش هيشوفوا تفاصيل القبض دي تاني')) return;
-      fetch(`/api/admin/payroll/files/${id}`, { method: 'DELETE', headers: { 'x-admin-token': adminToken } })
+      adminFetch(`/api/admin/payroll/files/${id}`, { method: 'DELETE' })
         .then(r => r.json())
         .then(b => {
           if (b.ok) {
