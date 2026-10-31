@@ -161,6 +161,18 @@
         </form>
       </section>
 
+      <!-- تسجيل الحضور والانصراف — بتسجّل طلب والمشرف في الروستر يوافق -->
+      <section class="glass tickets-card rise" style="animation-delay:.32s" id="attBox">
+        <div class="section-title" style="margin:0 0 14px">
+          <span style="font-size:16px;color:var(--text);font-weight:800">الحضور والانصراف</span>
+          <span class="live"><i></i> Rawahel Roster</span>
+        </div>
+        <div id="attState" style="margin-bottom:6px"></div>
+        <div id="attReqList" class="ticket-list">
+          <div class="skeleton" style="height:80px"></div>
+        </div>
+      </section>
+
       <!-- متابعة الشكاوى -->
       <section class="glass tickets-card rise" style="animation-delay:.35s">
         <div class="section-title" style="margin:0 0 16px">
@@ -259,12 +271,14 @@
       firstLoad = true; lastSig = null; prevMap = {};
       advFirstLoad = true; advSig = null; advPrevMap = {};
       cardsCache = null;
+      attSig = null; attFirstLoad = true; attPrevMap = {};
       loadMyTickets();
       loadMyAdvances();
       loadMyCards();
+      loadMyAttendance();
       initPushUI();
       if (pollInterval) clearInterval(pollInterval);
-      pollInterval = setInterval(() => { loadMyTickets(); loadMyAdvances(); loadMyCards(); }, 4000);
+      pollInterval = setInterval(() => { loadMyTickets(); loadMyAdvances(); loadMyCards(); loadMyAttendance(); }, 4000);
     }
 
     // ================= كروت الإدارة المخصصة =================
@@ -822,6 +836,121 @@
       }).join('');
     }
 
+    // ================= الحضور والانصراف (روستر Rawahel) =================
+    // الطلب بيتسجّل Pending وبيروح لمشرف الفرع في الروستر. بعد الموافقة الحضور
+    // بيتسجّل رسمي هناك، والحالة هتتحدّث هنا تلقائي.
+    const ATT_STATUS = {
+      Pending:  { cls: 'warn', label: 'قيد المراجعة' },
+      Approved: { cls: 'ok',   label: 'معتمد' },
+      Rejected: { cls: 'bad',  label: 'مرفوض' }
+    };
+    const attSt = (s) => ATT_STATUS[s] || ATT_STATUS.Pending;
+    const attBadge = (s) => { const st = attSt(s); return `<span class="badge ${st.cls}"><span class="dot"></span>${st.label}</span>`; };
+    const attActionAr = (a) => a === 'check_in' ? 'تسجيل حضور' : 'تسجيل انصراف';
+
+    let attSig = null, attFirstLoad = true, attPrevMap = {};
+
+    async function loadMyAttendance(force) {
+      if (!currentCourier) return;
+      let data;
+      try {
+        const res = await fetch('/api/courier/attendance/' + encodeURIComponent(currentCourier.das_code));
+        if (!res.ok) return;
+        data = await res.json();
+      } catch (e) { return; }
+
+      const rows = data.requests || [];
+      const sig = JSON.stringify([rows.map(r => [r.id, r.status, r.decision_note]), data.state, data.enabled]);
+      if (!force && sig === attSig) return;
+      attSig = sig;
+
+      // إشعار بتغيير حالة من الإدارة
+      const changed = new Set();
+      if (!attFirstLoad) {
+        rows.forEach(r => {
+          const p = attPrevMap[r.id];
+          if (p && p.status !== r.status) {
+            changed.add(r.id);
+            if (r.status === 'Approved') { DAS.confetti(); DAS.toast(attActionAr(r.action) === 'تسجيل حضور' ? 'مبروك — حضورك اتسجّل رسمي في الروستر' : 'انصرافك اتسجّل رسمي في الروستر'); }
+            else if (r.status === 'Rejected') DAS.toast('طلب حضرك اترفض من المشرف', 'err');
+          }
+        });
+      }
+      attPrevMap = Object.fromEntries(rows.map(r => [r.id, { status: r.status }]));
+      const animate = attFirstLoad;
+      attFirstLoad = false;
+
+      // منطقة الحالة: الزرار المتاح دلوقتي (حضور أو انصراف)
+      const stateEl = $('attState');
+      if (!data.enabled) {
+        stateEl.innerHTML = `<div class="empty fade" style="padding:22px 12px"><div class="eic">${DAS.icon('clock', 'ico-lg')}</div><b>خدمة الحضور مش متاحة حاليًا</b>كلم الإدارة لربط صفحة الحضور بالروستر</div>`;
+      } else if (data.state && data.state.blocked) {
+        stateEl.innerHTML = `<div class="att-pend">${DAS.icon('clock')}<span data-i18n-raw>${DAS.esc(data.state.why)} — هتلاقي النتيجة هنا بعد القرار</span></div>`;
+      } else if (data.state && data.state.next === 'check_in') {
+        stateEl.innerHTML = `<button type="button" class="btn btn-primary att-btn" id="attNextBtn" onclick="requestAtt('check_in')"><span class="spinner"></span><span class="label" data-i18n="تسجيل حضور">تسجيل حضور</span></button><p class="hint-text" style="margin:8px 0 0;text-align:center">الطلب بيروح لمشرف فرعك في الروستر — وبعد الموافقة حضورك بيتسجّل رسمي</p>`;
+      } else if (data.state && data.state.next === 'check_out') {
+        stateEl.innerHTML = `<button type="button" class="btn btn-primary att-btn" id="attNextBtn" onclick="requestAtt('check_out')"><span class="spinner"></span><span class="label" data-i18n="تسجيل انصراف">تسجيل انصراف</span></button><p class="hint-text" style="margin:8px 0 0;text-align:center">إنت مسجّل حضور — سجّل الانصراف قبل ما تسيب الشيفت، أو بعد الرجوع من الشيفت الليلي</p>`;
+      } else {
+        stateEl.innerHTML = '';
+      }
+
+      // سجل الطلبات
+      const container = $('attReqList');
+      if (!rows.length) {
+        container.innerHTML = `<div class="empty fade"><div class="eic">${DAS.icon('calendar', 'ico-lg')}</div><b>مفيش طلبات حضور لسه</b>سجّل حضورك أول ما تيجي الشيفت</div>`;
+        return;
+      }
+
+      container.innerHTML = rows.map((r, i) => {
+        const s = attSt(r.status);
+        const anim = (animate || changed.has(r.id)) ? '' : 'animation:none';
+        return `
+        <article class="ticket s-${s.cls} ${changed.has(r.id) ? 'flash' : ''}" style="--i:${animate ? i : 0};${anim}">
+          <div class="ticket-top">
+            <div class="l">
+              <span class="tag adv">${attActionAr(r.action)}</span>
+              ${r.device_time ? `<span class="sub mono">${DAS.esc(r.device_time)}</span>` : ''}
+            </div>
+            ${attBadge(r.status)}
+          </div>
+          <div class="meta">يوم الشيفت: ${DAS.esc(r.attendance_date)}</div>
+          ${r.status !== 'Pending' && r.decision_note ? `
+            <div class="reply">
+              <strong>${DAS.icon('msg')} رد المشرف</strong>
+              <span data-i18n-raw>${DAS.esc(r.decision_note)}</span>
+            </div>` : ''}
+          <div class="ticket-foot">
+            <span>وقت الطلب: ${DAS.fmtDateTime(r.requested_at)}</span>
+            <span class="mono">#${r.id}</span>
+          </div>
+        </article>`;
+      }).join('');
+    }
+
+    async function requestAtt(action) {
+      const btn = $('attNextBtn');
+      if (btn) DAS.busy(btn, true);
+      try {
+        const res = await fetch('/api/courier/attendance/request', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            das_code: currentCourier.das_code,
+            action,
+            device_time: new Date().toLocaleTimeString('en-GB', { hour12: false }).slice(0, 5)
+          })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'فشل تسجيل الطلب — حاول تاني');
+        DAS.toast('طلبك مزال للمشرف في الروستر — هتتابع النتيجة هنا');
+        attSig = null;
+        await loadMyAttendance(true);
+      } catch (e) {
+        DAS.toast(e.message, 'err');
+        if (btn) { DAS.busy(btn, false); }
+      }
+    }
+
     // ---------- تقييم الحل ----------
     const ratingPick = {};
 
@@ -896,6 +1025,7 @@
       loadMyCards(true);
       loadMyTickets(true);
       loadMyAdvances(true);
+      loadMyAttendance(true);
     });
 
     DAS.glow('.cat-card');

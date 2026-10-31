@@ -236,6 +236,29 @@ db.serialize(() => {
   db.run('CREATE INDEX IF NOT EXISTS idx_payroll_rider ON payroll(rider_id, period)');
   db.run('CREATE INDEX IF NOT EXISTS idx_payroll_file ON payroll(file_id)');
 
+  // طلبات الحضور والانصراف من صفحة المندوب — بتتحوّل للمشرف في الروستر والموافقة
+  // بتسجّل الحضور رسمي هناك. النسخة هنا للعرض السريع لحالة الطلب للمندوب.
+  db.run(`
+    CREATE TABLE IF NOT EXISTS att_requests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      das_code TEXT NOT NULL,
+      courier_name TEXT DEFAULT '',
+      roster_req_id INTEGER,
+      attendance_date TEXT NOT NULL,
+      action TEXT NOT NULL,
+      status TEXT DEFAULT 'Pending',
+      requested_at TEXT,
+      device_time TEXT DEFAULT '',
+      roster_decided_at TEXT,
+      decision_note TEXT DEFAULT '',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  // طلب واحد Pending من نفس النوع لنفس المندوب في نفس يوم الشيفت — التكرار مقفول
+  db.run(`CREATE UNIQUE INDEX IF NOT EXISTS uq_att_pending
+          ON att_requests(das_code, attendance_date, action) WHERE status = 'Pending'`);
+  db.run('CREATE INDEX IF NOT EXISTS idx_att_code ON att_requests(das_code, id)');
+
   // قاعدة قديمة؟ نزود الأعمدة الناقصة تلقائي (بعد إنشاء الجدول)
   db.all("PRAGMA table_info(payroll)", [], (pErr, pCols) => {
     if (pErr || !pCols) return;
@@ -1148,6 +1171,9 @@ app.post('/api/push/unsubscribe', (req, res) => {
 const ROSTER_URL = (process.env.ROSTER_URL || '').replace(/\/+$/, '');
 const ROSTER_URL_FULL = ROSTER_URL ? (ROSTER_URL.startsWith('http') ? ROSTER_URL : 'https://' + ROSTER_URL) : '';
 const ROSTER_ADMIN_PASSWORD = process.env.ROSTER_ADMIN_PASSWORD || '';
+// مفتاح واجهات حضور/انصراف من DAS للروستر — سر سيرفري تاني مش تابع لأدمن الروستر،
+// بنفس القيمة بتتحدد كـ DAS_SECRET على سيرفر الروستر. عمرو ما بيروح للمتصفح.
+const ROSTER_DAS_SECRET = process.env.ROSTER_DAS_SECRET || '';
 const rosterState = { connected: false, rev: 0, employees: 0 };
 
 let rosterToken = '';
@@ -1157,6 +1183,11 @@ let rosterEmployeesAt = 0;
 
 function rosterConfigured() {
   return !!ROSTER_URL_FULL && !!ROSTER_ADMIN_PASSWORD;
+}
+
+// واجهات حضور/انصراف DAS شغالة بس لو الروستر مربوط + المفتاح السري محطوط
+function dasEnabled() {
+  return rosterConfigured() && !!ROSTER_DAS_SECRET;
 }
 
 async function rosterLogin(retried = false) {
@@ -1238,7 +1269,7 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 // نبضة حالة الجسر — الواجهة بتسأل كل 4 ثواني وبتقارن rev عشان تعرف تحدّط قسم الحضور
 app.get('/api/admin/roster-status', (req, res) => {
-  res.json({ roster: rosterState, configured: rosterConfigured() });
+  res.json({ roster: rosterState, configured: rosterConfigured(), das_integration: dasEnabled() });
 });
 
 // 20. الحضور بتاع مندوب من الروستر — المندوب بيتطابق بالكود (das_code = كود الموظف)
@@ -1388,6 +1419,177 @@ app.post('/api/admin/roster-sync/apply', async (req, res) => {
   const okCount = results.filter(r => r.ok).length;
   res.json({ ok: okCount, failed: results.length - okCount, results });
 });
+
+// 23. بيانات طلبات الحضور للمندوب + حالته الحالية (إيه اللي ينفع يسجّل دلوقتي)
+// كل الحسابات هنا من الداتابيز المحلية — المتصفح ما بيبعتش أي وقت أو كود يتنفذ.
+app.get('/api/courier/attendance/:das_code', (req, res) => {
+  const code = String(req.params.das_code || '').trim().toUpperCase();
+  db.all("SELECT * FROM att_requests WHERE das_code = ? ORDER BY id DESC LIMIT 15", [code], (err, rows) => {
+    if (err) return res.status(500).json({ error: 'خطأ في جلب طلبات الحضور' });
+    rows = rows || [];
+    res.json({ enabled: dasEnabled(), requests: rows, state: attendanceState(rows) });
+  });
+});
+
+// الحالة المحسوبة للسجل: إيه اللي ينفع يتسجّل دلوقتي بناءً على الطلبات المسجّلة
+function attendanceState(rows) {
+  const pend = rows.find(r => r.status === 'Pending');
+  if (pend) {
+    return { next: null, blocked: true,
+      why: pend.action === 'check_in' ? 'في طلب حضور مستني موافقة المشرف' : 'في طلب انصراف مستني موافقة المشرف' };
+  }
+  // حضور معتمد؟ البند: لو في انصراف معتمد بعده يبقى الدورة خلصت، وإلا البند التالي انصراف
+  const lastIn = rows.find(r => r.action === 'check_in' && r.status === 'Approved');
+  if (!lastIn) return { next: 'check_in', blocked: false, why: '' };
+  const outAfter = rows.find(r => r.action === 'check_out' && r.id > lastIn.id && r.status === 'Approved');
+  if (outAfter) {
+    // الدورة كاملة (حضور + انصراف) لليوم بتوقيت القاهرة: لا حضور تاني لليوم
+    if (lastIn.attendance_date === cairoToday()) {
+      return { next: null, blocked: true, why: 'حضورك وانصرافك اتسجلوا رسميًا — مش هينفع حضور تاني لليوم' };
+    }
+    return { next: 'check_in', blocked: false, why: '' };
+  }
+  return { next: 'check_out', blocked: false, why: '' };
+}
+
+// وقت القاهرة (UTC+3) — نفس منطق توقيت الروستر
+function cairoToday() {
+  return new Date(Date.now() + 3 * 3600e3).toISOString().slice(0, 10);
+}
+
+// نداء واجهات الربط في الروستر — بالمفتاح السري بتاع الربط (X-DAS-Secret)
+async function rosterDasFetch(path, opts = {}) {
+  const res = await fetch(ROSTER_URL_FULL + path, {
+    ...opts,
+    headers: { 'Content-Type': 'application/json', 'X-DAS-Secret': ROSTER_DAS_SECRET, ...(opts.headers || {}) }
+  });
+  return res;
+}
+
+// 24. تسجيل حضور أو انصراف من المندوب — بيتحوّل لطلب Pending في الروستر
+// والكود بيتسحب من الداتابيز (مش من الجسم)، والوقت هنا هو وقت استلام السيرفر.
+// وقت الجهاز اللي بيبعته متصفح المندوب للعرض فقط — مش بيتسجّل كتوقيت رسمي لي أي حاجة.
+app.post('/api/courier/attendance/request', async (req, res) => {
+  if (rateLimited(req, 'att-request', 8, 60e3)) return res.status(429).json({ error: 'محاولات كتير — استنى دقيقة وجرب تاني' });
+  const { das_code, action } = req.body || {};
+  if (!['check_in', 'check_out'].includes(action)) return res.status(400).json({ error: 'نوع الطلب غير معروف' });
+  if (!dasEnabled()) return res.status(503).json({ error: 'الربط مش متاح — كلم الإدارة' });
+
+  const cleanCode = String(das_code || '').trim().toUpperCase();
+  db.get("SELECT * FROM couriers WHERE UPPER(das_code) = ?", [cleanCode], async (err, courier) => {
+    if (err) return res.status(500).json({ error: 'خطأ في السيرفر' });
+    if (!courier) return res.status(404).json({ error: 'كود المندوب غير مسجل في السيستم' });
+
+    const receivedAt = new Date().toISOString();
+    const deviceTime = String((req.body && req.body.device_time) || '').replace(/[^0-9:]/g, '').slice(0, 5);
+
+    // التطابق مع موظف الروصر بيكون بالكود حصرًا — الاسم عمرو ما بيستخدم للربط
+    let emp = null;
+    try {
+      const emps = await rosterEmployees();
+      emp = emps.find(x => String(x.employee_code || '').trim().toUpperCase() === cleanCode);
+    } catch (e) {
+      return res.status(502).json({ error: 'الروستر مش متاح دلوقتي — جرب بعد دقيقة' });
+    }
+    if (!emp) {
+      return res.status(409).json({ error: 'كودك مش مربوط بموظف في الروستر — الربط بيتم من شاشة ربط الروستر في لوحة الإدارة' });
+    }
+
+    // فلتر سريع قبل النداء للروستر — الروستر هو المصدر الأول والأخير للقواعد
+    db.all("SELECT * FROM att_requests WHERE das_code = ? ORDER BY id DESC LIMIT 15", [cleanCode], async (err2, rows) => {
+      if (err2) return res.status(500).json({ error: 'خطأ في السيرفر' });
+      rows = rows || [];
+      const st = attendanceState(rows);
+      if (st.blocked) return res.status(409).json({ error: st.why + ' — استنى قرار المشرف الأول' });
+      if (st.next && st.next !== action) {
+        return res.status(409).json({ error: action === 'check_in'
+          ? 'حضورك مسجّل ومعتمد بالفعل — سجّل الانصراف'
+          : 'مفيش حضور معتمد لتسجيل انصراف بعده — سجّل حضور الأول' });
+      }
+
+      try {
+        const r = await rosterDasFetch('/api/das/requests', {
+          method: 'POST',
+          body: JSON.stringify({ action, employee_code: cleanCode, courier_name: courier.name, courier_local_at: deviceTime })
+        });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) {
+          const msg = typeof data.detail === 'string' ? data.detail : 'الروستر رفض الطلب (' + r.status + ')';
+          return res.status(r.status === 404 ? 409 : r.status === 409 ? 409 : 502).json({ error: msg });
+        }
+        const day = data.attendance_date || cairoToday();
+        db.run(
+          `INSERT INTO att_requests (das_code, courier_name, roster_req_id, attendance_date, action, status, requested_at, device_time)
+           VALUES (?, ?, ?, ?, ?, 'Pending', ?, ?)`,
+          [cleanCode, courier.name, data.id, day, action, receivedAt, deviceTime],
+          function (err3) {
+            if (err3) {
+              // تكرار متزامن (دبل-كليك): مطلوب موجود Pending بالفعل
+              if (err3 && err3.code === 'SQLITE_CONSTRAINT') return res.status(409).json({ error: 'نفس الطلب مسجّل بالفعل ومستني موافقة' });
+              return res.status(500).json({ error: 'فشل تسجيل طلب الحضور' });
+            }
+            const attStateLocal = { next: null, blocked: true };
+            res.json({ success: true, request: { id: this.lastID, action, status: 'Pending', attendance_date: day, requested_at: receivedAt }, state: attStateLocal });
+          }
+        );
+      } catch (e) {
+        res.status(502).json({ error: 'الربط مش متاح دلوقتي — جرب بعد دقيقة' });
+      }
+    });
+  });
+});
+
+// ================= مزامنة حالات طلبات الحضور من الروستر =================
+// دورة كل نص دقيقة: بتجيب الطلبات اللي قرر عليها مشرف من الروستر (وقت آخر مزامنة
+// وأي طلب لسه Pending) وتحدّط النسخ المحلية + بتبعت إشعار للمندوب بالتغيير.
+let dassSyncAt = '';
+async function dassSyncStatuses() {
+  if (!dasEnabled()) return;
+  const since = String(dassSyncAt || '2000-01-01T00:00:00');
+  let data;
+  try {
+    const r = await rosterDasFetch('/api/das/requests?updated_since=' + encodeURIComponent(since) + '&limit=200');
+    if (!r.ok) return;
+    data = await r.json().catch(() => null);
+  } catch (e) { return; }
+  if (!data || !Array.isArray(data.requests)) return;
+  dassSyncAt = new Date().toISOString().slice(0, 19);
+
+  // بالتسلسل عشان الداتابيز مش هتدبل-lock مع تزايد الطلبات
+  for (const req of data.requests) {
+    await new Promise((resolve) => {
+      db.get("SELECT * FROM att_requests WHERE roster_req_id = ?", [req.id], (err, local) => {
+        if (err || local) {
+          if (err || !local) return resolve();
+          if (local.status === req.status) return resolve();
+          db.run(
+            "UPDATE att_requests SET status = ?, roster_decided_at = ?, decision_note = ? WHERE id = ?",
+            [req.status, req.decided_at || '', req.decision_note || '', local.id],
+            () => {
+              if (req.status === 'Approved') sendPush(local.das_code, req.action === 'check_in' ? 'حضورك اتسجّل في الروستر' : 'انصرافك اتسجّل في الروستر', 'المشرف وافق على طلبك');
+              else if (req.status === 'Rejected') sendPush(local.das_code, 'طلب حضرك اترفض', (req.decision_note || '').slice(0, 120) || 'راجع المشرف');
+              resolve();
+            });
+          return;
+        }
+        // fallback: طلب اتعمل في الروستر وردّه ما وصلناش وقتها (شبكة قطعت) — بنطابقه
+        // بالكود والنوع ويوم الشيفت وهو لسه Pending، وبنربطه بمعرّف الروستر ونحدّث الحالة
+        db.get(
+          "SELECT id FROM att_requests WHERE roster_req_id IS NULL AND das_code = ? AND action = ? AND attendance_date = ? AND status = 'Pending'",
+          [req.employee_code || '', req.action || '', req.attendance_date || ''],
+          (err2, cand) => {
+            if (err2 || !cand) return resolve();
+            db.run(
+              "UPDATE att_requests SET roster_req_id = ?, status = ?, roster_decided_at = ?, decision_note = ? WHERE id = ?",
+              [req.id, req.status, req.decided_at || '', req.decision_note || '', cand.id],
+              () => resolve());
+          });
+      });
+    });
+  }
+}
+setInterval(dassSyncStatuses, 12000).unref();
+dassSyncStatuses().catch(() => {});
 
 rosterLiveLoop().catch(() => {});
 
