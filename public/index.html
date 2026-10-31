@@ -637,29 +637,44 @@
       container.innerHTML = advances.map((a, i) => {
         const s = advSt(a.status);
         const anim = (animate || changed.has(a.id)) ? '' : 'animation:none';
+        const isOpen = openAdvances.has(String(a.id));
         return `
-        <article class="ticket s-${s.cls} ${changed.has(a.id) ? 'flash' : ''}" style="--i:${animate ? i : 0};${anim}">
-          <div class="ticket-top">
+        <details class="ticket s-${s.cls} ${changed.has(a.id) ? 'flash' : ''}" data-aid="${a.id}" ${isOpen ? 'open' : ''} style="--i:${animate ? i : 0};${anim}">
+          <summary class="ticket-top" aria-label="تفاصيل السلفة ${a.id}">
             <div class="l">
               <span class="tag adv">سلفة</span>
               <span class="amt">${DAS.esc(a.amount)} ج</span>
             </div>
-            ${advBadge(a.status)}
+            <div class="t-right">
+              ${advBadge(a.status)}
+              <span class="t-chev" aria-hidden="true">${DAS.icon('chev')}</span>
+            </div>
+          </summary>
+          <div class="ticket-body">
+            <p class="desc" data-i18n-raw>${DAS.esc(a.reason)}</p>
+            <div class="meta">المحفظة: <span class="mono">${DAS.esc(a.wallet)}</span></div>
+            ${a.admin_note ? `
+              <div class="reply">
+                <strong>${DAS.icon('msg')} رد الإدارة</strong>
+                <span data-i18n-raw>${DAS.esc(a.admin_note)}</span>
+              </div>` : ''}
+            <div class="ticket-foot">
+              <span>رقم الطلب: #${a.id}</span>
+              <span>${DAS.fmtDateTime(a.created_at)}</span>
+            </div>
           </div>
-          <p class="desc" data-i18n-raw>${DAS.esc(a.reason)}</p>
-          <div class="meta">المحفظة: <span class="mono">${DAS.esc(a.wallet)}</span></div>
-          ${a.admin_note ? `
-            <div class="reply">
-              <strong>${DAS.icon('msg')} رد الإدارة</strong>
-              <span data-i18n-raw>${DAS.esc(a.admin_note)}</span>
-            </div>` : ''}
-          <div class="ticket-foot">
-            <span>رقم الطلب: #${a.id}</span>
-            <span>${DAS.fmtDateTime(a.created_at)}</span>
-          </div>
-        </article>`;
+        </details>`;
       }).join('');
     }
+
+    // السلف كمان: كروت مقفولة وبتتفتح بالضغط، واللي مفتوح بيفضل مفتوح بعد التحديث
+    const openAdvances = new Set();
+    $('myAdvancesList').addEventListener('toggle', (e) => {
+      const card = e.target;
+      if (!card || card.tagName !== 'DETAILS' || !card.dataset.aid) return;
+      if (card.open) openAdvances.add(String(card.dataset.aid));
+      else openAdvances.delete(String(card.dataset.aid));
+    }, true);
 
     // ================= تفاصيل القبض (من ملفات الأسبوع اللي رفعها الأدمن) =================
     function loadPayroll() {
