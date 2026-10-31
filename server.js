@@ -201,8 +201,49 @@ db.serialize(() => {
     )
   `);
 
+  // جداول القبض: ملفات الأسبوع المرفوعة من الأدمن + صفوف المناديب المتفصلة
+  db.run(`
+    CREATE TABLE IF NOT EXISTS payroll_files (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL,
+      period TEXT DEFAULT '',
+      zone TEXT DEFAULT '',
+      rows_n INTEGER DEFAULT 0,
+      uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      uploaded_by TEXT DEFAULT ''
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS payroll (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      file_id INTEGER NOT NULL,
+      period TEXT DEFAULT '',
+      zone TEXT DEFAULT '',
+      sp TEXT DEFAULT '',
+      rider_id TEXT NOT NULL,
+      rider_name TEXT DEFAULT '',
+      days REAL DEFAULT 0, orders_n REAL DEFAULT 0, order_price REAL DEFAULT 0, orders_value REAL DEFAULT 0,
+      amazon_n REAL DEFAULT 0, guarantee_price REAL DEFAULT 0, guarantee_value REAL DEFAULT 0,
+      salary REAL DEFAULT 0, bonus REAL DEFAULT 0, distance_bonus REAL DEFAULT 0, tibas REAL DEFAULT 0,
+      total_pilot REAL DEFAULT 0, prev_taken REAL DEFAULT 0, office_bonus REAL DEFAULT 0,
+      advance_deduct REAL DEFAULT 0, fine REAL DEFAULT 0, equipment REAL DEFAULT 0, fund REAL DEFAULT 0,
+      remaining REAL DEFAULT 0, remaining_net REAL DEFAULT 0,
+      wallet TEXT DEFAULT '', wallet_type TEXT DEFAULT '',
+      status TEXT DEFAULT '', uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  db.run('CREATE INDEX IF NOT EXISTS idx_payroll_rider ON payroll(rider_id, period)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_payroll_file ON payroll(file_id)');
+
   // قاعدة قديمة؟ نزود الأعمدة الناقصة تلقائي (بعد إنشاء الجدول)
-  // الكروت: sort_order للترتيب بالسحب والإفلات — الموجودين قبل التحديث بنرتّبهم
+  db.all("PRAGMA table_info(payroll)", [], (pErr, pCols) => {
+    if (pErr || !pCols) return;
+    const names = pCols.map(c => c.name);
+    if (!names.includes('sp')) db.run("ALTER TABLE payroll ADD COLUMN sp TEXT DEFAULT ''");
+  });
+
+  // قاعدة قديمة؟ نزود الأعمدة الناقصة تلقائي (بعد إنشاء الجدول)  // الكروت: sort_order للترتيب بالسحب والإفلات — الموجودين قبل التحديث بنرتّبهم
   // بنفس ترتيب العرض القديم (الأحدث أولان) عشان ما يتغيّرش شكل الصفحة فجأة.
   db.all("PRAGMA table_info(cards)", (cErr, cCols) => {
     if (cErr || !cCols) return;
@@ -394,6 +435,110 @@ app.get('/api/courier/advances/:das_code', (req, res) => {
       res.json({ advances: rows });
     }
   );
+});
+
+// 5-أ. تفاصيل القبض للمندوب — صفوف الملفات اللي فيها Rider ID بتاعه (أو مطابقة بالاسم)
+app.get('/api/courier/payroll/:das_code', (req, res) => {
+  const cleanCode = String(req.params.das_code || '').trim().toUpperCase();
+  const name = String(req.query.name || '').trim();
+  const sel = `SELECT p.*, f.title AS file_title, f.uploaded_at AS file_uploaded_at
+                 FROM payroll p LEFT JOIN payroll_files f ON f.id = p.file_id`;
+  db.all(`${sel} WHERE UPPER(p.rider_id) = ? ORDER BY p.period DESC, p.id DESC`, [cleanCode], (err, rows) => {
+    if (err) { console.error('[DAS] payroll read:', err.message); return res.status(500).json({ error: 'خطأ في جلب تفاصيل القبض' }); }
+    if (rows.length || !name) return res.json({ payroll: rows, matched_by: 'code' });
+    db.all(`${sel} WHERE LOWER(TRIM(p.rider_name)) = LOWER(TRIM(?)) ORDER BY p.period DESC, p.id DESC`, [name], (err2, rows2) => {
+      if (err2) return res.status(500).json({ error: 'خطأ في جلب تفاصيل القبض' });
+      res.json({ payroll: rows2, matched_by: rows2.length ? 'name' : 'none' });
+    });
+  });
+});
+
+// 5-ب. رفع ملفات القبض — الأدمن: JSON rows جاهزة (الـ CSV بيتفسر في الواجهة) 
+const NUM = (v) => { const n = parseFloat(String(v ?? '').replace(/[,\s]/g, '')); return isNaN(n) ? 0 : n; };
+
+app.post('/api/admin/payroll/upload', express.json({ limit: '2mb' }), (req, res) => {
+  if (!safeEq(String(req.headers['x-admin-token'] || ''), ADMIN_TOKEN)) return res.status(401).json({ error: 'غير مصرح' });
+  if (rateLimited(req, 'payroll-upload', 30, 60e3)) return res.status(429).json({ error: 'محاولات كتير — استنى دقيقة' });
+
+  const { title = '', period = '', zone = '', rows } = req.body || {};
+  if (!rows || !Array.isArray(rows) || !rows.length) return res.status(400).json({ error: 'مفيش صفوف لرفعها' });
+  if (rows.length > 500) return res.status(400).json({ error: 'الملف كبير جدًا (أكتر من 500 صف)' });
+
+  const norm = (row) => ({
+    period: String(period || row.Zone || '').trim() || String(row.Zone || '').trim(),
+    zone: String(row.Zone || '').trim(), sp: String(row.SP || '').trim(),
+    rider_id: String(row['Rider ID'] || '').trim().toUpperCase(),
+    rider_name: String(row['Rider Name'] || '').trim(),
+    days: NUM(row['عدد ايام العمل']), orders_n: NUM(row['عدد اوردرات المندوب']),
+    order_price: NUM(row['سعر الاوردر']), orders_value: NUM(row['القيمة_اوردرات']),
+    amazon_n: NUM(row['عدد اوردرات امازون']), guarantee_price: NUM(row['سعر اوردر الضمان']),
+    guarantee_value: NUM(row['القيمة_ضمان']), salary: NUM(row['مرتب الطيار']),
+    bonus: NUM(row['بونص الطيار']), distance_bonus: NUM(row['بونص مسافة']), tibas: NUM(row['تبس']),
+    total_pilot: NUM(row['اجمالى مرتب الطيار']), prev_taken: NUM(row['قبض سابق']),
+    office_bonus: NUM(row['بونص مكتب']), advance_deduct: NUM(row['سلفة الطيار']),
+    fine: NUM(row['غرامة']), equipment: NUM(row['معدات']), fund: NUM(row['صندوق زمالة']),
+    remaining: NUM(row['الباقى']), remaining_net: NUM(row['الباقي بعد خصم الرسوم']),
+    wallet: String(row['رقم المحفظة'] || '').trim(), wallet_type: String(row['نوع المحفظة'] || '').trim(),
+    status: String(row.Status || '').trim()
+  });
+  const parsed = rows.map(norm).filter(r => r.rider_id || r.rider_name);
+  if (!parsed.length) return res.status(400).json({ error: 'الملف مفيهوش صفوف صالحة (Rider ID فاضي في كل الصفوف؟)' });
+
+  db.serialize(() => {
+    db.run("INSERT INTO payroll_files (title, period, zone, rows_n, uploaded_by) VALUES (?, ?, ?, ?, 'admin')",
+      [String(title).trim() || 'تفاصيل القبض', String(period).trim(), String(zone).trim(), parsed.length],
+      function (err) {
+        if (err) { console.error('[DAS] payroll file insert:', err.message); return res.status(500).json({ error: 'فشل حفظ الملف' }); }
+        const fileId = this.lastID;
+        const stmt = db.prepare(`INSERT INTO payroll (file_id, period, zone, sp, rider_id, rider_name,
+          days, orders_n, order_price, orders_value, amazon_n, guarantee_price, guarantee_value,
+          salary, bonus, distance_bonus, tibas, total_pilot, prev_taken, office_bonus,
+          advance_deduct, fine, equipment, fund, remaining, remaining_net, wallet, wallet_type, status)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+        let failed = null;
+        parsed.forEach((r) => {
+          if (failed) return;
+          stmt.run([fileId, r.period, r.zone, r.sp, r.rider_id, r.rider_name,
+            r.days, r.orders_n, r.order_price, r.orders_value, r.amazon_n, r.guarantee_price, r.guarantee_value,
+            r.salary, r.bonus, r.distance_bonus, r.tibas, r.total_pilot, r.prev_taken, r.office_bonus,
+            r.advance_deduct, r.fine, r.equipment, r.fund, r.remaining, r.remaining_net, r.wallet, r.wallet_type, r.status],
+            (e2) => { if (e2 && !failed) failed = e2; });
+        });
+        stmt.finalize(() => {
+          if (failed) { console.error('[DAS] payroll rows insert:', failed.message); return res.status(500).json({ error: 'فشل حفظ صفوف القبض: ' + failed.message }); }
+          res.json({ ok: true, file_id: fileId, rows: parsed.length });
+        });
+      });
+  });
+});
+
+// 5-ج. ملفات القبض المرفوعة + حذف ملف (بصفوفه) — الأدمن
+app.get('/api/admin/payroll/files', (req, res) => {
+  if (!safeEq(String(req.headers['x-admin-token'] || ''), ADMIN_TOKEN)) return res.status(401).json({ error: 'غير مصرح' });
+  db.all(`SELECT f.*, (SELECT COALESCE(SUM(remaining_net), 0) FROM payroll WHERE payroll.file_id = f.id) AS total_net
+            FROM payroll_files f ORDER BY f.id DESC`, [], (err, rows) => {
+    if (err) return res.status(500).json({ error: 'خطأ في جلب الملفات' });
+    res.json({ files: rows });
+  });
+});
+
+app.get('/api/admin/payroll/rows/:fileId', (req, res) => {
+  if (!safeEq(String(req.headers['x-admin-token'] || ''), ADMIN_TOKEN)) return res.status(401).json({ error: 'غير مصرح' });
+  db.all('SELECT * FROM payroll WHERE file_id = ? ORDER BY remaining_net DESC', [Number(req.params.fileId)], (err, rows) => {
+    if (err) return res.status(500).json({ error: 'خطأ في جلب الصفوف' });
+    res.json({ rows });
+  });
+});
+
+app.delete('/api/admin/payroll/files/:id', (req, res) => {
+  if (!safeEq(String(req.headers['x-admin-token'] || ''), ADMIN_TOKEN)) return res.status(401).json({ error: 'غير مصرح' });
+  db.serialize(() => {
+    db.run('DELETE FROM payroll WHERE file_id = ?', [Number(req.params.id)]);
+    db.run('DELETE FROM payroll_files WHERE id = ? AND id > 0', [Number(req.params.id)], function (err) {
+      if (err) return res.status(500).json({ error: 'فشل الحذف' });
+      res.json({ ok: true, deleted: this.changes });
+    });
+  });
 });
 
 // 5-ب. الكروت المخصصة الظاهرة للمندوب — فلترة بالجمهور (الكل/الفرع/نوع الدوام/أكواد) وبفترة السريان

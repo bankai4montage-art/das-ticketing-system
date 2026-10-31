@@ -78,6 +78,7 @@
         <button class="chip" id="tabAdvances" onclick="switchView('advances')"><i data-ico="banknote"></i> <span data-i18n="السلف">السلف</span><span class="tab-badge warn" id="badgeAdvances">0</span></button>
         <button class="chip" id="tabCards" onclick="switchView('cards')"><i data-ico="msg"></i> <span data-i18n="الكروت">الكروت</span><span class="tab-badge info" id="badgeCards">0</span></button>
         <button class="chip" id="tabSync" onclick="switchView('sync')"><i data-ico="refresh"></i> <span data-i18n="مزامنة الروستر">مزامنة الروستر</span></button>
+        <button class="chip" id="tabPayroll" onclick="switchView('payroll')"><i data-ico="wallet"></i> <span data-i18n="القبض">القبض</span><span class="tab-badge ok" id="badgePayroll">0</span></button>
       </section>
 
       <div id="ticketsView" class="view-panel">
@@ -274,6 +275,56 @@
             <tbody id="syncTableBody"></tbody>
           </table>
         </section>
+      </div>
+
+      <!-- ============ القبض: رفع ملفات الأسبوع وتفاصيلها ============ -->
+      <div id="payrollView" class="view-panel hidden">
+
+        <section class="glass adv-head rise">
+          <div>
+            <b>تفاصيل القبض — رفع الشيتات الأسبوعية</b>
+            <div class="adv-summary" id="payrollSummary">—</div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <button class="btn btn-ok btn-sm" id="payrollPickBtn" onclick="document.getElementById('payrollFiles').click()"><span class="spinner"></span><i data-ico="upload"></i><span class="label">رفع ملفات CSV</span></button>
+            <input type="file" id="payrollFiles" accept=".csv,text/csv" multiple style="display:none">
+            <button class="btn btn-ghost btn-sm" onclick="loadPayrollFiles(true)"><i data-ico="refresh"></i> تحديث</button>
+          </div>
+        </section>
+
+        <div class="hint" style="margin-bottom:12px;display:flex;align-items:center;gap:8px">
+          <i data-ico="alert"></i>
+          ارفع ملف الأسبوع (CSV من Accounting Amazon) — الأسبوع والمنطقة يتحددوا من اسم الملف تلقائي، والتفاصيل بتظهر لكل مندوب في صفحته على طول.
+        </div>
+
+        <section class="glass table-wrap rise">
+          <table class="tbl">
+            <thead>
+              <tr><th>الملف</th><th>الأسبوع / الفترة</th><th>المنطقة</th><th>الصفوف</th><th>إجمالي الباقى</th><th>التاريخ</th><th></th></tr>
+            </thead>
+            <tbody id="payrollFilesBody"></tbody>
+          </table>
+        </section>
+
+        <!-- معاينة صفوف ملف محدد -->
+        <section class="glass table-wrap rise" id="payrollRowsBox" style="display:none;padding:14px">
+          <div class="adv-head" style="padding:0 0 10px;border-bottom:1px solid var(--border);margin-bottom:10px">
+            <b id="payrollRowsTitle">—</b>
+            <div style="display:flex;gap:8px;align-items:center">
+              <input type="text" id="payrollRowsSearch" class="input" placeholder="ابحث بكود أو اسم" oninput="renderPayrollRows()" style="height:34px">
+              <button class="btn btn-ghost btn-sm" onclick="document.getElementById('payrollRowsBox').style.display='none'"><i data-ico="close"></i> إغلاق</button>
+            </div>
+          </div>
+          <div style="overflow-x:auto">
+            <table class="tbl" style="min-width:900px">
+              <thead><tr>
+                <th>الكود</th><th>المندوب</th><th>أيام</th><th>أوردرات</th><th>اجمالي مرتب</th><th>سلفة</th><th>غرامة</th><th>معدات</th><th>صندوق</th><th>الباقى</th><th>بعد الرسوم</th><th>المحفظة</th><th>Status</th>
+              </tr></thead>
+              <tbody id="payrollRowsBody"></tbody>
+            </table>
+          </div>
+        </section>
+
       </div>
 
     </div>
@@ -1952,10 +2003,10 @@
     const ADV_OPTS = ['قيد المراجعة', 'تمت الصرف', 'مرفوضة'];
 
     function switchView(v) {
-      const adv = v === 'advances', cards = v === 'cards', sync = v === 'sync';
-      const show = sync ? $('syncView') : (cards ? $('cardsView') : (adv ? $('advancesView') : $('ticketsView')));
+      const adv = v === 'advances', cards = v === 'cards', sync = v === 'sync', pay = v === 'payroll';
+      const show = pay ? $('payrollView') : (sync ? $('syncView') : (cards ? $('cardsView') : (adv ? $('advancesView') : $('ticketsView'))));
       show.classList.remove('hidden');
-      [ 'ticketsView', 'advancesView', 'cardsView', 'syncView' ].forEach(id => {
+      [ 'ticketsView', 'advancesView', 'cardsView', 'syncView', 'payrollView' ].forEach(id => {
         if (id !== show.id) $(id).classList.add('hidden');
       });
       // إعادة تشغيل أنيميشن الدخول مع كل تبديل
@@ -1966,10 +2017,184 @@
       $('tabAdvances').classList.toggle('active', adv);
       $('tabCards').classList.toggle('active', cards);
       $('tabSync').classList.toggle('active', sync);
+      $('tabPayroll').classList.toggle('active', pay);
       if (adv) fetchAdvances(true);
       else if (cards) fetchCards(true);
       else if (sync) loadSync();
+      else if (pay) loadPayrollFiles(true);
       else fetchTickets(true);
+    }
+
+    // ================= القبض: رفع CSV + عرض الملفات =================
+    function payrollMeta(file) {
+      // من اسم الملف: period = W43 (18 oct- 24 Oct) — و zone من آخر جزء قبل .csv
+      const m = file.name.replace(/\.csv$/i, '').match(/W\d+\s*\([^)]*\)/i);
+      const period = m ? m[0].replace(/\s+/g, ' ').trim() : file.name.replace(/\.csv$/i, '').trim();
+      const zone = file.name.replace(/\.csv$/i, '').replace(/^[^(]*\)\s*/, '').replace(/\s+/g, ' ').trim();
+      return { title: period + (zone ? ' — ' + zone : ''), period, zone };
+    }
+
+    function parseCsvRows(text) {
+      const rows = []; const cur = []; let field = '', inQ = false;
+      for (let i = 0; i < text.length; i++) {
+        const ch = text[i];
+        if (inQ) {
+          if (ch === '"') { if (text[i + 1] === '"') { field += '"'; i++; } else inQ = false; }
+          else field += ch;
+          continue;
+        }
+        if (ch === '"') { inQ = true; continue; }
+        if (ch === ',') { cur.push(field); field = ''; continue; }
+        if (ch === '\n' || ch === '\r') {
+          if (ch === '\r' && text[i + 1] === '\n') i++;
+          cur.push(field); rows.push(cur); cur.length = 0; field = '';
+          continue;
+        }
+        field += ch;
+      }
+      if (field !== '' || cur.length) { cur.push(field); rows.push(cur); }
+      return rows.filter(r => r.length && (r.length > 1 || r[0].trim() !== ''));
+    }
+
+    async function uploadPayrollFiles(files) {
+      if (!files || !files.length) return;
+      const btn = $('payrollPickBtn'); btn.disabled = true;
+      try {
+        for (const file of files) {
+          const meta = payrollMeta(file);
+          const matrix = parseCsvRows((await file.text()).replace(/^\uFEFF/, ''));
+          if (matrix.length < 2) { DAS.toast(`الملف فاضي: ${file.name}`, 'err'); continue; }
+          const headers = matrix[0].map(h => h.trim());
+          const pickValue = (key) => (headers.indexOf(key) >= 0 ? headers.indexOf(key) + 1 : -1);
+          const ordersValueIdx = pickValue('سعر الاوردر');
+          const guaranteeValueIdx = pickValue('سعر اوردر الضمان');
+          const rows = matrix.slice(1).map(f => ({
+            'Rider ID': f[headers.indexOf('Rider ID')] ?? '',
+            'Rider Name': f[headers.indexOf('Rider Name')] ?? '',
+            SP: f[headers.indexOf('SP')] ?? '',
+            Zone: f[headers.indexOf('Zone')] ?? meta.zone,
+            'عدد ايام العمل': f[headers.indexOf('عدد ايام العمل')] ?? '',
+            'عدد اوردرات المندوب': f[headers.indexOf('عدد اوردرات المندوب')] ?? '',
+            'سعر الاوردر': f[headers.indexOf('سعر الاوردر')] ?? '',
+            'القيمة_اوردرات': f[ordersValueIdx] ?? '',
+            'عدد اوردرات امازون': f[headers.indexOf('عدد اوردرات امازون')] ?? '',
+            'سعر اوردر الضمان': f[headers.indexOf('سعر اوردر الضمان')] ?? '',
+            'القيمة_ضمان': f[guaranteeValueIdx] ?? '',
+            'مرتب الطيار': f[headers.indexOf('مرتب الطيار')] ?? '',
+            'بونص الطيار': f[headers.indexOf('بونص الطيار')] ?? '',
+            'بونص مسافة': f[headers.indexOf('بونص مسافة')] ?? '',
+            'تبس': f[headers.indexOf('تبس')] ?? '',
+            'اجمالى مرتب الطيار': f[headers.indexOf('اجمالى مرتب الطيار')] ?? '',
+            'قبض سابق': f[headers.indexOf('قبض سابق')] ?? '',
+            'بونص مكتب': f[headers.indexOf('بونص مكتب')] ?? '',
+            'سلفة الطيار': f[headers.indexOf('سلفة الطيار')] ?? '',
+            'غرامة': f[headers.indexOf('غرامة')] ?? '',
+            'معدات': f[headers.indexOf('معدات')] ?? '',
+            'صندوق زمالة': f[headers.indexOf('صندوق زمالة')] ?? '',
+            'الباقى': f[headers.indexOf('الباقى')] ?? '',
+            'الباقي بعد خصم الرسوم': f[headers.indexOf('الباقي بعد خصم الرسوم')] ?? '',
+            'رقم المحفظة': f[headers.indexOf('رقم المحفظة')] ?? '',
+            'نوع المحفظة': f[headers.indexOf('نوع المحفظة')] ?? '',
+            Status: f[headers.indexOf('Status')] ?? ''
+          }));
+          const res = await fetch(`/api/admin/payroll/upload?title=${encodeURIComponent(meta.title)}&period=${encodeURIComponent(meta.period)}&zone=${encodeURIComponent(meta.zone)}`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-token': adminToken },
+            body: JSON.stringify({ rows })
+          });
+          const body = await res.json().catch(() => ({}));
+          if (!res.ok) DAS.toast(`${meta.title}: ${body.error || 'فشل الرفع'}`, 'err');
+          else DAS.toast(`✔ ${meta.title}: ${body.rows} مندوب`);
+        }
+        loadPayrollFiles(true);
+      } finally {
+        btn.disabled = false;
+        $('payrollFiles').value = '';
+      }
+    }
+
+    $('payrollFiles').addEventListener('change', (e) => uploadPayrollFiles([...(e.target.files || [])]));
+
+    let payrollFilesCache = [], payrollRowsCache = [], currentFileId = null;
+    async function loadPayrollFiles(force) {
+      if (!adminToken) return;
+      if (!force && payrollFilesCache.length) return;
+      try {
+        const res = await fetch('/api/admin/payroll/files', { headers: { 'x-admin-token': adminToken } });
+        const body = await res.json();
+        payrollFilesCache = body.files || [];
+        renderPayrollFiles();
+      } catch (e) { /* skip */ }
+    }
+
+    function renderPayrollFiles() {
+      const tbody = $('payrollFilesBody');
+      $('badgePayroll').textContent = payrollFilesCache.length;
+      $('payrollSummary').textContent = payrollFilesCache.length
+        ? `${payrollFilesCache.length} ملف أسبوعي مرفوع`
+        : 'مفيش ملفات مرفوعة — ارفع ملف CSV من الزر فوق';
+      if (!payrollFilesCache.length) {
+        tbody.innerHTML = '<tr><td colspan="7" class="empty">مفيش ملفات — ارفع أول ملف قبض</td></tr>';
+        return;
+      }
+      tbody.innerHTML = payrollFilesCache.map(f => `
+        <tr>
+          <td><span class="strong">${DAS.esc(f.title)}</span></td>
+          <td class="mono">${DAS.esc(f.period || '—')}</td>
+          <td>${DAS.esc(f.zone || '—')}</td>
+          <td class="num">${f.rows_n}</td>
+          <td class="num" style="color:${f.total_net >= 0 ? 'var(--ok)' : 'var(--bad)'}"><b>${Number(f.total_net).toFixed(0)} ج</b></td>
+          <td class="mono" style="font-size:11px">${DAS.fmtDateTime(f.uploaded_at)}</td>
+          <td>
+            <button class="btn btn-ghost btn-sm" onclick="viewPayrollRows(${f.id}, '${String(f.title).replace(/'/g, '')}')"><i data-ico="layers"></i> عرض</button>
+            <button class="btn btn-ghost btn-sm" onclick="askDeletePayrollFile(${f.id})" style="color:var(--bad)"><i data-ico="close"></i></button>
+          </td>
+        </tr>`).join('');
+    }
+
+    function viewPayrollRows(fileId, title) {
+      currentFileId = fileId;
+      $('payrollRowsTitle').textContent = 'صفوف: ' + title;
+      $('payrollRowsSearch').value = '';
+      $('payrollRowsBox').style.display = 'block';
+      fetch(`/api/admin/payroll/rows/${fileId}`, { headers: { 'x-admin-token': adminToken } })
+        .then(r => r.json())
+        .then(body => { payrollRowsCache = body.rows || []; renderPayrollRows(); })
+        .catch(() => {});
+    }
+
+    function renderPayrollRows() {
+      const q = ($('payrollRowsSearch').value || '').toLowerCase();
+      const rows = payrollRowsCache.filter(r =>
+        !q || String(r.rider_id).toLowerCase().includes(q) || String(r.rider_name).toLowerCase().includes(q));
+      $('payrollRowsBody').innerHTML = rows.map(r => `
+        <tr>
+          <td class="mono" style="font-size:11px">${DAS.esc(r.rider_id)}</td>
+          <td><span class="strong">${DAS.esc(r.rider_name)}</span></td>
+          <td class="num">${r.days}</td>
+          <td class="num">${r.orders_n}</td>
+          <td class="num">${Number(r.total_pilot).toFixed(0)}</td>
+          <td class="num" style="color:var(--bad)">${r.advance_deduct ? '-' + Number(r.advance_deduct).toFixed(0) : '—'}</td>
+          <td class="num" style="color:var(--bad)">${r.fine ? '-' + Number(r.fine).toFixed(0) : '—'}</td>
+          <td class="num" style="color:var(--bad)">${r.equipment ? '-' + Number(r.equipment).toFixed(0) : '—'}</td>
+          <td class="num" style="color:var(--bad)">${r.fund ? '-' + Number(r.fund).toFixed(0) : '—'}</td>
+          <td class="num"><b>${Number(r.remaining).toFixed(0)}</b></td>
+          <td class="num" style="color:var(--ok)"><b>${Number(r.remaining_net).toFixed(0)}</b></td>
+          <td class="mono" style="font-size:11px">${DAS.esc(r.wallet)}${r.wallet_type ? ' · ' + DAS.esc(r.wallet_type) : ''}</td>
+          <td>${r.status ? `<span class="badge ${r.status === 'FALSE' ? 'ok' : 'warn'}">${DAS.esc(r.status)}</span>` : '—'}</td>
+        </tr>`).join('') || '<tr><td colspan="13" class="empty">مفيش نتائج للبحث</td></tr>';
+    }
+
+    function askDeletePayrollFile(id) {
+      if (!confirm('تأكيد حذف الملف بكل صفوفه؟ المندوبين مش هيشوفوا تفاصيل القبض دي تاني')) return;
+      fetch(`/api/admin/payroll/files/${id}`, { method: 'DELETE', headers: { 'x-admin-token': adminToken } })
+        .then(r => r.json())
+        .then(b => {
+          if (b.ok) {
+            DAS.toast('الملف اتحذف');
+            if (currentFileId === id) { $('payrollRowsBox').style.display = 'none'; currentFileId = null; }
+            loadPayrollFiles(true);
+          } else DAS.toast(b.error || 'فشل الحذف', 'err');
+        });
     }
 
     // ================= مزامنة DAS ⇄ الروستر =================

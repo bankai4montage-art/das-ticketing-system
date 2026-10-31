@@ -184,6 +184,19 @@
         </div>
       </section>
 
+      <!-- تفاصيل القبض -->
+      <section class="glass tickets-card rise" id="payrollBox" style="animation-delay:.48s">
+        <div class="section-title" style="margin:0 0 12px">
+          <span style="font-size:16px;color:var(--text);font-weight:800; display:flex; align-items:center; gap:8px">
+            <i data-ico="wallet" data-cls="ico"></i> تفاصيل القبض
+          </span>
+          <span class="live"><i></i> أسبوعي</span>
+        </div>
+        <div id="payrollList" class="ticket-list">
+          <div class="skeleton" style="height:70px"></div>
+        </div>
+      </section>
+
     </div>
   </div>
 
@@ -576,6 +589,9 @@
         data = await res.json();
       } catch (e) { return; }
 
+      // تفاصيل القبض بيتحدثوا في نفس الدورة (بدون force — سباق بسيط مقبول)
+      loadPayroll();
+
       const advances = data.advances || [];
       const sig = JSON.stringify(advances.map(a => [a.id, a.status, a.admin_note]));
       if (!force && sig === advSig) return;
@@ -627,6 +643,66 @@
             <span>رقم الطلب: #${a.id}</span>
             <span>${DAS.fmtDateTime(a.created_at)}</span>
           </div>
+        </article>`;
+      }).join('');
+    }
+
+    // ================= تفاصيل القبض (من ملفات الأسبوع اللي رفعها الأدمن) =================
+    function loadPayroll() {
+      if (!currentCourier) return;
+      fetch('/api/courier/payroll/' + encodeURIComponent(currentCourier.das_code) + '?name=' + encodeURIComponent(currentCourier.name || ''))
+        .then(r => r.json())
+        .then(data => renderPayroll(data.payroll || []))
+        .catch(() => renderPayroll(null));
+    }
+
+    function payrollMoney(v) { const n = Number(v || 0); return n ? n.toFixed(0) : '0'; }
+
+    function renderPayroll(rows) {
+      const container = $('payrollList');
+      if (!rows || !rows.length) {
+        container.innerHTML = `
+          <div class="empty fade">
+            <div class="eic">${DAS.icon('banknote', 'ico-lg')}</div>
+            <b>مفيش تفاصيل قبض لسه</b>
+            التفاصيل بتنزل من الإدارة كل أسبوع — لو جالك يظهر هنا تلقائي
+          </div>`;
+        return;
+      }
+      // أحدث أسبوع أولا + تفديد نظيف لكل صف
+      container.innerHTML = rows.map((r, i) => {
+        const net = payrollMoney(r.remaining_net);
+        const grid = [
+          ['أيام العمل', r.days, ''], ['أوردرات', r.orders_n, ''],
+          ['مرتب', r.salary, ''], ['بونص', r.bonus, '+'], ['بونص مسافة', r.distance_bonus, '+'],
+          ['تبس', r.tibas, '+'], ['قبض سابق', r.prev_taken, ''], ['بونص مكتب', r.office_bonus, '+'],
+          ['سلفة', r.advance_deduct, '-'], ['غرامة', r.fine, '-'], ['معدات', r.equipment, '-'], ['صندوق زمالة', r.fund, '-']
+        ];
+        return `
+        <article class="ticket s-ok" style="--i:${i};animation:none">
+          <div class="ticket-top">
+            <div class="l">
+              <span class="tag adv">${DAS.esc(r.period || r.file_title || 'أسبوع')}</span>
+              ${r.zone ? `<span class="tag">${DAS.esc(r.zone)}</span>` : ''}
+            </div>
+            <span class="amt" style="color:var(--ok)">${net} ج</span>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px 10px;margin:10px 0; padding:10px 12px; background:color-mix(in srgb, var(--text) 4%, transparent); border-radius:12px">
+            ${grid.map(([label, val, sign]) => `
+              <div style="text-align:center">
+                <div style="font-size:10.5px;color:var(--text-2);font-weight:600">${label}</div>
+                <div style="font-size:14px;font-weight:800;${sign === '-' && Number(val) ? 'color:var(--bad)' : sign === '+' && Number(val) ? 'color:var(--ok)' : ''}">
+                  ${sign === '-' && Number(val) ? '-' : ''}${payrollMoney(val)}
+                </div>
+              </div>`).join('')}
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;padding:0 4px">
+            <div class="meta" style="margin:0">
+              ${r.remaining_net >= 1000000 ? '' : 'الباقى قبل الرسوم: <span class="mono">' + payrollMoney(r.remaining) + ' ج</span>'}
+            </div>
+            ${r.wallet ? `<div class="mono" style="font-size:12px">${DAS.esc(r.wallet)}${r.wallet_type ? ' · ' + DAS.esc(r.wallet_type) : ''}</div>` : ''}
+          </div>
+          ${r.file_title ? `<div class="ticket-foot"><span>${DAS.esc(r.file_title)}</span><span>${DAS.fmtDateTime(r.file_uploaded_at || r.uploaded_at)}</span></div>` : ''}
         </article>`;
       }).join('');
     }
