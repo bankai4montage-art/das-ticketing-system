@@ -25,9 +25,10 @@ const adminPass = ADMIN_PASS || 'admin123';
 // لو ناقصة، الإشعارات بتقفل بنفسها وواجهة المندوب بتخفي الزرار
 const PUSH_PUBLIC_KEY = process.env.PUSH_PUBLIC_KEY || '';
 const PUSH_PRIVATE_KEY = process.env.PUSH_PRIVATE_KEY || '';
+const PUSH_SUBJECT = process.env.PUSH_SUBJECT || 'mailto:admin@das-portal.app';
 const pushEnabled = Boolean(PUSH_PUBLIC_KEY && PUSH_PRIVATE_KEY);
 if (pushEnabled) {
-  webpush.setVapidDetails('mailto:admin@das-portal', PUSH_PUBLIC_KEY, PUSH_PRIVATE_KEY);
+  webpush.setVapidDetails(PUSH_SUBJECT, PUSH_PUBLIC_KEY, PUSH_PRIVATE_KEY);
 }
 
 // توكن الأدمن — ثابت عبر إعادة التشغيل وإعادة النشر (مش عشوائي)
@@ -453,6 +454,57 @@ function notifyPayrollTargets(parsed, fileId, fileTitle) {
       const body = fileTitle + ' — الصافي: ' + (Number.isFinite(net) ? net.toFixed(0) : '0') + ' ج';
       notifyCourier(code, 'تفاصيل قبضك وصلت', body, { kind: 'payroll', ref: 'payroll:' + fileId + ':' + code });
     });
+  });
+}
+
+// إشعار الكروت: لما الأدمن ينزل كارت جديد (أو يعدّل محتواه/يفعّله) بيوصل تنبيه
+// للمناديب المستهدفين بنفس شروط ظهور الكارت بالظبط (الكل / كود / فرع / نوع دوام / فرع+نوع)
+// وفي فترته — يعني اللي هيشوف الكارت في صفحته هو اللي يتنبّه.
+async function notifyCardTargets(card) {
+  if (!card || !card.title) return;
+  const today = new Date().toISOString().slice(0, 10);
+  if (card.start_date && today < card.start_date) return;
+  if (card.end_date && today > card.end_date) return;
+
+  const title = 'إعلان جديد من الإدارة';
+  const body = String(card.title).slice(0, 160);
+  const ref = 'card:' + card.id;
+  const push = (code) => { if (code) notifyCourier(code, title, body, { kind: 'card', ref }); };
+
+  const audience = String(card.audience || 'all');
+  const value = String(card.audience_value || '');
+
+  if (audience === 'code') {
+    value.split(',').map((s) => s.trim().toUpperCase()).filter(Boolean).forEach(push);
+    return;
+  }
+
+  const codes = await new Promise((resolve) => {
+    db.all("SELECT das_code FROM couriers", [], (err, rows) => {
+      resolve(!err && rows ? rows.map((r) => String(r.das_code || '').toUpperCase()).filter(Boolean) : []);
+    });
+  });
+  if (audience === 'all') { codes.forEach(push); return; }
+
+  // فرع/نوع دوام: نفس مطابقة صفحة المندوب — محتاجة بيانات الروستر
+  if (!rosterConfigured()) return;
+  let emps = [];
+  try { emps = await rosterEmployees(); } catch (e) { return; }
+  const norm = (v) => String(v || '').trim().toUpperCase();
+  const empByCode = new Map();
+  (emps || []).forEach((e) => {
+    const c = String(e.employee_code || '').trim().toUpperCase();
+    if (c) empByCode.set(c, e);
+  });
+  codes.forEach((code) => {
+    const emp = empByCode.get(code);
+    if (!emp) return;
+    if (audience === 'branch' && norm(emp.branch) === norm(value)) push(code);
+    else if (audience === 'type' && norm(emp.employment_type) === norm(value)) push(code);
+    else if (audience === 'branch_type') {
+      const parts = value.split('|');
+      if (norm(emp.branch) === norm(parts[0]) && norm(emp.employment_type) === norm(parts[1])) push(code);
+    }
   });
 }
 
@@ -926,6 +978,20 @@ app.use('/api/admin', (req, res, next) => {
   res.status(401).json({ error: 'غير مصرح — سجل دخول الإدارة الأول' });
 });
 
+// إشعار موبايل تجريبي لكود مندوب — بيتبعت من هنا + بيتسجل في جرسه،
+// عشان الإدارة تتأكد إن الجهاز مشترك والإشعارات شغالة (وبيرجّع عدد الأجهزة)
+app.post('/api/admin/push/test', (req, res) => {
+  if (!pushEnabled) return res.status(503).json({ error: 'مفاتيح الإشعارات مش متظبطة على السيرفر (PUSH_PUBLIC_KEY / PUSH_PRIVATE_KEY)' });
+  const code = String((req.body || {}).das_code || '').trim().toUpperCase();
+  if (!code) return res.status(400).json({ error: 'كود المندوب مطلوب' });
+  db.all("SELECT id FROM push_subs WHERE das_code = ?", [code], (err, subs) => {
+    if (err) return res.status(500).json({ error: 'خطأ في السيرفر' });
+    if (!subs || !subs.length) return res.status(404).json({ error: 'المندوب ده مفعّلش الإشعارات على أي جهاز لسه — لازم يفتح الصفحة ويضغط «تفعيل الإشعارات»' });
+    notifyCourier(code, 'إشعار تجريبي 🔔', 'لو وصلتك الرسالة دي يبقى إشعارات الموبايل شغالة تمام', { kind: 'test', ref: 'test' });
+    res.json({ success: true, devices: subs.length });
+  });
+});
+
 // 7. جلب كل الشكاوى للإدارة (بدون المؤرشفة)
 app.get('/api/admin/tickets', (req, res) => {
   sweepArchive();
@@ -1357,6 +1423,13 @@ app.post('/api/admin/cards', (req, res) => {
         if (err2) return res.status(500).json({ error: 'فشل حفظ الكارت' });
         res.json({ success: true, card_id: this.lastID });
         BUS.publish('cards', { reason: 'create' });
+        if (active) {
+          notifyCardTargets({
+            id: this.lastID, title: p.title, body: p.body,
+            audience: p.audience, audience_value: p.audienceValue,
+            start_date: p.startDate, end_date: p.endDate
+          }).catch(() => {});
+        }
       }
     );
   });
@@ -1375,6 +1448,8 @@ app.put('/api/admin/cards/:id', (req, res) => {
         if (err2) return res.status(500).json({ error: 'فشل تحديث الكارت' });
         res.json({ success: true });
         BUS.publish('cards', { id: Number(id), reason: b.active ? 'activate' : 'deactivate' });
+        // تشغيل كارت كان متوقف = تنبيه للمستهدفين (الإيقاف مش بيبعت حاجة)
+        if (b.active) notifyCardTargets(before).catch(() => {});
       });
       return;
     }
@@ -1392,6 +1467,18 @@ app.put('/api/admin/cards/:id', (req, res) => {
         db.run("DELETE FROM card_picks WHERE card_id = ? AND choice >= ?", [id, nOpts], () => {});
         res.json({ success: true });
         BUS.publish('cards', { id: Number(id), reason: 'edit' });
+        // تعديل المحتوى أو الجمهور أو الفترة = تنبيه جديد (تعديلات الشكل/الترتيب مش بتنبه)
+        const noticeChanged = active &&
+          (p.title !== before.title || p.body !== before.body ||
+           p.audience !== before.audience || p.audienceValue !== String(before.audience_value || '') ||
+           p.startDate !== String(before.start_date || '') || p.endDate !== String(before.end_date || ''));
+        if (noticeChanged) {
+          notifyCardTargets({
+            id: Number(id), title: p.title, body: p.body,
+            audience: p.audience, audience_value: p.audienceValue,
+            start_date: p.startDate, end_date: p.endDate
+          }).catch(() => {});
+        }
       }
     );
   });

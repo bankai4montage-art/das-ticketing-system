@@ -409,15 +409,57 @@
       return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
     }
 
+    function isIOS() {
+      return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    }
+
+    // آيفون بيشغّل Web Push بس لما الموقع مضاف للشاشة الرئيسية ومفتوح من أيقونته
+    function isStandalone() {
+      return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+    }
+
     async function initPushUI() {
       const btn = $('pushBtn');
-      if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
-      try {
-        const data = await (await fetch('/api/push/key')).json();
-        if (!data.enabled) return;
-      } catch (e) { return; }
+      let data;
+      try { data = await (await fetch('/api/push/key')).json(); } catch (e) { return; }
+      if (!data || !data.enabled) return; // مفاتيح VAPID مش متظبطة على السيرفر
+      const supported = 'serviceWorker' in navigator && 'PushManager' in window;
+      // على الآيفون بنطلع الزرار حتى لو PushManager مش متاح، عشان نوريه إزاي يفعّلها
+      if (!supported && !isIOS()) return;
       btn.classList.remove('hidden');
       pushEndpoint = localStorage.getItem('das_push_endpoint');
+      updatePushBtn();
+
+      // تسجيل الـ service worker من أول ما الصفحة تفتح — الإشعارات تبقى جاهزة
+      if ('serviceWorker' in navigator) navigator.serviceWorker.register('/push-sw.js').catch(() => {});
+
+      // الإذن متاح من قبل؟ بنعيد مزامنة الاشتراك مع السيرفر من غير ما نزعّج المندوب
+      if (supported && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+        resyncPush().catch(() => {});
+      }
+    }
+
+    // مزامنة اشتراك الجهاز مع السيرفر — بتشتغل لو الإذن متاح أو بعد ما المندوب يفعّل
+    async function resyncPush() {
+      const data = await (await fetch('/api/push/key')).json();
+      if (!data || !data.enabled || !data.public_key) throw new Error('الإشعارات مش متفعلة على السيرفر');
+      const reg = await navigator.serviceWorker.register('/push-sw.js');
+      await navigator.serviceWorker.ready;
+      let sub = await reg.pushManager.getSubscription();
+      if (!sub) {
+        sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlB64ToUint8(data.public_key)
+        });
+      }
+      const res = await fetch('/api/push/subscribe', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ das_code: currentCourier.das_code, endpoint: sub.endpoint, keys: sub.toJSON().keys })
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'فشل تفعيل الإشعارات');
+      try { localStorage.setItem('das_push_endpoint', sub.endpoint); } catch (e) {}
+      pushEndpoint = sub.endpoint;
       updatePushBtn();
     }
 
@@ -450,32 +492,23 @@
         return;
       }
 
+      if (isIOS() && !isStandalone()) {
+        DAS.toast('على الآيفون: اضغط زر المشاركة ← «إضافة إلى الشاشة الرئيسية»، وبعدها افتح الموقع من الأيقونة وفعّل الإشعارات من هناك', 'err');
+        return;
+      }
       if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
         DAS.toast('المتصفح ده مش بيدعم الإشعارات', 'err');
         return;
       }
+      if (typeof Notification === 'undefined') { DAS.toast('المتصفح ده مش بيدعم الإشعارات', 'err'); return; }
       const perm = await Notification.requestPermission();
       if (perm !== 'granted') {
         DAS.toast('مسمحتيش بالإشعارات — عدّلها من إعدادات المتصفح', 'err');
         return;
       }
       try {
-        const reg = await navigator.serviceWorker.register('/push-sw.js');
-        await navigator.serviceWorker.ready;
-        const data = await (await fetch('/api/push/key')).json();
-        const sub = await reg.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlB64ToUint8(data.public_key)
-        });
-        const res = await fetch('/api/push/subscribe', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ das_code: currentCourier.das_code, endpoint: sub.endpoint, keys: sub.toJSON().keys })
-        });
-        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'فشل تفعيل الإشعارات');
-        localStorage.setItem('das_push_endpoint', sub.endpoint);
-        pushEndpoint = sub.endpoint;
+        await resyncPush();
         DAS.toast('الإشعارات اتفتحت — هنبعتلك أي تحديث هنا');
-        updatePushBtn();
       } catch (e) {
         DAS.toast(e.message || 'فشل تفعيل الإشعارات', 'err');
       }

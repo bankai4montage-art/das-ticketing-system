@@ -1090,6 +1090,24 @@
       renderCouriers();
     }
 
+    /* إشعار موبايل تجريبي لمندوب — بيتأكد إن جهازه مشترك ومستقبل الإشعارات.
+       بيرجع عدد الأجهزة المشتركة، ولو مفيش جهاز بيقول للإدارة إنه لازم يفعّل الإشعارات الأول. */
+    async function testPush(code, ev) {
+      if (ev) ev.stopPropagation();
+      try {
+        const res = await adminFetch('/api/admin/push/test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ das_code: code })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'فشل إرسال الإشعار');
+        DAS.toast(`الإشعار اتبعت لـ ${code} على ${data.devices} جهاز`);
+      } catch (e) {
+        DAS.toast(e.message, 'err');
+      }
+    }
+
     /* فلترة قائمة المناديب بالبحث: كود / اسم / موبايل — فوراً من الكاش
        من غير إعادة طلب من السيرفر (القائمة 140+ مندوب) */
     function renderCouriers() {
@@ -1122,6 +1140,7 @@
           </div>
           <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
             <small class="mono">${DAS.esc(c.phone || '')}</small>
+            <button type="button" class="btn btn-ghost btn-icon" style="width:32px;height:32px;border-radius:10px" title="إشعار تجريبي على موبايله" aria-label="إشعار تجريبي" onclick="testPush('${DAS.esc(c.das_code)}', event)">${DAS.icon('bell')}</button>
             <button type="button" class="btn btn-ghost btn-icon" style="width:32px;height:32px;border-radius:10px" title="تعديل" aria-label="تعديل" onclick="openCourierEdit('${DAS.esc(c.das_code)}', event)">${DAS.icon('edit')}</button>
           </div>
         </div>`).join('') : `
