@@ -55,6 +55,10 @@
         </div>
         <span class="rawahel-badge" title="Rawahel — Powered by Bankai"><span class="dot"></span>Rawahel</span>
         <div class="actions">
+          <button class="btn btn-ghost btn-icon notif-btn hidden" id="notifBtn" onclick="toggleNotifPanel(event)" aria-label="التنبيهات" data-i18n-aria="التنبيهات" title="التنبيهات" data-i18n-title="التنبيهات">
+            <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+            <span class="notif-badge hidden" id="notifBadge"></span>
+          </button>
           <button class="btn btn-ghost btn-sm push-btn hidden" id="pushBtn" onclick="togglePush()" aria-label="الإشعارات" data-i18n-aria="الإشعارات" title="الإشعارات" data-i18n-title="الإشعارات">
             <span class="ico-slot" id="pushIcoSlot"></span> <span id="pushLabel" data-i18n="تفعيل الإشعارات">تفعيل الإشعارات</span>
           </button>
@@ -68,6 +72,21 @@
           <button class="btn btn-ghost btn-icon" onclick="logout()" aria-label="خروج" title="خروج" data-i18n-aria="خروج"><i data-ico="logout"></i></button>
         </div>
       </header>
+
+      <!-- لوحة جرس التنبيهات: أي تغيير من الإدارة بيوصل هنا لحظة حدوثه -->
+      <div id="notifPanel" class="notif-panel hidden" role="dialog" aria-label="التنبيهات">
+        <div class="notif-head">
+          <b data-i18n="التنبيهات">التنبيهات</b>
+          <div class="notif-acts">
+            <button class="btn btn-ghost btn-sm" id="notifMarkBtn" onclick="markAllNotifs()" data-i18n="تحديد الكل كمقروء">تحديد الكل كمقروء</button>
+            <button class="btn btn-ghost btn-icon" onclick="closeNotifPanel()" aria-label="إغلاق" data-i18n-aria="إغلاق">
+              <svg class="ico" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            </button>
+          </div>
+        </div>
+        <div id="notifList" class="notif-list"></div>
+        <div class="notif-foot" data-i18n="التنبيهات بتوصل هنا لحظة حدوثها — وإشعارات الجوال بتيجي حتى لو الصفحة مقفولة">التنبيهات بتوصل هنا لحظة حدوثها — وإشعارات الجوال بتيجي حتى لو الصفحة مقفولة</div>
+      </div>
 
       <section class="stats-row stagger">
         <div class="mini-stat warn" style="--i:1"><b id="sReview">0</b><span data-i18n="قيد المراجعة">قيد المراجعة</span></div>
@@ -225,6 +244,24 @@
     let advFirstLoad = true;
     let cardsCache = null;
 
+    // حالة جرس التنبيهات (قبل أي استدعاء لـ showMainScreen — الجلسة المحفوظة بتدخل على طول)
+    let notifsCache = [];
+    let notifUnread = 0;
+    let notifOpen = false;
+
+    // حالة الحضور — لازم تتعرف قبل استعادة الجلسة (زي باقي الحالة) عشان أول تحميل
+    // بجلسة محفوظة يكمل لحد الآخر بدل ما يقف عند نص showMainScreen
+    let attSig = null, attFirstLoad = true, attPrevMap = {};
+
+    // حالة اللايف أبديت (باص الأحداث)
+    let evtSince = null;
+    let evtStarted = false;
+    let evtBusy = false;
+    let evtFail = 0;
+    let evtTimer = null;
+    let evtQueue = new Map();
+    let evtFlushTimer = null;
+
     $('issueDateInput').valueAsDate = new Date();
 
     // استرجاع الجلسة
@@ -272,13 +309,19 @@
       advFirstLoad = true; advSig = null; advPrevMap = {};
       cardsCache = null;
       attSig = null; attFirstLoad = true; attPrevMap = {};
+      $('notifBtn').classList.remove('hidden');
       loadMyTickets();
       loadMyAdvances();
       loadMyCards();
       loadMyAttendance();
       initPushUI();
+      loadNotifications();
+      startLive();
+      // البولل القديم بقى خط أمان بطيء (15 ثانية) — التحديث الحقيقي جاي من /api/events لحظة حدوثه
       if (pollInterval) clearInterval(pollInterval);
-      pollInterval = setInterval(() => { loadMyTickets(); loadMyAdvances(); loadMyCards(); loadMyAttendance(); }, 4000);
+      pollInterval = setInterval(() => {
+        loadMyTickets(); loadMyAdvances(); loadMyCards(); loadMyAttendance(); loadNotifications();
+      }, 15000);
     }
 
     // ================= كروت الإدارة المخصصة =================
@@ -456,6 +499,11 @@
       try { localStorage.removeItem('das_courier'); } catch (e) {}
       currentCourier = null;
       if (pollInterval) clearInterval(pollInterval);
+      notifsCache = [];
+      notifUnread = 0;
+      closeNotifPanel();
+      updateNotifBadge();
+      $('notifBtn').classList.add('hidden');
       $('mainScreen').classList.add('hidden');
       $('loginScreen').classList.remove('hidden');
       $('dasInput').value = '';
@@ -617,7 +665,6 @@
           const p = advPrevMap[a.id];
           if (p && (p.status !== a.status || p.admin_note !== a.admin_note)) changed.add(a.id);
         });
-        if (changed.size) DAS.toast('الإدارة حدّثت حالة سلفة من سلفك');
       }
       advPrevMap = Object.fromEntries(advances.map(a => [a.id, { status: a.status, admin_note: a.admin_note }]));
       const animate = advFirstLoad;
@@ -800,7 +847,6 @@
             if (t.status === 'اتحلت' && p.status !== 'اتحلت') solvedNow++;
           }
         });
-        if (changed.size) DAS.toast('الإدارة حدّثت إحدى شكاواك');
         if (solvedNow) {
           DAS.confetti();
           DAS.toast(solvedNow === 1 ? 'مبروك — شكواك اتحلت' : `مبروك — ${solvedNow} شكاوى اتحلت`);
@@ -878,8 +924,6 @@
     const attSt = (s) => ATT_STATUS[s] || ATT_STATUS.Pending;
     const attBadge = (s) => { const st = attSt(s); return `<span class="badge ${st.cls}"><span class="dot"></span>${st.label}</span>`; };
     const attActionAr = (a) => a === 'check_in' ? 'تسجيل حضور' : 'تسجيل انصراف';
-
-    let attSig = null, attFirstLoad = true, attPrevMap = {};
 
     async function loadMyAttendance(force) {
       if (!currentCourier) return;
@@ -1054,6 +1098,215 @@
       }
     }
 
+    // ================= جرس التنبيهات (إشعارات داخل الصفحة) =================
+    // التنبيهات محفوظة على السيرفر لكل مندوب — يعني حتى لو قفل الصفحة ورجع،
+    // هيلاقي كل اللي فاته مع عدد غير المقروء. أي تنبيه جديد بيوصل لحظيًا من الباص.
+    function updateNotifBadge() {
+      const badge = $('notifBadge');
+      if (!badge) return;
+      badge.textContent = notifUnread > 99 ? '99+' : String(notifUnread);
+      badge.classList.toggle('hidden', !notifUnread);
+      $('notifBtn').classList.toggle('notif-live', !!notifUnread);
+    }
+
+    function notifIcon(kind) {
+      if (kind === 'ticket') return 'msg';
+      if (kind === 'advance') return 'banknote';
+      if (kind === 'payroll') return 'wallet';
+      if (kind === 'attendance') return 'clock';
+      return 'bell';
+    }
+
+    function renderNotifs() {
+      const list = $('notifList');
+      if (!list) return;
+      $('notifMarkBtn').classList.toggle('hidden', !notifUnread);
+      if (!notifsCache.length) {
+        list.innerHTML = `<div class="notif-empty">${DAS.icon('bell', 'ico-lg')}<b>مفيش تنبيهات لسه</b><span>أي تحديث من الإدارة على شكاويك أو سلفك أو قبضك هيوصل هنا فورًا</span></div>`;
+        return;
+      }
+      list.innerHTML = notifsCache.map((n) => `
+        <div class="notif-item ${n.read_at ? '' : 'un'}">
+          <span class="notif-ic">${DAS.icon(notifIcon(n.kind))}</span>
+          <div class="notif-txt">
+            <b data-i18n-raw>${DAS.esc(n.title)}</b>
+            ${n.body ? `<span data-i18n-raw>${DAS.esc(n.body)}</span>` : ''}
+            <time>${DAS.fmtDateTime(n.created_at)}</time>
+          </div>
+        </div>`).join('');
+    }
+
+    async function loadNotifications() {
+      if (!currentCourier) return;
+      try {
+        const res = await fetch('/api/courier/notifications/' + encodeURIComponent(currentCourier.das_code), { cache: 'no-store' });
+        if (!res.ok) return;
+        const data = await res.json();
+        notifsCache = data.notifications || [];
+        notifUnread = data.unread || 0;
+        updateNotifBadge();
+        renderNotifs();
+      } catch (e) { /* الشبكة قطعت — الجولة الجاية */ }
+    }
+
+    function toggleNotifPanel(ev) {
+      if (ev) ev.stopPropagation();
+      const panel = $('notifPanel');
+      if (!panel.classList.contains('hidden')) return closeNotifPanel();
+      notifOpen = true;
+      panel.classList.remove('hidden');
+      renderNotifs();
+      loadNotifications().then(() => { if (notifUnread) markAllNotifs(true); });
+    }
+
+    function closeNotifPanel() {
+      notifOpen = false;
+      $('notifPanel').classList.add('hidden');
+    }
+
+    async function markAllNotifs(silent) {
+      if (!currentCourier) return;
+      try {
+        await fetch('/api/courier/notifications/read', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ das_code: currentCourier.das_code })
+        });
+      } catch (e) { /* هنعيد المحاولة في فتحة الجرس الجاية */ }
+      notifsCache.forEach((n) => { if (!n.read_at) n.read_at = new Date().toISOString(); });
+      notifUnread = 0;
+      updateNotifBadge();
+      if (notifOpen) renderNotifs();
+      if (!silent) DAS.toast('كل التنبيهات اتعلّمت كمقروءة');
+    }
+
+    document.addEventListener('click', (e) => {
+      if (!notifOpen) return;
+      if ($('notifPanel').contains(e.target) || $('notifBtn').contains(e.target)) return;
+      closeNotifPanel();
+    });
+
+    // ================= لايف أبديت (باص الأحداث) =================
+    // long-poll على /api/events: أي تغيير في السيستم (من الإدارة أو من تاب تاني)
+    // بيوصل هنا في نفس اللحظة، فبنعيد تحميل الجزء المتأثر بس من غير refresh.
+    // لو الاتصال قفل أو الجهاز نام: بنرجع كل شوية ونعمل تحديث كامل مرة واحدة.
+    const LIVE_LOADERS = {
+      tickets: () => loadMyTickets(),
+      advances: () => loadMyAdvances(),   // بيعيد تحميل تفاصيل القبض معاه
+      payroll: () => loadPayroll(),
+      cards: () => loadMyCards(),
+      attendance: () => loadMyAttendance(),
+      couriers: () => { /* بيانات المندوب نفسه — بتتحدّث من refreshIdentity */ }
+    };
+
+    function isMyCode(code) {
+      return !currentCourier || String(code || '').toUpperCase() === String(currentCourier.das_code || '').toUpperCase();
+    }
+
+    // بيانات المندوب نفسه اتعدلت عند الإدارة (اسم/كود/موبايل) — بنجيب النسخة الجديدة
+    // ونحدّث الهيدر والجلسة المحفوظة، ولو الكود اتغير بنكمل بالكود الجديد من غير خروج ودخول
+    async function refreshIdentity(ev) {
+      if (!currentCourier) return;
+      const mine = String(currentCourier.das_code || '').toUpperCase();
+      const changedFrom = String((ev && (ev.old_code || ev.das_code)) || '').toUpperCase();
+      if (changedFrom && changedFrom !== mine) return;
+      const lookup = String((ev && ev.das_code) || mine).toUpperCase();
+      try {
+        const r = await fetch('/api/courier/login', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ das_code: lookup })
+        });
+        if (!r.ok) return;
+        const d = await r.json();
+        if (!d.courier) return;
+        currentCourier = d.courier;
+        try { localStorage.setItem('das_courier', JSON.stringify(d.courier)); } catch (e) {}
+        $('courierCodeBadge').textContent = d.courier.das_code;
+        $('courierName').textContent = d.courier.name;
+        $('avatar').textContent = DAS.initials(d.courier.name);
+      } catch (e) { /* الشبكة قطعت — البولل الجاي هيجيبها */ }
+    }
+
+    function queueLiveLoad(kind, ev) {
+      if (!LIVE_LOADERS[kind]) return;
+      // أحداث الحضور/الشكاوى/السلف لصاحبها بس — نفلترها عشان ما نعملش طلبات بلا داعي
+      if (['attendance', 'tickets', 'advances'].includes(kind) && ev && ev.das_code && !isMyCode(ev.das_code)) return;
+      if (kind === 'couriers' && ev) { refreshIdentity(ev); return; }
+      if (!evtQueue.has(kind) || ev) evtQueue.set(kind, ev || evtQueue.get(kind));
+      clearTimeout(evtFlushTimer);
+      evtFlushTimer = setTimeout(() => {
+        const kinds = [...evtQueue.keys()];
+        evtQueue.clear();
+        kinds.forEach((k) => { try { LIVE_LOADERS[k](); } catch (e) {} });
+        loadNotifications();
+      }, 180);
+    }
+
+    function onLiveNotify(ev) {
+      if (!currentCourier) return;
+      if (String(ev.das_code || '').toUpperCase() !== String(currentCourier.das_code || '').toUpperCase()) return;
+      // سطر لحظي في الجرس + توست — من غير ما نستنى جولة تحميل
+      notifsCache = [{
+        id: 'live-' + Date.now(), kind: ev.notif_kind || '', title: ev.title || 'تحديث جديد',
+        body: ev.body || '', created_at: new Date().toISOString(), read_at: notifOpen ? new Date().toISOString() : null
+      }].concat(notifsCache).slice(0, 60);
+      if (!notifOpen) { notifUnread += 1; updateNotifBadge(); }
+      if (notifOpen) renderNotifs();
+      DAS.toast((ev.title || 'تحديث جديد') + (ev.body ? ' — ' + ev.body : ''), 'ok', true);
+    }
+
+    async function liveStep() {
+      evtTimer = null;
+      if (evtBusy) return;
+      evtBusy = true;
+      if (!currentCourier) {
+        evtBusy = false;
+        evtTimer = setTimeout(liveStep, 4000);
+        return;
+      }
+      try {
+        const url = evtSince == null
+          ? '/api/events?wait=0'
+          : `/api/events?since=${evtSince}&wait=25`;
+        const res = await fetch(url, { cache: 'no-store' });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        evtFail = 0;
+        if (data.reset) {
+          // السيرفر اتعمل restart أو الأحداث القديمة اتقصت — تحديث كامل مرة واحدة
+          lastSig = null; advSig = null; cardsCache = null; attSig = null;
+          ['tickets', 'advances', 'payroll', 'cards', 'attendance'].forEach(queueLiveLoad);
+          loadNotifications();
+        }
+        (data.events || []).forEach((ev) => {
+          if (!ev || !ev.kind) return;
+          if (ev.kind === 'notify') onLiveNotify(ev);
+          else queueLiveLoad(ev.kind, ev);
+        });
+        if (typeof data.rev === 'number') evtSince = data.rev;
+      } catch (e) {
+        evtFail = Math.min(evtFail + 1, 6);
+        // اتصال اتقطع: نرجّع رقم البداية عشان الجولة الجاية ن reconnect ونعمل تحديث كامل أمان
+        evtSince = null;
+        lastSig = null; advSig = null; cardsCache = null; attSig = null;
+      }
+      evtBusy = false;
+      // 25 ثانية هي أقصى مهلة استنى — بعدها جولة جديدة فورًا. لو فشل: backoff هادي
+      evtTimer = setTimeout(liveStep, evtFail ? Math.min(evtFail * 2500, 15000) : 120);
+    }
+
+    function startLive() {
+      if (evtStarted) return;
+      evtStarted = true;
+      liveStep();
+    }
+
+    document.addEventListener('visibilitychange', () => {
+      // رجع من الخلفية (موبايل نام): بدل ما نستنى المهلة، نكبّر الجرس فورًا
+      if (!document.hidden && evtStarted && !evtTimer) liveStep();
+      if (!document.hidden) loadNotifications();
+    });
+
     // تغيير اللغة: بنعيد رندر الكروت والتواريخ بلغة العرض الجديدة
     document.addEventListener('das:lang', () => {
       if (!currentCourier) return;
@@ -1062,6 +1315,7 @@
       loadMyTickets(true);
       loadMyAdvances(true);
       loadMyAttendance(true);
+      renderNotifs();
     });
 
     DAS.glow('.cat-card');

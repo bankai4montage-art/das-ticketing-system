@@ -107,7 +107,8 @@ function sweepArchive() {
   if (now - lastSweep < 60e3) return;
   lastSweep = now;
   db.run(
-    "UPDATE tickets SET archived = 1 WHERE archived = 0 AND status = 'اتحلت' AND updated_at <= datetime('now', '-30 days')"
+    "UPDATE tickets SET archived = 1 WHERE archived = 0 AND status = 'اتحلت' AND updated_at <= datetime('now', '-30 days')",
+    function (err) { if (!err && this.changes > 0) BUS.publish('tickets', { reason: 'archive' }); }
   );
 }
 
@@ -259,6 +260,22 @@ db.serialize(() => {
           ON att_requests(das_code, attendance_date, action) WHERE status = 'Pending'`);
   db.run('CREATE INDEX IF NOT EXISTS idx_att_code ON att_requests(das_code, id)');
 
+  // جرس تنبيهات المندوب — الإشعارات المحفوظة (بتندمج غير المقروءة لنفس المرجع)
+  db.run(`
+    CREATE TABLE IF NOT EXISTS notifications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      das_code TEXT NOT NULL,
+      kind TEXT DEFAULT '',
+      title TEXT NOT NULL,
+      body TEXT DEFAULT '',
+      ref TEXT DEFAULT '',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      read_at DATETIME
+    )
+  `);
+  db.run('CREATE INDEX IF NOT EXISTS idx_notif_code ON notifications(das_code, id)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_notif_unread ON notifications(das_code, read_at)');
+
   // قاعدة قديمة؟ نزود الأعمدة الناقصة تلقائي (بعد إنشاء الجدول)
   db.all("PRAGMA table_info(payroll)", [], (pErr, pCols) => {
     if (pErr || !pCols) return;
@@ -318,6 +335,123 @@ function sendPush(dasCode, title, body) {
             db.run("DELETE FROM push_subs WHERE id = ?", [s.id]);
           }
         });
+    });
+  });
+}
+
+// ================= باص الأحداث (لايف) =================
+// أي عملية كتابة بتنشر حدث هنا، والتابات المتصلة بتستنى على /api/events
+// (long-poll) فبيوصلها التغيير في نفس اللحظة من غير أي refresh من المستخدم.
+// الأحداث في الذاكرة بس: بعد إعادة تشغيل السيرفر بتبدأ من جديد، والعميل
+// اللي كان متصل بياخد reset ويعمل تحديث كامل مرة واحدة.
+class EventBus {
+  constructor(keep = 200) { this.rev = 0; this.keep = keep; this.list = []; this.waiters = new Set(); }
+  publish(kind, data = {}) {
+    this.rev += 1;
+    const ev = Object.assign({ rev: this.rev, kind, at: new Date().toISOString() }, data);
+    this.list.push(ev);
+    if (this.list.length > this.keep) this.list.splice(0, this.list.length - this.keep);
+    const waiters = [...this.waiters]; this.waiters.clear();
+    waiters.forEach((w) => { try { w(); } catch (e) {} });
+    return ev;
+  }
+  since(rev) { return this.list.filter((e) => e.rev > rev); }
+}
+const BUS = new EventBus();
+
+// البصمة الوحيدة في السيرفر لكل التابات — أي تاب بيشوف تغيير هنا بيتحرّك فورًا
+app.get('/api/events', (req, res) => {
+  let since = Math.max(0, Number(req.query.since) || 0);
+  // wait بالثواني (زي باص الروستر): أقصى استنطار 28 ثانية قبل ما نرجّع رد فاضي
+  const waitMs = Math.min(Math.max(Number(req.query.wait) || 0, 0), 28) * 1000;
+  res.set('Cache-Control', 'no-store');
+
+  // العميل مستخدم سيرفر تاني أو السيرفر اتعمل restart (his rev أعلى) — reset كامل
+  if (since > BUS.rev) return res.json({ rev: BUS.rev, events: [], reset: true });
+
+  if (since < BUS.rev) {
+    if (since === 0) return res.json({ rev: BUS.rev, events: [] }); // أول اتصال — بنحدّث الرقم بس من غير إعادة أحداث قديمة
+    const evs = BUS.since(since);
+    // لو الأحداث القديمة اتقصت من الذاكرة: reset عشان التاب يعمل تحديث كامل
+    return res.json({ rev: BUS.rev, events: evs, reset: evs.length ? false : true });
+  }
+
+  // مفيش جديد — بنستنى (long-poll) لحد حدث جديد أو مهلة
+  if (!waitMs) return res.json({ rev: BUS.rev, events: [] });
+  let done = false;
+  const finish = () => {
+    if (done) return;
+    done = true;
+    clearTimeout(timer);
+    BUS.waiters.delete(finish);
+    // الحدث الجديد وصلنا أثناء الانتظار — نرجّعه فورًا من غير جولة تانية
+    if (BUS.rev > since) return res.json({ rev: BUS.rev, events: BUS.since(since) });
+    try { res.json({ rev: BUS.rev, events: [] }); } catch (e) { /* العميل قفل الاتصال */ }
+  };
+  const timer = setTimeout(finish, waitMs);
+  BUS.waiters.add(finish);
+  // العميل قطع الاتصال؟ نفضّي الوبي عشان الذاكرة
+  res.on('close', () => {
+    if (done) return;
+    done = true;
+    clearTimeout(timer);
+    BUS.waiters.delete(finish);
+  });
+});
+
+// ================= الإشعارات الذكية المحفوظة =================
+// سطر تنبيه لكل مندوب يفضّل معاه في جرس تنبيهاته حتى لو قفل الصفحة فترة طويلة،
+// وكمان بنبعت web-push لأجهزته. التنبيهات غير المقروءة لنفس المرجع (نفس الشكوى/السلفة/ملف القبض)
+// بتندمج في سطر واحد بآخر تحديث بدل ما الكومة تكرر نفس الحاجة، والقديمة المقروءة بتتنضف تلقائيًا.
+function notifyCourier(dasCode, title, body, opts = {}) {
+  const code = String(dasCode || '').trim().toUpperCase();
+  if (!code || !title) return;
+  const kind = String(opts.kind || '');
+  const ref = String(opts.ref || '');
+  const t = String(title).slice(0, 120);
+  const b = String(body || '').slice(0, 200);
+
+  db.run(
+    "UPDATE notifications SET title = ?, body = ?, kind = ?, created_at = CURRENT_TIMESTAMP, read_at = NULL WHERE das_code = ? AND ref = ? AND ref != '' AND read_at IS NULL",
+    [t, b, kind, code, ref],
+    function (uErr) {
+      if (uErr) return;
+      if (this.changes > 0) return; // تندمج في التنبيه غير المقروء الموجود
+      db.run("INSERT INTO notifications (das_code, kind, title, body, ref) VALUES (?, ?, ?, ?, ?)",
+        [code, kind, t, b, ref],
+        (iErr) => {
+          if (iErr) return;
+          // تنظيف تلقائي: آخر 60 تنبيه بس لكل مندوب + المقروء الأقدم من 30 يوم
+          db.run("DELETE FROM notifications WHERE das_code = ? AND (id NOT IN (SELECT id FROM notifications WHERE das_code = ? ORDER BY id DESC LIMIT 60) OR (read_at IS NOT NULL AND created_at < datetime('now', '-30 days')))",
+            [code, code], () => {});
+        });
+    }
+  );
+  sendPush(code, t, b);
+  BUS.publish('notify', { das_code: code, title: t, body: b, notif_kind: kind });
+}
+
+// إشعار قبض ذكي: لكل مندوب ليه صف في الملف المرفوع (بنفس مطابقة شاشة القبض:
+// Rider ID = كود المندوب، وإلا مطابقة الاسم) — بيتبعت مرة واحدة لكل مندوب لكل ملف.
+function notifyPayrollTargets(parsed, fileId, fileTitle) {
+  if (!Array.isArray(parsed) || !parsed.length) return;
+  const byCode = new Map();
+  const byName = new Map();
+  parsed.forEach((r) => {
+    const code = String(r.rider_id || '').trim().toUpperCase();
+    if (code && !byCode.has(code)) byCode.set(code, r);
+    const name = String(r.rider_name || '').trim().toLowerCase();
+    if (name && !byName.has(name)) byName.set(name, r);
+  });
+  db.all("SELECT das_code, name FROM couriers", [], (err, couriers) => {
+    if (err || !couriers || !couriers.length) return;
+    couriers.forEach((c) => {
+      const code = String(c.das_code || '').trim().toUpperCase();
+      const row = byCode.get(code) || byName.get(String(c.name || '').trim().toLowerCase());
+      if (!row) return;
+      const net = Number(row.remaining_net != null && row.remaining_net !== '' ? row.remaining_net : row.remaining);
+      const body = fileTitle + ' — الصافي: ' + (Number.isFinite(net) ? net.toFixed(0) : '0') + ' ج';
+      notifyCourier(code, 'تفاصيل قبضك وصلت', body, { kind: 'payroll', ref: 'payroll:' + fileId + ':' + code });
     });
   });
 }
@@ -382,6 +516,7 @@ app.post('/api/tickets', (req, res) => {
       function (err2) {
         if (err2) return res.status(500).json({ error: 'فشل تسجيل الشكوى' });
         res.json({ success: true, ticket_id: this.lastID });
+        BUS.publish('tickets', { das_code: cleanCode, id: this.lastID, reason: 'new' });
       }
     );
   });
@@ -411,6 +546,7 @@ app.put('/api/tickets/:id/rate', (req, res) => {
       (err2) => {
         if (err2) return res.status(500).json({ error: 'فشل حفظ التقييم' });
         res.json({ success: true });
+        BUS.publish('tickets', { das_code: ticket.das_code, id: ticket.id, reason: 'rated' });
       }
     );
   });
@@ -442,6 +578,7 @@ app.post('/api/advances', (req, res) => {
       function (err2) {
         if (err2) return res.status(500).json({ error: 'فشل تسجيل طلب السلفة' });
         res.json({ success: true, advance_id: this.lastID });
+        BUS.publish('advances', { das_code: cleanCode, id: this.lastID, reason: 'new' });
       }
     );
   });
@@ -473,6 +610,29 @@ app.get('/api/courier/payroll/:das_code', (req, res) => {
       if (err2) return res.status(500).json({ error: 'خطأ في جلب تفاصيل القبض' });
       res.json({ payroll: rows2, matched_by: rows2.length ? 'name' : 'none' });
     });
+  });
+});
+
+// 26. جرس تنبيهات المندوب — آخر 60 إشعار + عدد اللي لسه مش مقروء
+app.get('/api/courier/notifications/:das_code', (req, res) => {
+  const cleanCode = String(req.params.das_code || '').trim().toUpperCase();
+  db.all("SELECT * FROM notifications WHERE das_code = ? ORDER BY id DESC LIMIT 60", [cleanCode], (err, rows) => {
+    if (err) return res.status(500).json({ error: 'خطأ في جلب التنبيهات' });
+    db.get("SELECT COUNT(*) AS n FROM notifications WHERE das_code = ? AND read_at IS NULL", [cleanCode], (e2, cnt) => {
+      if (e2) return res.status(500).json({ error: 'خطأ في جلب التنبيهات' });
+      res.set('Cache-Control', 'no-store');
+      res.json({ notifications: rows, unread: cnt ? cnt.n : 0 });
+    });
+  });
+});
+
+// تعليم كل تنبيهات المندوب كمقروءة — بيتنادى لما يفتح الجرس
+app.post('/api/courier/notifications/read', (req, res) => {
+  const cleanCode = String((req.body || {}).das_code || '').trim().toUpperCase();
+  if (!cleanCode) return res.status(400).json({ error: 'كود المندوب مطلوب' });
+  db.run("UPDATE notifications SET read_at = CURRENT_TIMESTAMP WHERE das_code = ? AND read_at IS NULL", [cleanCode], (err) => {
+    if (err) return res.status(500).json({ error: 'فشل تعليم التنبيهات' });
+    res.json({ success: true });
   });
 });
 
@@ -655,6 +815,8 @@ app.post('/api/admin/payroll/upload', express.json({ limit: '6mb' }), (req, res)
         stmt.finalize(() => {
           if (failed) { console.error('[DAS] payroll rows insert:', failed.message); return res.status(500).json({ error: 'فشل حفظ صفوف القبض: ' + failed.message }); }
           res.json({ ok: true, file_id: fileId, rows: parsed.length });
+          BUS.publish('payroll', { file_id: fileId, reason: 'upload' });
+          notifyPayrollTargets(parsed, fileId, String(title).trim() || 'تفاصيل القبض');
         });
       });
   });
@@ -685,6 +847,7 @@ app.delete('/api/admin/payroll/files/:id', (req, res) => {
     db.run('DELETE FROM payroll_files WHERE id = ? AND id > 0', [Number(req.params.id)], function (err) {
       if (err) return res.status(500).json({ error: 'فشل الحذف' });
       res.json({ ok: true, deleted: this.changes });
+      if (this.changes > 0) BUS.publish('payroll', { file_id: Number(req.params.id), reason: 'delete' });
     });
   });
 });
@@ -802,6 +965,7 @@ app.put('/api/admin/tickets/:id', (req, res) => {
       function (err) {
         if (err) return res.status(500).json({ error: 'فشل تحديث الحالة' });
         res.json({ success: true });
+        BUS.publish('tickets', { das_code: before.das_code, id: Number(ticketId) });
 
         const noteChanged = String(admin_note || '') !== String(before.admin_note || '');
         const statusChanged = status !== before.status;
@@ -816,7 +980,7 @@ app.put('/api/admin/tickets/:id', (req, res) => {
         } else if (noteChanged && note) {
           title = 'الإدارة ردت على شكواك';
         }
-        sendPush(before.das_code, title, note);
+        notifyCourier(before.das_code, title, note, { kind: 'ticket', ref: 'ticket:' + ticketId });
       }
     );
   });
@@ -825,9 +989,12 @@ app.put('/api/admin/tickets/:id', (req, res) => {
 // 9. مسح شكوى معينة من الإدارة
 app.delete('/api/admin/tickets/:id', (req, res) => {
   const ticketId = req.params.id;
-  db.run("DELETE FROM tickets WHERE id = ?", [ticketId], function (err) {
-    if (err) return res.status(500).json({ error: 'فشل حذف الشكوى' });
-    res.json({ success: true });
+  db.get("SELECT das_code FROM tickets WHERE id = ?", [ticketId], (gErr, row) => {
+    db.run("DELETE FROM tickets WHERE id = ?", [ticketId], function (err) {
+      if (err) return res.status(500).json({ error: 'فشل حذف الشكوى' });
+      if (row && this.changes > 0) BUS.publish('tickets', { das_code: row.das_code, id: Number(ticketId), reason: 'delete' });
+      res.json({ success: true });
+    });
   });
 });
 
@@ -847,6 +1014,7 @@ app.post('/api/admin/couriers', (req, res) => {
         return res.status(500).json({ error: 'خطأ في حفظ المندوب' });
       }
       res.json({ success: true });
+      BUS.publish('couriers', { reason: 'create' });
     }
   );
 });
@@ -878,6 +1046,7 @@ app.post('/api/admin/upload-couriers', express.text({ type: '*/*' }), (req, res)
       db.run("COMMIT", (err2) => {
         if (err2) return res.status(500).json({ error: 'خطأ في حفظ المناديب' });
         res.json({ success: true, count: count });
+        BUS.publish('couriers', { reason: 'sheet', count });
       });
     });
   });
@@ -977,6 +1146,7 @@ app.put('/api/admin/couriers/:das_code', (req, res) => {
         name_changed: finalName !== current.name,
         old_code: oldCode
       });
+      BUS.publish('couriers', { das_code: newCode, old_code: codeChanged ? oldCode : undefined, reason: codeChanged ? 'recode' : 'edit' });
     } catch (e) {
       res.status(500).json({ error: 'خطأ في حفظ التعديل: ' + (e && e.message ? e.message : '') });
     }
@@ -1012,7 +1182,8 @@ app.post('/api/admin/advances', (req, res) => {
       function (err2) {
         if (err2) return res.status(500).json({ error: 'فشل حفظ السلفة' });
         res.json({ success: true, advance_id: this.lastID });
-        sendPush(cleanCode, 'اتسجلت سلفة ليك', 'مبلغ ' + amt + ' ج — ' + String(reason).slice(0, 120));
+        BUS.publish('advances', { das_code: cleanCode, id: this.lastID, reason: 'admin-new' });
+        notifyCourier(cleanCode, 'اتسجلت سلفة ليك', 'مبلغ ' + amt + ' ج — ' + String(reason).slice(0, 120), { kind: 'advance', ref: 'advance:' + this.lastID });
       }
     );
   });
@@ -1034,13 +1205,19 @@ app.put('/api/admin/advances/:id', (req, res) => {
       function (err) {
         if (err) return res.status(500).json({ error: 'فشل تحديث السلفة' });
         res.json({ success: true });
+        BUS.publish('advances', { das_code: before.das_code, id: Number(req.params.id) });
 
-        if (status === before.status) return;
+        const noteChanged = String(admin_note || '') !== String(before.admin_note || '');
+        if (status === before.status && !noteChanged) return;
         let title = 'تحديث على سلفتك';
-        if (status === 'تمت الصرف') title = 'تم صرف سلفتك — ' + before.amount + ' ج';
-        else if (status === 'مرفوضة') title = 'سلفتك مرفوضة';
-        else if (status === 'قيد المراجعة') title = 'سلفتك قيد المراجعة';
-        sendPush(before.das_code, title, String(admin_note || '').slice(0, 140));
+        if (status !== before.status) {
+          if (status === 'تمت الصرف') title = 'تم صرف سلفتك — ' + before.amount + ' ج';
+          else if (status === 'مرفوضة') title = 'سلفتك مرفوضة';
+          else if (status === 'قيد المراجعة') title = 'سلفتك قيد المراجعة';
+        } else if (noteChanged && admin_note) {
+          title = 'الإدارة ردت على سلفتك';
+        }
+        notifyCourier(before.das_code, title, String(admin_note || '').slice(0, 140), { kind: 'advance', ref: 'advance:' + before.id });
       }
     );
   });
@@ -1048,9 +1225,12 @@ app.put('/api/admin/advances/:id', (req, res) => {
 
 // 16. مسح سلفة (لو اتسجلت بالغلط)
 app.delete('/api/admin/advances/:id', (req, res) => {
-  db.run("DELETE FROM advances WHERE id = ?", [req.params.id], function (err) {
-    if (err) return res.status(500).json({ error: 'فشل مسح السلفة' });
-    res.json({ success: true });
+  db.get("SELECT das_code FROM advances WHERE id = ?", [req.params.id], (gErr, row) => {
+    db.run("DELETE FROM advances WHERE id = ?", [req.params.id], function (err) {
+      if (err) return res.status(500).json({ error: 'فشل مسح السلفة' });
+      if (row && this.changes > 0) BUS.publish('advances', { das_code: row.das_code, id: Number(req.params.id), reason: 'delete' });
+      res.json({ success: true });
+    });
   });
 });
 
@@ -1151,6 +1331,7 @@ app.post('/api/admin/cards/reorder', (req, res) => {
       db.all(`SELECT id FROM cards ${CARDS_ORDER}`, [], (err, rows) => {
         if (err) return res.status(500).json({ error: 'فشل حفظ الترتيب' });
         res.json({ success: true, order: rows.map(r => r.id) });
+        BUS.publish('cards', { reason: 'reorder' });
       });
       return;
     }
@@ -1175,6 +1356,7 @@ app.post('/api/admin/cards', (req, res) => {
       function (err2) {
         if (err2) return res.status(500).json({ error: 'فشل حفظ الكارت' });
         res.json({ success: true, card_id: this.lastID });
+        BUS.publish('cards', { reason: 'create' });
       }
     );
   });
@@ -1192,6 +1374,7 @@ app.put('/api/admin/cards/:id', (req, res) => {
       db.run("UPDATE cards SET active = ? WHERE id = ?", [b.active ? 1 : 0, id], (err2) => {
         if (err2) return res.status(500).json({ error: 'فشل تحديث الكارت' });
         res.json({ success: true });
+        BUS.publish('cards', { id: Number(id), reason: b.active ? 'activate' : 'deactivate' });
       });
       return;
     }
@@ -1208,6 +1391,7 @@ app.put('/api/admin/cards/:id', (req, res) => {
         const nOpts = p.choicesText ? JSON.parse(p.choicesText).length : 0;
         db.run("DELETE FROM card_picks WHERE card_id = ? AND choice >= ?", [id, nOpts], () => {});
         res.json({ success: true });
+        BUS.publish('cards', { id: Number(id), reason: 'edit' });
       }
     );
   });
@@ -1220,6 +1404,7 @@ app.delete('/api/admin/cards/:id', (req, res) => {
     if (this.changes === 0) return res.status(404).json({ error: 'الكارت غير موجود' });
     db.run("DELETE FROM card_picks WHERE card_id = ?", [req.params.id]);
     res.json({ success: true });
+    BUS.publish('cards', { id: Number(req.params.id), reason: 'delete' });
   });
 });
 
@@ -1788,6 +1973,7 @@ app.post('/api/courier/attendance/request', async (req, res) => {
             }
             const attStateLocal = { next: null, blocked: true };
             res.json({ success: true, request: { id: this.lastID, action, status: 'Pending', attendance_date: day, requested_at: receivedAt }, state: attStateLocal });
+            BUS.publish('attendance', { das_code: cleanCode, id: this.lastID, reason: 'new' });
           }
         );
       } catch (e) {
@@ -1824,8 +2010,9 @@ async function dassSyncStatuses() {
             "UPDATE att_requests SET status = ?, roster_decided_at = ?, decision_note = ? WHERE id = ?",
             [req.status, req.decided_at || '', req.decision_note || '', local.id],
             () => {
-              if (req.status === 'Approved') sendPush(local.das_code, req.action === 'check_in' ? 'حضورك اتسجّل في الروستر' : 'انصرافك اتسجّل في الروستر', 'المشرف وافق على طلبك');
-              else if (req.status === 'Rejected') sendPush(local.das_code, 'طلب حضرك اترفض', (req.decision_note || '').slice(0, 120) || 'راجع المشرف');
+              BUS.publish('attendance', { das_code: local.das_code, id: local.id, status: req.status });
+              if (req.status === 'Approved') notifyCourier(local.das_code, req.action === 'check_in' ? 'حضورك اتسجّل في الروستر' : 'انصرافك اتسجّل في الروستر', 'المشرف وافق على طلبك', { kind: 'attendance', ref: 'att:' + local.id });
+              else if (req.status === 'Rejected') notifyCourier(local.das_code, 'طلب حضورك اترفض', (req.decision_note || '').slice(0, 120) || 'راجع المشرف', { kind: 'attendance', ref: 'att:' + local.id });
               resolve();
             });
           return;
@@ -1833,14 +2020,17 @@ async function dassSyncStatuses() {
         // fallback: طلب اتعمل في الروستر وردّه ما وصلناش وقتها (شبكة قطعت) — بنطابقه
         // بالكود والنوع ويوم الشيفت وهو لسه Pending، وبنربطه بمعرّف الروستر ونحدّث الحالة
         db.get(
-          "SELECT id FROM att_requests WHERE roster_req_id IS NULL AND das_code = ? AND action = ? AND attendance_date = ? AND status = 'Pending'",
+          "SELECT id, das_code FROM att_requests WHERE roster_req_id IS NULL AND das_code = ? AND action = ? AND attendance_date = ? AND status = 'Pending'",
           [req.employee_code || '', req.action || '', req.attendance_date || ''],
           (err2, cand) => {
             if (err2 || !cand) return resolve();
             db.run(
               "UPDATE att_requests SET roster_req_id = ?, status = ?, roster_decided_at = ?, decision_note = ? WHERE id = ?",
               [req.id, req.status, req.decided_at || '', req.decision_note || '', cand.id],
-              () => resolve());
+              () => {
+                BUS.publish('attendance', { das_code: cand.das_code, id: cand.id, status: req.status });
+                resolve();
+              });
           });
       });
     });
