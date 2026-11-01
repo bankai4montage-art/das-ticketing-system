@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node server.js",
     "test:e2e": "node test/attendance_e2e.mjs",
-    "test:live": "node test/live_events_e2e.mjs"
+    "test:live": "node test/live_events_e2e.mjs",
+    "test:chat": "node test/ticket_chat_e2e.mjs"
   },
   "engines": {
     "node": ">=18.0.0"

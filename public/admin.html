@@ -475,6 +475,27 @@
     </div>
   </div>
 
+  <!-- ============ نافذة محادثة الشكوى ============ -->
+  <div id="ticketChatModal" class="modal-back" onclick="if(event.target===this)closeTicketChat()">
+    <div class="modal" style="max-width:620px;display:flex;flex-direction:column">
+      <div class="form-head">
+        <h3 id="ticketChatTitle">محادثة الشكوى</h3>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button type="button" class="btn btn-del btn-sm" id="ticketCloseBtn" onclick="toggleTicketClosed(true)">إقفال نهائي</button>
+          <button type="button" class="btn btn-ok btn-sm hidden" id="ticketReopenBtn" onclick="toggleTicketClosed(false)">إعادة فتح</button>
+          <button type="button" class="btn btn-ghost btn-icon" onclick="closeTicketChat()" aria-label="إغلاق"><i data-ico="close"></i></button>
+        </div>
+      </div>
+      <div id="ticketChatMeta" class="hint" style="margin:0 0 10px"></div>
+      <div id="adminChatList" class="chat-list" style="max-height:46vh;min-height:120px"></div>
+      <form id="adminChatForm" onsubmit="sendAdminChat(event)" style="display:flex;gap:8px;margin-top:10px">
+        <input type="text" id="adminChatInput" class="input" maxlength="1000" placeholder="اكتب ردك للمندوب..." dir="auto" autocomplete="off">
+        <button type="submit" class="btn btn-primary" id="adminChatSend"><span class="spinner"></span><span class="label">إرسال</span></button>
+      </form>
+      <div id="ticketChatClosedNote" class="chat-closed-note hidden">الشكوى مقفولة نهائيًا — المحادثة متوقفة على الطرفين. اضغط «إعادة فتح» لو محتاج تكمل.</div>
+    </div>
+  </div>
+
   <!-- ============ نافذة التقرير الشهري للسلف ============ -->
   <div id="reportModal" class="modal-back" onclick="if(event.target===this)toggleReportModal()">
     <div class="modal" style="max-width:680px">
@@ -793,6 +814,9 @@
           ? `<span class="badge ${cls}"><span class="dot"></span>${DAS.esc(t.status)}</span>`
           : DAS.ddHtml(`dd-status-${t.id}`, t.status, STATUS_OPTS, STATUS_CLS) +
             `<span class="saved-tick" id="tick-${t.id}">${DAS.icon('check')}</span>`;
+        const closedTag = t.closed_at
+          ? `<span class="badge bad" style="margin-top:6px" title="الشكوى مقفولة نهائيًا"><span class="dot"></span>مقفولة</span>`
+          : '';
         const seenFlag = archiveMode || !t.admin_note ? '' : (t.seen_note === t.admin_note
           ? `<span class="seen-flag ok" title="المندوب فتح الشكوى بعد آخر رد">${DAS.icon('check')} شافها</span>`
           : `<span class="seen-flag wait" title="الرد لسه وصلش للمندوب">${DAS.icon('clock')} مش شافها</span>`);
@@ -805,7 +829,12 @@
           <td data-label="رقم الطلب" class="mono">
             <div class="row-head">
               <span style="color:var(--text-3);font-size:12px">#${t.id}</span>
-              ${rowBtn}
+              <div style="display:flex;gap:4px;align-items:center">
+                <button type="button" class="btn btn-ghost btn-icon row-chat-btn" style="width:30px;height:30px;border-radius:9px" title="محادثة الشكوى" aria-label="محادثة الشكوى" onclick="openTicketChat(${t.id})">
+                  ${DAS.icon('msg')}${t.chat_unread ? `<span class="chat-dot">${t.chat_unread > 9 ? '9+' : t.chat_unread}</span>` : ''}
+                </button>
+                ${rowBtn}
+              </div>
             </div>
           </td>
           <td data-label="المندوب">
@@ -822,7 +851,7 @@
           </td>
           <td data-label="الشكوى" class="desc-cell" data-i18n-raw>${DAS.esc(t.description)}</td>
           <td data-label="ملاحظة للمندوب">${noteCell}</td>
-          <td data-label="الحالة">${statusCell}</td>
+          <td data-label="الحالة">${statusCell}${closedTag}</td>
           <td data-label="التقييم">${t.rating != null
             ? `<span class="stars-inline" data-i18n-raw title="${DAS.esc(t.rating_note || '')}">${DAS.icon('star')} ${t.rating}/5</span>`
             : '<span style="color:var(--text-3)">—</span>'}</td>
@@ -945,6 +974,115 @@
         fetchTickets(true);
       } catch (e) {
         DAS.toast('فشل المسح، حاول مرة أخرى', 'err');
+      }
+    }
+
+    // ---------- محادثة الشكوى (الإدارة ↔ المندوب) ----------
+    // ثريد مستقل لكل شكوى، والأدمن يقدر يقفلها نهائيًا فتتوقف الكتابة للطرفين.
+    let chatTicketId = null;
+    let chatPollTimer = null;
+    let chatState = null;
+
+    function chatMsgHtml(m) {
+      const mine = m.sender === 'admin';
+      return `
+        <div class="chat-msg ${mine ? 'me' : 'them'}">
+          <div class="chat-bubble" dir="auto">${DAS.esc(m.body)}</div>
+          <time>${mine ? 'الإدارة' : DAS.t('المندوب')} · ${DAS.fmtDateTime(m.created_at)}</time>
+        </div>`;
+    }
+
+    function renderAdminChat() {
+      const list = $('adminChatList');
+      const closed = !!(chatState && chatState.closed);
+      const form = $('adminChatForm');
+      $('ticketChatClosedNote').classList.toggle('hidden', !closed);
+      form.classList.toggle('hidden', closed);
+      $('ticketCloseBtn').classList.toggle('hidden', closed);
+      $('ticketReopenBtn').classList.toggle('hidden', !closed);
+      if (!chatState) { list.innerHTML = ''; return; }
+      list.innerHTML = chatState.messages.length
+        ? chatState.messages.map(chatMsgHtml).join('')
+        : `<div class="chat-empty">مفيش رسايل لسه — اكتب أول رد وهيوصل للمندوب فورًا</div>`;
+      list.scrollTop = list.scrollHeight;
+    }
+
+    async function loadTicketChat(force) {
+      if (!chatTicketId) return;
+      try {
+        const res = await adminFetch(`/api/admin/tickets/${chatTicketId}/messages`);
+        if (!res.ok) throw new Error();
+        chatState = await res.json();
+        const t = chatState.ticket || {};
+        $('ticketChatTitle').textContent = `محادثة الشكوى #${chatTicketId}`;
+        $('ticketChatMeta').innerHTML =
+          `<b data-i18n-raw>${DAS.esc(t.courier_name || '')}</b> <span class="mono">${DAS.esc(t.das_code || '')}</span>` +
+          ` · <span data-i18n-raw>${DAS.esc(t.description || '')}</span>` +
+          ` · الحالة: <b data-i18n-raw>${DAS.esc(t.status || '')}</b>`;
+        renderAdminChat();
+        if (chatState.closed) $('adminChatInput').value = '';
+      } catch (e) {
+        if (force) DAS.toast('تعذر تحميل المحادثة', 'err');
+      }
+    }
+
+    function openTicketChat(id) {
+      chatTicketId = Number(id);
+      chatState = null;
+      $('ticketChatModal').classList.add('open');
+      $('ticketChatTitle').textContent = `محادثة الشكوى #${id}`;
+      $('adminChatList').innerHTML = `<div class="chat-empty">جاري تحميل المحادثة...</div>`;
+      loadTicketChat(true);
+      if (chatPollTimer) clearInterval(chatPollTimer);
+      // تحديث تلقائي كل 3 ثواني عشان ردود المندوب تظهر والادمن في المحادثة
+      chatPollTimer = setInterval(() => loadTicketChat(false), 3000);
+    }
+
+    function closeTicketChat() {
+      closeModal('ticketChatModal');
+      if (chatPollTimer) { clearInterval(chatPollTimer); chatPollTimer = null; }
+      chatTicketId = null;
+      chatState = null;
+    }
+
+    async function sendAdminChat(ev) {
+      ev.preventDefault();
+      if (!chatTicketId) return;
+      const input = $('adminChatInput');
+      const body = String(input.value || '').trim();
+      if (!body) { DAS.toast('اكتب ردك الأول', 'err'); return; }
+      const btn = $('adminChatSend');
+      DAS.busy(btn, true);
+      try {
+        const res = await adminFetch(`/api/admin/tickets/${chatTicketId}/messages`, {
+          method: 'POST', body: JSON.stringify({ body })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'فشل إرسال الرد');
+        input.value = '';
+        await loadTicketChat(true);
+        fetchTickets(true);
+      } catch (e) {
+        DAS.toast(e.message, 'err');
+      } finally {
+        DAS.busy(btn, false);
+      }
+    }
+
+    async function toggleTicketClosed(closed) {
+      if (!chatTicketId) return;
+      if (closed && !confirm('إقفال الشكوى نهائيًا؟ المحادثة هتتوقف على الطرفين (تقدر ترجع تفتحها بعدين).')) return;
+      try {
+        const res = await adminFetch(`/api/admin/tickets/${chatTicketId}/close`, {
+          method: 'PUT', body: JSON.stringify({ closed })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'فشل تحديث الشكوى');
+        DAS.toast(closed ? 'الشكوى اتقفلت نهائيًا' : 'الشكوى اتعاد فتحها');
+        await loadTicketChat(true);
+        fetchTickets(true);
+      } catch (e) {
+        DAS.toast(e.message, 'err');
       }
     }
 

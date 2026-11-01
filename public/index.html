@@ -534,6 +534,7 @@
       if (pollInterval) clearInterval(pollInterval);
       notifsCache = [];
       notifUnread = 0;
+      Object.keys(chatCache).forEach((k) => delete chatCache[k]);
       closeNotifPanel();
       updateNotifBadge();
       $('notifBtn').classList.add('hidden');
@@ -863,7 +864,7 @@
       } catch (e) { return; }
 
       const tickets = data.tickets || [];
-      const sig = JSON.stringify(tickets.map(t => [t.id, t.status, t.admin_note, t.rating]));
+      const sig = JSON.stringify(tickets.map(t => [t.id, t.status, t.admin_note, t.rating, t.chat_unread, t.closed_at]));
       if (!force && sig === lastSig) return; // مفيش تغيير، منعمل ريندر ولا نعيد الأنيمشن
       lastSig = sig;
       myTicketsCache = tickets;
@@ -927,6 +928,20 @@
               </div>` : ''}
             ${steps(t.status)}
             ${t.status === 'اتحلت' ? rateBox(t) : ''}
+            <div class="chat" data-chatbox="${t.id}">
+              <div class="chat-head">
+                <b>${DAS.icon('msg')} المحادثة</b>
+                <span class="chat-dot ${t.chat_unread ? '' : 'hidden'}" data-chat-dot="${t.id}">${t.chat_unread || ''}</span>
+                <span class="chat-closed hidden" data-chat-closed="${t.id}">${DAS.icon('lock')} مقفولة نهائيًا</span>
+              </div>
+              <div class="chat-list" id="chatList-${t.id}">
+                <div class="chat-empty">افتح الشكوى لمتابعة المحادثة</div>
+              </div>
+              <form class="chat-form" data-chat-form="${t.id}" onsubmit="sendChat(event, ${t.id})">
+                <input type="text" class="input chat-input" id="chatInput-${t.id}" maxlength="1000" placeholder="اكتب رسالتك للإدارة..." dir="auto" autocomplete="off">
+                <button type="submit" class="btn btn-primary btn-sm chat-send"><span class="spinner"></span>إرسال</button>
+              </form>
+            </div>
             <div class="ticket-foot">
               <span>تاريخ المشكلة: ${DAS.esc(t.issue_date)}</span>
               <span class="mono">#${t.id}</span>
@@ -934,6 +949,8 @@
           </div>
         </details>`;
       }).join('');
+      // الكروت المفتوحة: نحمّل محادثتها فورًا (ومفتوحة جديدة بتتحمّل من الـ toggle)
+      openTickets.forEach((id) => loadChat(Number(id), true));
     }
 
     // الشكاوى مقفولة افتراضيًا وبتتفتح بالضغط — بنحافظ على اللي المستخدم فاتحه
@@ -942,9 +959,83 @@
     $('myTicketsList').addEventListener('toggle', (e) => {
       const card = e.target;
       if (!card || card.tagName !== 'DETAILS' || !card.dataset.tid) return;
-      if (card.open) openTickets.add(String(card.dataset.tid));
+      if (card.open) { openTickets.add(String(card.dataset.tid)); loadChat(Number(card.dataset.tid)); }
       else openTickets.delete(String(card.dataset.tid));
     }, true);
+
+    // ================= محادثة الشكوى (المندوب ↔ الإدارة) =================
+    // كل شكوى بقى ليها ثريد محادثة مستقل — المندوب يرد فيه بدل ما يفتح شكوى جديدة،
+    // والأدمن يقدر يقفل الشكوى نهائيًا فيتوقف الطرفين عن الكتابة.
+    const chatCache = {}; // ticket_id → { messages, closed, closed_at, loaded }
+
+    function chatBubble(m) {
+      const mine = m.sender === 'courier';
+      return `
+        <div class="chat-msg ${mine ? 'me' : 'admin'}">
+          <div class="chat-bubble" dir="auto">${DAS.esc(m.body)}</div>
+          <time>${mine ? 'أنت' : 'الإدارة'} · ${DAS.fmtDateTime(m.created_at)}</time>
+        </div>`;
+    }
+
+    function renderChat(id) {
+      const state = chatCache[id];
+      const list = $('chatList-' + id);
+      if (!list) return;
+      if (!state || !state.loaded) {
+        list.innerHTML = `<div class="chat-empty">جاري تحميل المحادثة...</div>`;
+        return;
+      }
+      list.innerHTML = state.messages.length
+        ? state.messages.map(chatBubble).join('')
+        : `<div class="chat-empty">مفيش رسايل لسه — اكتب رسالتك هنا وهتوصل للإدارة فورًا</div>`;
+      list.scrollTop = list.scrollHeight;
+
+      const form = document.querySelector(`[data-chat-form="${id}"]`);
+      const closedTag = document.querySelector(`[data-chat-closed="${id}"]`);
+      const dot = document.querySelector(`[data-chat-dot="${id}"]`);
+      if (form) form.classList.toggle('hidden', !!state.closed);
+      if (closedTag) closedTag.classList.toggle('hidden', !state.closed);
+      if (dot) dot.classList.add('hidden');
+    }
+
+    async function loadChat(id, force) {
+      if (!currentCourier || !id) return;
+      const state = chatCache[id];
+      if (state && state.loaded && !force) { renderChat(id); return; }
+      try {
+        const res = await fetch(`/api/courier/tickets/${id}/messages?das_code=${encodeURIComponent(currentCourier.das_code)}`, { cache: 'no-store' });
+        if (!res.ok) return;
+        const data = await res.json();
+        chatCache[id] = { messages: data.messages || [], closed: !!data.closed, closed_at: data.closed_at || null, loaded: true };
+        const t = myTicketsCache.find((x) => x.id === id);
+        if (t) { t.chat_unread = 0; t.closed_at = data.closed_at; }
+        renderChat(id);
+      } catch (e) { /* الشبكة قطعت */ }
+    }
+
+    async function sendChat(ev, id) {
+      ev.preventDefault();
+      if (!currentCourier) return;
+      const input = $('chatInput-' + id);
+      const btn = ev.target.querySelector('.chat-send');
+      const body = (input && input.value || '').trim();
+      if (!body) { DAS.toast('اكتب رسالتك الأول', 'err'); return; }
+      DAS.busy(btn, true);
+      try {
+        const res = await fetch(`/api/courier/tickets/${id}/messages`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ das_code: currentCourier.das_code, body })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'فشل إرسال الرسالة');
+        input.value = '';
+        await loadChat(id, true);
+      } catch (e) {
+        DAS.toast(e.message, 'err');
+      } finally {
+        DAS.busy(btn, false);
+      }
+    }
 
     // ================= الحضور والانصراف (روستر Rawahel) =================
     // الطلب بيتسجّل Pending وبيروح لمشرف الفرع في الروستر. بعد الموافقة الحضور
@@ -1229,6 +1320,13 @@
       payroll: () => loadPayroll(),
       cards: () => loadMyCards(),
       attendance: () => loadMyAttendance(),
+      'ticket-chat': (ev) => {
+        if (!ev || !ev.ticket_id) return;
+        const id = Number(ev.ticket_id);
+        // المندوب فاتح الشكوى؟ نحدّث المحادثة فورًا. مقفولة؟ نحدّث القايمة (العداد) من غير ما نعلّمها مقروءة
+        if (openTickets.has(String(id))) loadChat(id, true);
+        else loadMyTickets();
+      },
       couriers: () => { /* بيانات المندوب نفسه — بتتحدّث من refreshIdentity */ }
     };
 
@@ -1262,15 +1360,15 @@
 
     function queueLiveLoad(kind, ev) {
       if (!LIVE_LOADERS[kind]) return;
-      // أحداث الحضور/الشكاوى/السلف لصاحبها بس — نفلترها عشان ما نعملش طلبات بلا داعي
-      if (['attendance', 'tickets', 'advances'].includes(kind) && ev && ev.das_code && !isMyCode(ev.das_code)) return;
+      // أحداث الحضور/الشكاوى/السلف/المحادثة لصاحبها بس — نفلترها عشان ما نعملش طلبات بلا داعي
+      if (['attendance', 'tickets', 'advances', 'ticket-chat'].includes(kind) && ev && ev.das_code && !isMyCode(ev.das_code)) return;
       if (kind === 'couriers' && ev) { refreshIdentity(ev); return; }
       if (!evtQueue.has(kind) || ev) evtQueue.set(kind, ev || evtQueue.get(kind));
       clearTimeout(evtFlushTimer);
       evtFlushTimer = setTimeout(() => {
-        const kinds = [...evtQueue.keys()];
+        const pending = [...evtQueue.entries()];
         evtQueue.clear();
-        kinds.forEach((k) => { try { LIVE_LOADERS[k](); } catch (e) {} });
+        pending.forEach(([k, e]) => { try { LIVE_LOADERS[k](e); } catch (err) {} });
         loadNotifications();
       }, 180);
     }
@@ -1349,6 +1447,7 @@
       loadMyAdvances(true);
       loadMyAttendance(true);
       renderNotifs();
+      Object.keys(chatCache).forEach((id) => renderChat(Number(id)));
     });
 
     DAS.glow('.cat-card');

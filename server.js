@@ -277,6 +277,21 @@ db.serialize(() => {
   db.run('CREATE INDEX IF NOT EXISTS idx_notif_code ON notifications(das_code, id)');
   db.run('CREATE INDEX IF NOT EXISTS idx_notif_unread ON notifications(das_code, read_at)');
 
+  // محادثة كل شكوى: الأدمن والمندوب بيتكلموا جوه نفس التذكرة بدل ما يفتحوا شكوى جديدة
+  db.run(`
+    CREATE TABLE IF NOT EXISTS ticket_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ticket_id INTEGER NOT NULL,
+      sender TEXT NOT NULL,
+      body TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      seen_admin INTEGER DEFAULT 0,
+      seen_courier INTEGER DEFAULT 0
+    )
+  `);
+  db.run('CREATE INDEX IF NOT EXISTS idx_tmsg_ticket ON ticket_messages(ticket_id, id)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_tmsg_unread_admin ON ticket_messages(ticket_id, seen_admin)');
+
   // قاعدة قديمة؟ نزود الأعمدة الناقصة تلقائي (بعد إنشاء الجدول)
   db.all("PRAGMA table_info(payroll)", [], (pErr, pCols) => {
     if (pErr || !pCols) return;
@@ -319,6 +334,11 @@ db.serialize(() => {
     if (!cols.some(c => c.name === 'seen_note')) {
       db.run("ALTER TABLE tickets ADD COLUMN seen_note TEXT DEFAULT ''");
       db.run("ALTER TABLE tickets ADD COLUMN seen_at DATETIME");
+    }
+    // الإقفال النهائي للشكوى (المحادثة بتتقفل ومفيش ردود جديدة غير بعد إعادة الفتح)
+    if (!cols.some(c => c.name === 'closed_at')) {
+      db.run("ALTER TABLE tickets ADD COLUMN closed_at DATETIME");
+      db.run("ALTER TABLE tickets ADD COLUMN closed_by TEXT DEFAULT ''");
     }
   });
 });
@@ -534,7 +554,10 @@ app.get('/api/courier/tickets/:das_code', (req, res) => {
     [cleanCode],
     () => {
       db.all(
-        "SELECT * FROM tickets WHERE UPPER(das_code) = ? ORDER BY id DESC",
+        `SELECT t.*,
+           (SELECT COUNT(*) FROM ticket_messages m
+             WHERE m.ticket_id = t.id AND m.sender = 'admin' AND m.seen_courier = 0) AS chat_unread
+         FROM tickets t WHERE UPPER(t.das_code) = ? ORDER BY t.id DESC`,
         [cleanCode],
         (err, rows) => {
           if (err) return res.status(500).json({ error: 'خطأ في جلب البيانات' });
@@ -571,6 +594,58 @@ app.post('/api/tickets', (req, res) => {
         BUS.publish('tickets', { das_code: cleanCode, id: this.lastID, reason: 'new' });
       }
     );
+  });
+});
+
+// 3-ج. محادثة الشكوى للمندوب — بيرجّع الرسايل وبيعلّم ردود الإدارة كمقروءة
+app.get('/api/courier/tickets/:id/messages', (req, res) => {
+  const ticketId = Number(req.params.id);
+  const cleanCode = String(req.query.das_code || '').trim().toUpperCase();
+  if (!Number.isFinite(ticketId) || !cleanCode) return res.status(400).json({ error: 'بيانات ناقصة' });
+  db.get("SELECT * FROM tickets WHERE id = ?", [ticketId], (err, t) => {
+    if (err) return res.status(500).json({ error: 'خطأ في السيرفر' });
+    if (!t) return res.status(404).json({ error: 'الشكوى غير موجودة' });
+    if (String(t.das_code || '').toUpperCase() !== cleanCode) return res.status(403).json({ error: 'الشكوى دي مش بتاعتك' });
+
+    db.run("UPDATE ticket_messages SET seen_courier = 1 WHERE ticket_id = ? AND sender = 'admin' AND seen_courier = 0", [ticketId], () => {
+      db.all("SELECT * FROM ticket_messages WHERE ticket_id = ? ORDER BY id ASC", [ticketId], (e2, rows) => {
+        if (e2) return res.status(500).json({ error: 'خطأ في جلب المحادثة' });
+        res.set('Cache-Control', 'no-store');
+        res.json({
+          messages: rows || [],
+          closed: !!t.closed_at,
+          closed_at: t.closed_at || null,
+          status: t.status
+        });
+      });
+    });
+  });
+});
+
+// 3-د. رد المندوب في المحادثة — لازم يكون صاحب الشكوى والموضوع مش مقفول
+app.post('/api/courier/tickets/:id/messages', (req, res) => {
+  if (rateLimited(req, 'ticket-chat', 40, 60e3)) return res.status(429).json({ error: 'رسايل كتير — استنى دقيقة وجرب تاني' });
+  const ticketId = Number(req.params.id);
+  const { das_code } = req.body || {};
+  const cleanCode = String(das_code || '').trim().toUpperCase();
+  const body = String((req.body || {}).body || '').trim().slice(0, 1000);
+  if (!Number.isFinite(ticketId) || !cleanCode) return res.status(400).json({ error: 'بيانات ناقصة' });
+  if (!body) return res.status(400).json({ error: 'اكتب رسالتك الأول' });
+
+  db.get("SELECT * FROM tickets WHERE id = ?", [ticketId], (err, t) => {
+    if (err) return res.status(500).json({ error: 'خطأ في السيرفر' });
+    if (!t) return res.status(404).json({ error: 'الشكوى غير موجودة' });
+    if (String(t.das_code || '').toUpperCase() !== cleanCode) return res.status(403).json({ error: 'الشكوى دي مش بتاعتك' });
+    if (t.closed_at) return res.status(409).json({ error: 'الشكوى دي مقفولة نهائيًا — كلم الإدارة لو محتاج حاجة تانية' });
+
+    db.run("INSERT INTO ticket_messages (ticket_id, sender, body, seen_admin, seen_courier) VALUES (?, 'courier', ?, 0, 1)",
+      [ticketId, body],
+      function (e2) {
+        if (e2) return res.status(500).json({ error: 'فشل إرسال الرسالة' });
+        db.run("UPDATE tickets SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", [ticketId], () => {});
+        BUS.publish('ticket-chat', { ticket_id: ticketId, das_code: t.das_code, sender: 'courier' });
+        res.json({ success: true, id: this.lastID });
+      });
   });
 });
 
@@ -995,19 +1070,31 @@ app.post('/api/admin/push/test', (req, res) => {
 // 7. جلب كل الشكاوى للإدارة (بدون المؤرشفة)
 app.get('/api/admin/tickets', (req, res) => {
   sweepArchive();
-  db.all("SELECT * FROM tickets WHERE archived = 0 ORDER BY id DESC", [], (err, rows) => {
-    if (err) return res.status(500).json({ error: 'خطأ في جلب الشكاوى' });
-    res.json({ tickets: rows });
-  });
+  db.all(
+    `SELECT t.*,
+       (SELECT COUNT(*) FROM ticket_messages m
+         WHERE m.ticket_id = t.id AND m.sender = 'courier' AND m.seen_admin = 0) AS chat_unread
+     FROM tickets t WHERE t.archived = 0 ORDER BY t.id DESC`,
+    [], (err, rows) => {
+      if (err) return res.status(500).json({ error: 'خطأ في جلب الشكاوى' });
+      res.json({ tickets: rows });
+    }
+  );
 });
 
 // 7-ب. جلب الأرشيف (الشكاوى اللي اتحلت ومعدّي عليها 30 يوم)
 app.get('/api/admin/tickets/archived', (req, res) => {
   sweepArchive();
-  db.all("SELECT * FROM tickets WHERE archived = 1 ORDER BY id DESC", [], (err, rows) => {
-    if (err) return res.status(500).json({ error: 'خطأ في جلب الأرشيف' });
-    res.json({ tickets: rows });
-  });
+  db.all(
+    `SELECT t.*,
+       (SELECT COUNT(*) FROM ticket_messages m
+         WHERE m.ticket_id = t.id AND m.sender = 'courier' AND m.seen_admin = 0) AS chat_unread
+     FROM tickets t WHERE t.archived = 1 ORDER BY t.id DESC`,
+    [], (err, rows) => {
+      if (err) return res.status(500).json({ error: 'خطأ في جلب الأرشيف' });
+      res.json({ tickets: rows });
+    }
+  );
 });
 
 // 8. تحديث حالة الشكوى (Drop Menu) وملاحظة الإدارة — الحالة من مجموعة ثابتة بس
@@ -1052,12 +1139,84 @@ app.put('/api/admin/tickets/:id', (req, res) => {
   });
 });
 
+// 8-ب. محادثة الشكوى من ناحية الإدارة — الرسايل + تعليم ردود المندوب كمقروءة
+app.get('/api/admin/tickets/:id/messages', (req, res) => {
+  const ticketId = Number(req.params.id);
+  if (!Number.isFinite(ticketId)) return res.status(400).json({ error: 'رقم الشكوى غير صحيح' });
+  db.get("SELECT * FROM tickets WHERE id = ?", [ticketId], (err, t) => {
+    if (err) return res.status(500).json({ error: 'خطأ في السيرفر' });
+    if (!t) return res.status(404).json({ error: 'الشكوى غير موجودة' });
+    db.run("UPDATE ticket_messages SET seen_admin = 1 WHERE ticket_id = ? AND sender = 'courier' AND seen_admin = 0", [ticketId], () => {
+      db.all("SELECT * FROM ticket_messages WHERE ticket_id = ? ORDER BY id ASC", [ticketId], (e2, rows) => {
+        if (e2) return res.status(500).json({ error: 'خطأ في جلب المحادثة' });
+        res.set('Cache-Control', 'no-store');
+        res.json({
+          messages: rows || [],
+          closed: !!t.closed_at,
+          closed_at: t.closed_at || null,
+          ticket: { id: t.id, das_code: t.das_code, courier_name: t.courier_name, status: t.status, description: t.description, created_at: t.created_at }
+        });
+      });
+    });
+  });
+});
+
+// 8-ج. رد الإدارة في المحادثة — بيوصل للمندوب لحظيًا + إشعار محفوظ + Web Push
+app.post('/api/admin/tickets/:id/messages', (req, res) => {
+  if (rateLimited(req, 'admin-ticket-chat', 60, 60e3)) return res.status(429).json({ error: 'رسايل كتير — استنى دقيقة' });
+  const ticketId = Number(req.params.id);
+  const body = String((req.body || {}).body || '').trim().slice(0, 1000);
+  if (!Number.isFinite(ticketId)) return res.status(400).json({ error: 'رقم الشكوى غير صحيح' });
+  if (!body) return res.status(400).json({ error: 'اكتب ردك الأول' });
+
+  db.get("SELECT * FROM tickets WHERE id = ?", [ticketId], (err, t) => {
+    if (err) return res.status(500).json({ error: 'خطأ في السيرفر' });
+    if (!t) return res.status(404).json({ error: 'الشكوى غير موجودة' });
+    if (t.closed_at) return res.status(409).json({ error: 'الشكوى مقفولة نهائيًا — اعمل إعادة فتح الأول لو عايز ترد' });
+
+    db.run("INSERT INTO ticket_messages (ticket_id, sender, body, seen_admin, seen_courier) VALUES (?, 'admin', ?, 1, 0)",
+      [ticketId, body],
+      function (e2) {
+        if (e2) return res.status(500).json({ error: 'فشل إرسال الرد' });
+        db.run("UPDATE tickets SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", [ticketId], () => {});
+        BUS.publish('ticket-chat', { ticket_id: ticketId, das_code: t.das_code, sender: 'admin' });
+        notifyCourier(t.das_code, 'رد جديد على شكواك', body.slice(0, 160), { kind: 'ticket', ref: 'ticket:' + ticketId });
+        res.json({ success: true, id: this.lastID });
+      });
+  });
+});
+
+// 8-د. الإقفال النهائي للشكوى / إعادة فتحها — بيقفل المحادثة على الطرفين
+app.put('/api/admin/tickets/:id/close', (req, res) => {
+  const ticketId = Number(req.params.id);
+  const closed = !!(req.body && req.body.closed);
+  if (!Number.isFinite(ticketId)) return res.status(400).json({ error: 'رقم الشكوى غير صحيح' });
+  db.get("SELECT * FROM tickets WHERE id = ?", [ticketId], (err, t) => {
+    if (err) return res.status(500).json({ error: 'خطأ في السيرفر' });
+    if (!t) return res.status(404).json({ error: 'الشكوى غير موجودة' });
+    db.run(
+      closed
+        ? "UPDATE tickets SET closed_at = CURRENT_TIMESTAMP, closed_by = 'admin', updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+        : "UPDATE tickets SET closed_at = NULL, closed_by = '', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+      [ticketId],
+      (e2) => {
+        if (e2) return res.status(500).json({ error: 'فشل حفظ حالة الشكوى' });
+        BUS.publish('tickets', { das_code: t.das_code, id: ticketId, reason: closed ? 'close' : 'reopen' });
+        BUS.publish('ticket-chat', { ticket_id: ticketId, das_code: t.das_code, reason: closed ? 'close' : 'reopen' });
+        if (closed) notifyCourier(t.das_code, 'شكواك اتقفلت نهائيًا', 'لو محتاج حاجة تانية، كلم الإدارة', { kind: 'ticket', ref: 'ticket:' + ticketId });
+        res.json({ success: true, closed });
+      }
+    );
+  });
+});
+
 // 9. مسح شكوى معينة من الإدارة
 app.delete('/api/admin/tickets/:id', (req, res) => {
   const ticketId = req.params.id;
   db.get("SELECT das_code FROM tickets WHERE id = ?", [ticketId], (gErr, row) => {
     db.run("DELETE FROM tickets WHERE id = ?", [ticketId], function (err) {
       if (err) return res.status(500).json({ error: 'فشل حذف الشكوى' });
+      db.run("DELETE FROM ticket_messages WHERE ticket_id = ?", [ticketId], () => {});
       if (row && this.changes > 0) BUS.publish('tickets', { das_code: row.das_code, id: Number(ticketId), reason: 'delete' });
       res.json({ success: true });
     });
