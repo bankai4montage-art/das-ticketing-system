@@ -547,6 +547,28 @@ async function notifyCardTargets(card) {
 // ================= API للمندوب =================
 
 // 1. تسجيل دخول المندوب بالكود (DAS Login)
+// تحميل تطبيق المندوب مباشرة من دومين البوابة.
+// بنمرّر الملف من السيرفر بدل التحويل، عشان Service Worker تطبيق الطابور
+// مايقدرش يعترض اللينك ويرجّع صفحة HTML بدل ملف التطبيق.
+const APP_APK_URL = process.env.APP_APK_URL || 'https://bankai-smart-queue-api-production.up.railway.app/app';
+app.get('/app', async (req, res) => {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 25000);
+    const upstream = await fetch(APP_APK_URL, { signal: controller.signal });
+    clearTimeout(timer);
+    if (!upstream.ok) return res.status(502).send('download unavailable');
+    const buffer = Buffer.from(await upstream.arrayBuffer());
+    res.setHeader('Content-Type', 'application/vnd.android.package-archive');
+    res.setHeader('Content-Disposition', 'attachment; filename="Bankai-Smart.apk"');
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Content-Length', buffer.length);
+    res.end(buffer);
+  } catch (e) {
+    res.status(502).send('download unavailable');
+  }
+});
+
 app.post('/api/courier/login', (req, res) => {
   if (rateLimited(req, 'courier-login', 5, 60e3)) return res.status(429).json({ error: 'محاولات كتير — استنى دقيقة وجرب تاني' });
   const { das_code } = req.body || {};
