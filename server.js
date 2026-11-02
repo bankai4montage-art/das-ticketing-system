@@ -564,7 +564,7 @@ app.post('/api/courier/login', (req, res) => {
 // (لو الرد اتغير بعدها، وصلته "مش شافها" تاني لحد ما يفتح التاب)
 // ================= تطبيق المندوب (Bankai Smart) =================
 const APP_AUDIENCES = ['all', 'branch', 'type', 'branch_type', 'code'];
-const APP_DEFAULT_URL = 'https://bankai-smart-queue-api-production.up.railway.app/app/bankai-driver.apk';
+const APP_DEFAULT_URL = 'https://bankai-smart-queue-api-production.up.railway.app/app';
 
 function appReleasePayload(b) {
   const enabled = !!(b && b.enabled);
