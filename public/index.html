@@ -74,6 +74,16 @@
       </header>
 
       <!-- لوحة جرس التنبيهات: أي تغيير من الإدارة بيوصل هنا لحظة حدوثه -->
+      <!-- تطبيق المندوب: يظهر حسب إعدادات الإدارة -->
+      <div id="appDownload" class="glass app-download hidden">
+        <div class="ad-body">
+          <b id="adTitle">تطبيق Bankai Smart</b>
+          <p id="adText"></p>
+          <span class="ad-version" id="adVersion"></span>
+        </div>
+        <a id="adBtn" class="btn btn-primary btn-sm" href="#" target="_blank" rel="noopener">تحميل التطبيق</a>
+      </div>
+
       <div id="notifPanel" class="notif-panel hidden" role="dialog" aria-label="التنبيهات">
         <div class="notif-head">
           <b data-i18n="التنبيهات">التنبيهات</b>
@@ -298,6 +308,26 @@
       }
     });
 
+    // زر تحميل التطبيق: السيرفر بيحدد إذا كان يظهر للمندوب ده أو لأ
+    async function loadAppRelease() {
+      const box = $('appDownload');
+      if (!box) return;
+      if (!currentCourier || !currentCourier.das_code) { box.classList.add('hidden'); return; }
+      try {
+        const res = await fetch('/api/courier/app-release/' + encodeURIComponent(currentCourier.das_code));
+        if (!res.ok) { box.classList.add('hidden'); return; }
+        const d = await res.json();
+        if (!d || !d.show || !d.url) { box.classList.add('hidden'); return; }
+        $('adTitle').textContent = d.title || 'تطبيق Bankai Smart';
+        $('adText').textContent = d.body || 'حمّل تطبيق المندوب لمتابعة دورك وتذاكرك من مكان واحد.';
+        $('adVersion').textContent = d.version ? ('الإصدار ' + d.version) : '';
+        $('adBtn').href = d.url;
+        box.classList.remove('hidden');
+      } catch (e) {
+        box.classList.add('hidden');
+      }
+    }
+
     function showMainScreen() {
       $('loginScreen').classList.add('hidden');
       $('mainScreen').classList.remove('hidden');
@@ -316,6 +346,7 @@
       loadMyAttendance();
       initPushUI();
       loadNotifications();
+      loadAppRelease();
       startLive();
       // البولل القديم بقى خط أمان بطيء (15 ثانية) — التحديث الحقيقي جاي من /api/events لحظة حدوثه
       if (pollInterval) clearInterval(pollInterval);

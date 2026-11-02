@@ -79,6 +79,7 @@
         <button class="chip" id="tabCards" onclick="switchView('cards')"><i data-ico="msg"></i> <span data-i18n="الكروت">الكروت</span><span class="tab-badge info" id="badgeCards">0</span></button>
         <button class="chip" id="tabSync" onclick="switchView('sync')"><i data-ico="refresh"></i> <span data-i18n="مزامنة الروستر">مزامنة الروستر</span></button>
         <button class="chip" id="tabPayroll" onclick="switchView('payroll')"><i data-ico="wallet"></i> <span data-i18n="القبض">القبض</span><span class="tab-badge ok" id="badgePayroll">0</span></button>
+        <button class="chip" id="tabApp" onclick="switchView('app')"><i data-ico="download"></i> <span>التطبيق</span></button>
       </section>
 
       <div id="ticketsView" class="view-panel">
@@ -224,6 +225,74 @@
       </div>
 
       <!-- ============ مزامنة الروستر ============ -->
+      <!-- ============ تطبيق المندوب ============ -->
+      <div id="appView" class="view-panel hidden">
+        <section class="glass adv-head rise">
+          <div>
+            <b>تطبيق المندوب (Bankai Smart)</b>
+            <div class="adv-summary" id="appSummary">-</div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <a class="btn btn-ghost btn-sm" id="appOpenLink" href="#" target="_blank" rel="noopener">
+              <i data-ico="download"></i> <span>تجربة الرابط</span>
+            </a>
+            <button class="btn btn-primary btn-sm" id="appSaveBtn" onclick="saveAppRelease()">
+              <span class="spinner"></span><i data-ico="check"></i><span class="label">حفظ</span>
+            </button>
+          </div>
+        </section>
+
+        <div class="hint" style="margin-bottom:12px;display:flex;align-items:center;gap:8px">
+          <i data-ico="alert"></i>
+          زر التحميل يظهر في صفحة المندوب فقط، ويمكنك تحديد الفئة التي تراها (كل المندوبين / فرع / نوع دوام / فرع ونوع / أكواد محددة).
+        </div>
+
+        <section class="glass rise" style="padding:18px;display:grid;gap:14px">
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+            <input type="checkbox" id="appEnabled" onchange="updateAppSummary()" style="width:18px;height:18px">
+            <span style="font-weight:700">إظهار زر تحميل التطبيق في صفحة المندوب</span>
+          </label>
+
+          <div class="field" style="margin:0">
+            <label for="appTitle">عنوان البطاقة</label>
+            <input id="appTitle" class="input" maxlength="80" placeholder="تطبيق Bankai Smart">
+          </div>
+
+          <div class="field" style="margin:0">
+            <label for="appBody">نص مختصر</label>
+            <textarea id="appBody" class="input" rows="2" maxlength="300"
+              placeholder="حمّل تطبيق المندوب لمتابعة دورك وتذاكرك من مكان واحد."></textarea>
+          </div>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div class="field" style="margin:0">
+              <label for="appUrl">رابط ملف التطبيق (APK)</label>
+              <input id="appUrl" class="input" dir="ltr" placeholder="https://.../bankai-driver.apk">
+            </div>
+            <div class="field" style="margin:0">
+              <label for="appVersion">الإصدار (اختياري)</label>
+              <input id="appVersion" class="input" dir="ltr" maxlength="30" placeholder="1.6.2">
+            </div>
+          </div>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div class="field" style="margin:0">
+              <label for="appAudience">يظهر لمين؟</label>
+              <select id="appAudience" class="input" onchange="renderAppAudience()">
+                <option value="all">كل المندوبين</option>
+                <option value="branch">فرع معين</option>
+                <option value="type">نوع دوام</option>
+                <option value="branch_type">فرع + نوع دوام</option>
+                <option value="code">أكواد محددة</option>
+              </select>
+            </div>
+            <div class="field" style="margin:0" id="appAudienceWrap"></div>
+          </div>
+
+          <p id="appMsg" class="err-text" style="min-height:18px"></p>
+        </section>
+      </div>
+
       <div id="syncView" class="view-panel hidden">
         <section class="glass adv-head rise">
           <div>
@@ -2159,11 +2228,117 @@
     const ADV_CLS = { 'تمت الصرف': 'ok', 'مرفوضة': 'bad', 'قيد المراجعة': 'warn' };
     const ADV_OPTS = ['قيد المراجعة', 'تمت الصرف', 'مرفوضة'];
 
+    // ================= تطبيق المندوب (زر التحميل) =================
+    let releaseLoaded = false;
+
+    function renderAppAudience() {
+      const value = $('appAudience').value;
+      const wrap = $('appAudienceWrap');
+      if (value === 'branch') {
+        wrap.innerHTML = '<label for="appAudienceValue">الفرع</label>' +
+          '<select id="appAudienceValue" class="input"><option>QCD 1</option><option>QCD 2</option></select>';
+      } else if (value === 'type') {
+        wrap.innerHTML = '<label for="appAudienceValue">نوع الدوام</label>' +
+          '<select id="appAudienceValue" class="input"><option value="FT">Full time</option><option value="PT">Part time</option></select>';
+      } else if (value === 'branch_type') {
+        wrap.innerHTML = '<label for="appAudienceValue">الفرع ونوع الدوام</label>' +
+          '<div style="display:flex;gap:8px">' +
+          '<select id="appBranchPart" class="input"><option>QCD 1</option><option>QCD 2</option></select>' +
+          '<select id="appTypePart" class="input"><option value="FT">FT</option><option value="PT">PT</option></select>' +
+          '</div>';
+      } else if (value === 'code') {
+        wrap.innerHTML = '<label for="appAudienceValue">أكواد المندوبين (بفاصلة)</label>' +
+          '<input id="appAudienceValue" class="input" dir="ltr" placeholder="A1234,A5678">';
+      } else {
+        wrap.innerHTML = '';
+      }
+      updateAppSummary();
+    }
+
+    function appAudienceValue() {
+      const value = $('appAudience').value;
+      if (value === 'branch_type') {
+        const b = $('appBranchPart') ? $('appBranchPart').value : 'QCD 1';
+        const t = $('appTypePart') ? $('appTypePart').value : 'FT';
+        return b + '|' + t;
+      }
+      const field = $('appAudienceValue');
+      return field ? field.value : '';
+    }
+
+    function updateAppSummary() {
+      if (!$('appSummary')) return;
+      const on = $('appEnabled').checked;
+      const sel = $('appAudience');
+      const label = sel && sel.selectedOptions[0] ? sel.selectedOptions[0].textContent : '';
+      $('appSummary').textContent = on ? ('ظاهر — ' + label) : 'مخفي';
+    }
+
+    async function loadAppRelease(force) {
+      if (releaseLoaded && !force) return;
+      try {
+        const res = await adminFetch('/api/admin/app-release');
+        const d = await res.json();
+        const r = d.release || {};
+        $('appEnabled').checked = !!r.enabled;
+        $('appTitle').value = r.title || 'تطبيق Bankai Smart';
+        $('appBody').value = r.body || '';
+        $('appUrl').value = r.apk_url || d.default_url || '';
+        $('appVersion').value = r.version || '';
+        $('appAudience').value = r.audience || 'all';
+        renderAppAudience();
+        if (r.audience === 'branch_type') {
+          const parts = String(r.audience_value || '').split('|');
+          if ($('appBranchPart')) $('appBranchPart').value = parts[0] || 'QCD 1';
+          if ($('appTypePart')) $('appTypePart').value = parts[1] || 'FT';
+        } else if ($('appAudienceValue')) {
+          $('appAudienceValue').value = r.audience_value || '';
+        }
+        updateAppSummary();
+        $('appOpenLink').href = $('appUrl').value || '#';
+        releaseLoaded = true;
+      } catch (e) {
+        $('appMsg').textContent = 'تعذر تحميل الإعدادات';
+      }
+    }
+
+    async function saveAppRelease() {
+      $('appMsg').textContent = '';
+      const body = {
+        enabled: $('appEnabled').checked,
+        title: $('appTitle').value,
+        body: $('appBody').value,
+        apk_url: $('appUrl').value,
+        version: $('appVersion').value,
+        audience: $('appAudience').value,
+        audience_value: appAudienceValue()
+      };
+      DAS.busy($('appSaveBtn'), true);
+      try {
+        const res = await adminFetch('/api/admin/app-release', {
+          method: 'PUT',
+          body: JSON.stringify(body)
+        });
+        const d = await res.json();
+        if (!res.ok) {
+          $('appMsg').textContent = d.error || 'فشل الحفظ';
+          return;
+        }
+        $('appMsg').textContent = 'تم الحفظ ✓';
+        $('appOpenLink').href = body.apk_url || '#';
+        updateAppSummary();
+      } catch (e) {
+        $('appMsg').textContent = 'فشل الاتصال بالسيرفر';
+      } finally {
+        DAS.busy($('appSaveBtn'), false);
+      }
+    }
+
     function switchView(v) {
-      const adv = v === 'advances', cards = v === 'cards', sync = v === 'sync', pay = v === 'payroll';
-      const show = pay ? $('payrollView') : (sync ? $('syncView') : (cards ? $('cardsView') : (adv ? $('advancesView') : $('ticketsView'))));
+      const adv = v === 'advances', cards = v === 'cards', sync = v === 'sync', pay = v === 'payroll', app = v === 'app';
+      const show = app ? $('appView') : (pay ? $('payrollView') : (sync ? $('syncView') : (cards ? $('cardsView') : (adv ? $('advancesView') : $('ticketsView')))));
       show.classList.remove('hidden');
-      [ 'ticketsView', 'advancesView', 'cardsView', 'syncView', 'payrollView' ].forEach(id => {
+      [ 'ticketsView', 'advancesView', 'cardsView', 'syncView', 'payrollView', 'appView' ].forEach(id => {
         if (id !== show.id) $(id).classList.add('hidden');
       });
       // إعادة تشغيل أنيميشن الدخول مع كل تبديل
@@ -2175,7 +2350,9 @@
       $('tabCards').classList.toggle('active', cards);
       $('tabSync').classList.toggle('active', sync);
       $('tabPayroll').classList.toggle('active', pay);
-      if (adv) fetchAdvances(true);
+      $('tabApp').classList.toggle('active', app);
+      if (app) loadAppRelease(true);
+      else if (adv) fetchAdvances(true);
       else if (cards) fetchCards(true);
       else if (sync) loadSync();
       else if (pay) loadPayrollFiles(true);

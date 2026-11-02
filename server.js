@@ -190,6 +190,22 @@ db.serialize(() => {
     )
   `);
 
+  // إعدادات زر تحميل تطبيق المندوب (Bankai Smart) + استهداف الظهور
+  db.run(`
+    CREATE TABLE IF NOT EXISTS app_release (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      enabled INTEGER DEFAULT 0,
+      title TEXT DEFAULT '',
+      body TEXT DEFAULT '',
+      apk_url TEXT DEFAULT '',
+      version TEXT DEFAULT '',
+      audience TEXT DEFAULT 'all',
+      audience_value TEXT DEFAULT '',
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  db.run("INSERT OR IGNORE INTO app_release (id) VALUES (1)");
+
   // أصوات المناديب على الخيارات التفاعلية — صوت واحد لكل مندوب لكل كارت (وبيقدر يغيره)
   db.run(`
     CREATE TABLE IF NOT EXISTS card_picks (
@@ -546,6 +562,99 @@ app.post('/api/courier/login', (req, res) => {
 
 // 2. جلب شكاوى المندوب الخاصة به — وبتسجل معاها إنه شاف آخر رد من الإدارة
 // (لو الرد اتغير بعدها، وصلته "مش شافها" تاني لحد ما يفتح التاب)
+// ================= تطبيق المندوب (Bankai Smart) =================
+const APP_AUDIENCES = ['all', 'branch', 'type', 'branch_type', 'code'];
+const APP_DEFAULT_URL = 'https://bankai-smart-queue-api-production.up.railway.app/app/bankai-driver.apk';
+
+function appReleasePayload(b) {
+  const enabled = !!(b && b.enabled);
+  const title = String((b && b.title) || '').trim().slice(0, 80) || 'تطبيق Bankai Smart';
+  const body = String((b && b.body) || '').trim().slice(0, 300);
+  let url = String((b && b.apk_url) || '').trim() || APP_DEFAULT_URL;
+  if (!/^https?:\/\/[^\s]+\.[^\s]+/i.test(url)) return { error: 'رابط التطبيق غير صحيح' };
+  const version = String((b && b.version) || '').trim().slice(0, 30);
+  const audience = APP_AUDIENCES.includes(b && b.audience) ? b.audience : 'all';
+  let value = String((b && b.audience_value) || '').trim();
+
+  if (audience === 'branch') {
+    if (!['QCD 1', 'QCD 2'].includes(value)) return { error: 'الفرع لازم يكون QCD 1 أو QCD 2' };
+  } else if (audience === 'type') {
+    if (!['FT', 'PT'].includes(value)) return { error: 'نوع الدوام لازم يكون FT أو PT' };
+  } else if (audience === 'branch_type') {
+    const parts = value.split('|');
+    const br = String(parts[0] || '').trim().toUpperCase();
+    const ty = String(parts[1] || '').trim().toUpperCase();
+    if (!['QCD 1', 'QCD 2'].includes(br)) return { error: 'الفرع لازم يكون QCD 1 أو QCD 2' };
+    if (!['FT', 'PT'].includes(ty)) return { error: 'نوع الدوام لازم يكون FT أو PT' };
+    value = br + '|' + ty;
+  } else if (audience === 'code') {
+    const codes = [...new Set(value.split(/[,;\n]+/).map((s) => s.trim().toUpperCase()).filter(Boolean))];
+    if (!codes.length) return { error: 'اكتب كود مندوب واحد على الأقل' };
+    if (codes.length > 300) return { error: 'الحد الأقصى 300 كود' };
+    value = codes.join(',');
+  } else {
+    value = '';
+  }
+
+  return { enabled, title, body, url, version, audience, value };
+}
+
+async function appReleaseFor(code) {
+  const cfg = await new Promise((resolve) => {
+    db.get("SELECT * FROM app_release WHERE id = 1", [], (err, row) => resolve(err ? null : row));
+  });
+  if (!cfg || !cfg.enabled) return { show: false };
+  const url = String(cfg.apk_url || '').trim();
+  if (!url) return { show: false };
+
+  const base = {
+    show: true,
+    title: String(cfg.title || 'تطبيق Bankai Smart'),
+    body: String(cfg.body || ''),
+    version: String(cfg.version || ''),
+    url
+  };
+  const audience = String(cfg.audience || 'all');
+  const value = String(cfg.audience_value || '');
+  const norm = (v) => String(v || '').trim().toUpperCase();
+
+  if (audience === 'all') return base;
+  if (audience === 'code') {
+    const codes = value.split(',').map((s) => s.trim().toUpperCase()).filter(Boolean);
+    return codes.includes(norm(code)) ? base : { show: false };
+  }
+
+  // فروع/نوع الدوام بتتحدد من ملف الروستر المسحوب من نظام الحضور
+  if (!rosterConfigured()) return { show: false };
+  let emps = [];
+  try {
+    emps = await rosterEmployees();
+  } catch (e) {
+    return { show: false };
+  }
+  const emp = (emps || []).find((e) => norm(e.employee_code) === norm(code));
+  if (!emp) return { show: false };
+  if (audience === 'branch') return norm(emp.branch) === norm(value) ? base : { show: false };
+  if (audience === 'type') return norm(emp.employment_type) === norm(value) ? base : { show: false };
+  if (audience === 'branch_type') {
+    const parts = value.split('|');
+    return norm(emp.branch) === norm(parts[0]) && norm(emp.employment_type) === norm(parts[1])
+      ? base
+      : { show: false };
+  }
+  return { show: false };
+}
+
+app.get('/api/courier/app-release/:das_code', async (req, res) => {
+  const code = String(req.params.das_code || '').trim().toUpperCase();
+  if (!code) return res.status(400).json({ error: 'كود المندوب مطلوب' });
+  try {
+    res.json(await appReleaseFor(code));
+  } catch (e) {
+    res.status(500).json({ error: 'خطأ في السيرفر' });
+  }
+});
+
 app.get('/api/courier/tickets/:das_code', (req, res) => {
   const cleanCode = String(req.params.das_code || '').trim().toUpperCase();
   db.run(
@@ -1535,6 +1644,29 @@ function tallyPicks(card, picks) {
 }
 
 // 19-ب. جلب كل الكروت (شاملة المتوقفة والمستحقة تواريخها) للإدارة — بنفس ترتيب السحب والإفلات + أصوات الخيارات
+// 20. تطبيق المندوب — إعدادات ظهور زر التحميل (لمين + أنهي فرع)
+app.get('/api/admin/app-release', (req, res) => {
+  db.get("SELECT * FROM app_release WHERE id = 1", [], (err, row) => {
+    if (err) return res.status(500).json({ error: 'خطأ في القراءة' });
+    res.json({ release: row || {}, default_url: APP_DEFAULT_URL });
+  });
+});
+
+app.put('/api/admin/app-release', (req, res) => {
+  const p = appReleasePayload(req.body || {});
+  if (p.error) return res.status(400).json({ error: p.error });
+  db.run(
+    `UPDATE app_release SET enabled=?, title=?, body=?, apk_url=?, version=?,
+       audience=?, audience_value=?, updated_at=CURRENT_TIMESTAMP WHERE id=1`,
+    [p.enabled ? 1 : 0, p.title, p.body, p.url, p.version, p.audience, p.value],
+    (err) => {
+      if (err) return res.status(500).json({ error: 'فشل الحفظ' });
+      res.json({ success: true });
+      BUS.publish('app-release', { reason: 'update' });
+    }
+  );
+});
+
 app.get('/api/admin/cards', (req, res) => {
   db.all(`SELECT * FROM cards ${CARDS_ORDER}`, [], (err, rows) => {
     if (err) return res.status(500).json({ error: 'خطأ في جلب الكروت' });
