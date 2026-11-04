@@ -2137,8 +2137,8 @@ app.get('/api/courier/attendance/:das_code', async (req, res) => {
   db.all("SELECT * FROM att_requests WHERE das_code = ? ORDER BY id DESC LIMIT 15", [code], async (err, rows) => {
     if (err) return res.status(500).json({ error: 'خطأ في جلب طلبات الحضور' });
     rows = rows || [];
-    // شيفت الموظف (من كاش الروستر) بيتحدد منه ميعاد فتح الحضور والانصراف.
-    // لو الروستر مش متاح مؤقتًا بنكمل من غير قيود وقت بدل ما نعطّل الصفحة.
+    // شيفت الموظف (من كاش الروستر) بيتعرض للمندوب كمعلومة بس — صار مفيش نافذة
+    // وقت على تسجيل الحضور أو الانصراف، وكل طلب بيتقرر من المشرف.
     let emp = null;
     if (dasEnabled()) {
       try {
@@ -2152,10 +2152,13 @@ app.get('/api/courier/attendance/:das_code', async (req, res) => {
   });
 });
 
-// الحالة المحسوبة للسجل: إيه اللي ينفع يتسجّل دلوقتي بناءً على الطلبات المسجّلة + وقت شيفت الموظف
-function attendanceState(rows, emp, ts = Date.now()) {
-  const plan = emp ? shiftPlan(emp, ts) : null;
-  const shiftInfo = plan ? { text: plan.shift, start: plan.start, end: plan.end, check_in_opens: plan.opensAt, day_off: emp.day_off || '' } : null;
+// الحالة المحسوبة للسجل: إيه اللي ينفع يتسجّل دلوقتي بناءً على الطلبات المسجّلة.
+// مفيش أي نافذة وقت على تسجيل الحضور أو الانصراف: المندوب يدوس "تحضير/انصراف"
+// في أي وقت، والطلب بيتحوّل Pending ومشرف الفرع (أو الأدمن) في لوحة الروستر
+// هو اللي يوافق أو يرفض بنفسه.
+function attendanceState(rows, emp) {
+  const plan = emp ? shiftPlan(emp) : null;
+  const shiftInfo = plan ? { text: plan.shift, start: plan.start, end: plan.end, day_off: (emp && emp.day_off) || '' } : null;
 
   const pend = rows.find(r => r.status === 'Pending');
   if (pend) {
@@ -2167,47 +2170,21 @@ function attendanceState(rows, emp, ts = Date.now()) {
   const outAfter = lastIn ? rows.find(r => r.action === 'check_out' && r.id > lastIn.id && r.status === 'Approved') : null;
 
   if (!lastIn) {
-    // مفيش حضور معتمد: نجيب البند التالي حسب وقت الشيفت
-    if (plan && plan.leaveToday) {
-      return { next: null, blocked: true, shift: shiftInfo,
-        why: 'إنت في إجازتك الأسبوعية النهاردة — كلم المشرف لو فيه شغل' };
-    }
-    if (plan && !plan.checkInOpen) {
-      if (plan.now.minutes < plan.startMin - CHECKIN_EARLY_MIN) {
-        return { next: null, blocked: true, shift: shiftInfo,
-          why: `تسجيل الحضور بيفتح الساعة ${plan.opensAt} (قبل الشيفت بربع ساعة)` };
-      }
-      return { next: null, blocked: true, shift: shiftInfo,
-        why: 'فات وقت تسجيل الحضور للشيفت ده — كلم المشرف' };
-    }
+    // مفيش حضور معتمد: تسجيل الحضور متاح في أي وقت (حتى حديد الشيفت/الإجازة) —
+    // اللي بيحدد الموقف النهائي هو قرار المشرف على الطلب.
     return { next: 'check_in', blocked: false, why: '', shift: shiftInfo };
   }
 
-  // في حضور معتمد — نشوف الانصراف
   if (!outAfter) {
-    const win = plan ? checkoutWindow(emp, lastIn.attendance_date, ts) : null;
-    if (plan && win && !win.open) {
-      return { next: null, blocked: true, shift: shiftInfo,
-        why: win.expired
-          ? 'فات وقت تسجيل الانصراف — كلم المشرف'
-          : `تسجيل الانصراف بيفتح الساعة ${win.opensAt} (وقت نهاية الشيفت)` };
-    }
+    // حضور معتمد مالوش انصراف بعده: تسجيل الانصراف متاح في أي وقت
     return { next: 'check_out', blocked: false, why: '', shift: shiftInfo };
   }
 
-  // الدورة كاملة (حضور + انصراف معتمدين)
-  if (plan && plan.checkInOpen) {
-    // الشيفت الليلي اللي لسه متداخل: بعد انصراف النهاردة ما ينفعش حضور تاني لكن
-    // لو الحضور المعتمد كان شيفت قديم والانصراف خلص قبل بداية الشيفت الجديد يبقى عادي
-    if (lastIn.attendance_date === plan.now.date) {
-      return { next: null, blocked: true, shift: shiftInfo,
-        why: 'حضورك وانصرافك اتسجلوا رسميًا — مش هينفع حضور تاني النهاردة' };
-    }
-    return { next: 'check_in', blocked: false, why: '', shift: shiftInfo };
-  }
-  if (plan && plan.now.minutes < plan.startMin - CHECKIN_EARLY_MIN) {
+  // الدورة كاملة (حضور + انصراف معتمدين): حضور تاني ممنوع في نفس يوم الشيفت —
+  // الروستر نفسه بيرفض حضور تاني لنفس اليوم (409)، فبنمنعه هنا برسالة واضحة.
+  if (lastIn.attendance_date === cairoToday()) {
     return { next: null, blocked: true, shift: shiftInfo,
-      why: `تسجيل حضور الشيفت الجاي بيفتح الساعة ${plan.opensAt} (قبل الشيفت بربع ساعة)` };
+      why: 'حضورك وانصرافك اتسجلوا رسميًا — مش هينفع حضور تاني النهاردة' };
   }
   return { next: 'check_in', blocked: false, why: '', shift: shiftInfo };
 }
@@ -2217,15 +2194,10 @@ function cairoToday() {
   return new Date(Date.now() + 3 * 3600e3).toISOString().slice(0, 10);
 }
 
-// ================= نافذة وقت الشيفت =================
-// الحضور بيفتح قبل الشيفت بربع ساعة وبيمتد لآخر الشيفت، والانصراف بيفتح وقت
-// نهاية الشيفت وبيفضل متاح 8 ساعات بعدها. الاختيارات دي على مستوى السيرفر —
-// الواجهة بتعرضها بس، وأي محاولة بره النافذة بترجع 409 برسالة فيها الوقت.
-const CHECKIN_EARLY_MIN = 15;
-const CHECKOUT_GRACE_MIN = 8 * 60;
-const CAIRO_DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-
-function pad2(n) { return String(n).padStart(2, '0'); }
+// ================= عرض الشيفت (بلا بوابات وقت) =================
+// تسجيل الحضور والانصراف على مدار 24 ساعة وكل طلب بيتقرر يدويًا من المشرف
+// في لوحة الروستر (موافقة/رفض) — الشيفت بيتعرض هنا كمعلومة للمندوب بس.
+const pad2 = (n) => String(n).padStart(2, '0');
 function hm(min) { const m = ((min % 1440) + 1440) % 1440; return pad2(Math.floor(m / 60)) + ':' + pad2(m % 60); }
 // عرض الوقت بنظام 12 ساعة للمندوب (5:10 ص / 4:25 م)
 function hm12(min) {
@@ -2258,45 +2230,12 @@ function parseShiftTimes(name) {
   return { start, end, text: hm(start) + ' - ' + hm(end) };
 }
 
-function cairoParts(ts = Date.now()) {
-  const d = new Date(ts + 3 * 3600e3);
-  return { date: d.toISOString().slice(0, 10), dow: d.getUTCDay(), minutes: d.getUTCHours() * 60 + d.getUTCMinutes() };
-}
-
-function daysBetween(fromISO, toISO) {
-  return Math.round((Date.parse(toISO + 'T00:00:00Z') - Date.parse(fromISO + 'T00:00:00Z')) / 864e5);
-}
-
-// خطة اليوم: هل تسجيل الحضور مفتوح الآن؟ ومتى يفتح/يقفل؟
-// ملاحظة: يوم الحضور الرسمي هو يوم بداية الشيفت بتوقيت القاهرة — نفس اللي
-// الروستر بيسجّل عليه، فالتحقق بعد منتصف الليل ما يقبلش "حضور يوم جديد" بالغلط.
-function shiftPlan(emp, ts = Date.now()) {
+function shiftPlan(emp) {
   const parsed = parseShiftTimes(emp && emp.shift);
   if (!parsed) return null;
-  const now = cairoParts(ts);
-  const dayOff = String((emp && emp.day_off) || '').trim();
-  const leaveToday = !!dayOff && CAIRO_DAYS[now.dow] === dayOff;
-  const opensAt = parsed.start - CHECKIN_EARLY_MIN;
-  const checkInOpen = !leaveToday && now.minutes >= opensAt && now.minutes < parsed.end;
   return {
     shift: hm12(parsed.start) + ' - ' + hm12(parsed.end), start: hm12(parsed.start), end: hm12(parsed.end),
-    startMin: parsed.start, endMin: parsed.end, now, leaveToday,
-    opensAt: hm12(opensAt), closesAt: hm12(parsed.end), checkInOpen
-  };
-}
-
-// نافذة الانصراف بتتحسب على يوم حضور معتمد (attendance_date) + شيفت الموظف الحالي
-function checkoutWindow(emp, attendanceDate, ts = Date.now()) {
-  const parsed = parseShiftTimes(emp && emp.shift);
-  if (!parsed || !attendanceDate) return null;
-  const now = cairoParts(ts);
-  const diff = daysBetween(attendanceDate, now.date);
-  const endRel = parsed.end + diff * 1440;
-  return {
-    open: now.minutes >= endRel && now.minutes <= endRel + CHECKOUT_GRACE_MIN,
-    opensAt: hm12(endRel),
-    expired: now.minutes > endRel + CHECKOUT_GRACE_MIN,
-    endRel
+    startMin: parsed.start, endMin: parsed.end
   };
 }
 
@@ -2346,7 +2285,7 @@ app.post('/api/courier/attendance/request', async (req, res) => {
       if (st.blocked) return res.status(409).json({ error: st.why });
       if (st.next && st.next !== action) {
         return res.status(409).json({ error: action === 'check_in'
-          ? 'حضورك مسجّل ومعتمد بالفعل — استنى وقت الانصراف'
+          ? 'حضورك مسجّل ومعتمد بالفعل — سجّل الانصراف'
           : 'مفيش حضور معتمد لتسجيل انصراف بعده — سجّل حضور الأول' });
       }
 

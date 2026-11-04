@@ -1119,20 +1119,20 @@
       } else if (data.state && data.state.next === 'check_in') {
         stateEl.innerHTML = `<button type="button" class="btn btn-primary att-btn" id="attNextBtn" onclick="requestAtt('check_in')"><span class="spinner"></span><span class="label" data-i18n="تسجيل حضور">تسجيل حضور</span></button><p class="hint-text" style="margin:8px 0 0;text-align:center">الطلب بيروح لمشرف فرعك في الروستر — وبعد الموافقة حضورك بيتسجّل رسمي</p>`;
       } else if (data.state && data.state.next === 'check_out') {
-        stateEl.innerHTML = `<button type="button" class="btn btn-primary att-btn" id="attNextBtn" onclick="requestAtt('check_out')"><span class="spinner"></span><span class="label" data-i18n="تسجيل انصراف">تسجيل انصراف</span></button><p class="hint-text" style="margin:8px 0 0;text-align:center">إنت مسجّل حضور — سجّل الانصراف قبل ما تسيب الشيفت، أو بعد الرجوع من الشيفت الليلي</p>`;
+        stateEl.innerHTML = `<button type="button" class="btn btn-primary att-btn" id="attNextBtn" onclick="requestAtt('check_out')"><span class="spinner"></span><span class="label" data-i18n="تسجيل انصراف">تسجيل انصراف</span></button><p class="hint-text" style="margin:8px 0 0;text-align:center">إنت مسجّل حضور — سجّل الانصراف لما تخلص، والمشرف هو اللي يوافق عليه</p>`;
       } else {
         stateEl.innerHTML = '';
       }
-      // شيفت المندوب الحالي — الحضور بيفتح قبل بدايته بربع ساعة والانصراف وقت نهايته
+      // شيفت المندوب الحالي — معلومة عرض بس: التسجيل متاح في أي وقت والقرار من المشرف
       if (data.enabled && data.shift && data.shift.text) {
         stateEl.insertAdjacentHTML('beforeend',
-          `<p class="hint-text" style="margin:10px 0 0;text-align:center">شيفتك: <b>${DAS.esc(data.shift.text)}</b> — الحضور يفتح قبل البداية بربع ساعة، والانصراف من وقت النهاية</p>`);
+          `<p class="hint-text" style="margin:10px 0 0;text-align:center">شيفتك: <b>${DAS.esc(data.shift.text)}</b> — تقدر تسجّل حضورك وانصرافك في أي وقت، والقرار بيبقى من مشرفك</p>`);
       }
 
       // سجل الطلبات
       const container = $('attReqList');
       if (!rows.length) {
-        container.innerHTML = `<div class="empty fade"><div class="eic">${DAS.icon('calendar', 'ico-lg')}</div><b>مفيش طلبات حضور لسه</b>سجّل حضورك أول ما تيجي الشيفت</div>`;
+        container.innerHTML = `<div class="empty fade"><div class="eic">${DAS.icon('calendar', 'ico-lg')}</div><b>مفيش طلبات حضور لسه</b>دوس تسجيل حضور أول ما توصل، والمشرف هو اللي بيأكد التسجيل</div>`;
         return;
       }
 

@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 /**
- * E2E: DAS × Bankai Roster — حضور/انصراف بنوافذ وقت الشيفت
+ * E2E: DAS × Bankai Roster — حضور/انصراف من غير نوافذ وقت
  *
- * بيغطي: الحضور بيفتح قبل الشيفت بربع ساعة، الانصراف بيتفتح وقت نهاية الشيفت،
- * الإجازة الأسبوعية، التكرار، عزل الفروع، الكود غير المربوط، والتسجيل الرسمي
- * باسم المشرف. شيفتات الموظفين بتتولد ديناميكيًا حول وقت تشغيل الاختبار.
+ * بيغطي: تسجيل الحضور والانصراف متاح في أي وقت (حتى قبل الشيفت/في غيابه/يوم
+ * الإجازة)، التسلسل المنطقي (مفيش انصراف من غير حضور معتمد + مفيش حضور تاني
+ * في نفس يوم الشيفت)، التكرار، عزل الفروع، الكود غير المربوط، والتسجيل الرسمي
+ * باسم المشرف في الروستر. المشرف/الأدمن هو اللي يوافق أو يرفض كل طلب.
  *
  * التشغيل (سيرفرين محليين — راجع تعليقات النهاية في git history):
  *   ROSTER_BASE / DAS_BASE افتراضيًا 8901 / 8902
@@ -71,21 +72,22 @@ async function main() {
   const s2 = (await req(ROSTER, '/api/login', { body: { password: 'sup-qcd2' } })).data;
   ok('Branch supervisors', s1?.role === 'supervisor:QCD 1' && s2?.role === 'supervisor:QCD 2');
 
-  /* 2) موظفين بشيفتات محسوبة حول وقت الاختبار */
+  /* 2) موظفين بشيفتات محسوبة حول وقت الاختبار — مفيش باب وقت تاني، الشيفات هنا بس
+     عشان نتأكد إن التسجيل شغال حتى بره نطاق الشيفت */
   const mk = (name, code, branch, shift, dayOff = 'Friday') => req(ROSTER, '/api/employees', { headers: rHdr, body: {
     name, employee_code: code, branch, shift, employment_type: 'FT', day_off: dayOff } });
 
-  const A1_SHIFT = shiftSpan(-30, 120);    // جوه الشيفت الآن، ونهايته بعد ساعتين
+  const A1_SHIFT = shiftSpan(-30, 120);    // جوه الشيفت الآن
   const B2_SHIFT = shiftSpan(-60, 120);
-  const C3_SHIFT = shiftSpan(180, 600);    // لسه مفتحش — اختبار منع الحضور المبكر
-  const D4_SHIFT = shiftSpan(-30, 1);      // هينتهي بعد دقيقة — لاختبار فتح الانصراف
+  const C3_SHIFT = shiftSpan(180, 600);    // لسه ما فتحش — التسجيل لازم يبقى متاح برضه
+  const D4_SHIFT = shiftSpan(-30, 120);    // نهايته بعيدة — الانصراف ينفع فورًا بعد موافقة الحضور
   const E5_SHIFT = shiftSpan(-30, 120);
   const TODAY_DOW = DAYS[nowCairo().dow];
 
   ok('Roster: employee A1 (QCD 1)', (await mk('مندوب A1', 'A1QCD1', 'QCD 1', A1_SHIFT)).status === 200);
   ok('Roster: employee B2 (QCD 2)', (await mk('مندوب B2', 'B2QCD2', 'QCD 2', B2_SHIFT)).status === 200);
-  ok('Roster: employee C3 (early gate)', (await mk('مندوب C3', 'C3QCD1', 'QCD 1', C3_SHIFT)).status === 200);
-  ok('Roster: employee D4 (checkout gate)', (await mk('مندوب D4', 'D4QCD1', 'QCD 1', D4_SHIFT)).status === 200);
+  ok('Roster: employee C3 (pre-shift check-in)', (await mk('مندوب C3', 'C3QCD1', 'QCD 1', C3_SHIFT)).status === 200);
+  ok('Roster: employee D4 (instant check-out)', (await mk('مندوب D4', 'D4QCD1', 'QCD 1', D4_SHIFT)).status === 200);
   ok('Roster: employee E5 (day off)', (await mk('مندوب E5', 'E5QCD1', 'QCD 1', E5_SHIFT, TODAY_DOW)).status === 200);
 
   /* 3) كورسيرز DAS (كود = مرجع الربط) */
@@ -97,32 +99,55 @@ async function main() {
   /* 4) حالة A1: شيفته ظاهر والحضور متاح */
   let st = (await req(DAS, '/api/courier/attendance/A1QCD1')).data;
   ok('A1 state enabled + shift shown', st.enabled === true && !!st.shift?.text && /[صم]/.test(st.shift.text), st.shift?.text);
-  ok('A1 next = check_in (window open)', st.state?.next === 'check_in');
+  ok('A1 next = check_in (available now)', st.state?.next === 'check_in');
 
   /* 5) انصراف قبل الحضور → مرفوض */
   let r = await req(DAS, '/api/courier/attendance/request', { body: { das_code: 'A1QCD1', action: 'check_out' } });
   ok('check-out refused without approved check-in', r.status === 409, r.data?.error);
 
-  /* 6) حضور قبل الشيفت بربع ساعة → مرفوض لسه */
+  /* 6) C3: شيفت لسه ما فتحش — الحضور متاح في أي وقت (مفيش باب وقت) */
   st = (await req(DAS, '/api/courier/attendance/C3QCD1')).data;
-  ok('C3 state blocked before shift window', st.state?.blocked === true && /يفتح/.test(st.state?.why || ''), st.state?.why);
+  ok('C3 state open before shift (no time gate)', st.state?.next === 'check_in', st.state?.why);
   r = await req(DAS, '/api/courier/attendance/request', { body: { das_code: 'C3QCD1', action: 'check_in' } });
-  ok('early check-in rejected', r.status === 409 && /يفتح/.test(r.data?.error || ''), r.data?.error);
+  ok('pre-shift check-in accepted as Pending', r.status === 200 && r.data?.request?.status === 'Pending', JSON.stringify(r.data?.request || r.data));
+  const c3req = (await req(ROSTER, '/api/das/requests/inbox', { headers: rHdr })).data.requests
+    .find(x => x.employee_code === 'C3QCD1' && x.status === 'Pending' && x.action === 'check_in');
+  ok('roster inbox shows C3 pending', !!c3req);
+  r = await req(ROSTER, `/api/das/requests/${c3req.id}/decide`, { headers: rHdr, body: { decision: 'approve' } });
+  ok('admin approved C3 pre-shift check-in', r.status === 200 && r.data.status === 'Approved');
 
-  /* 7) يوم الإجازة → ممنوع */
+  /* 7) E5: يوم الإجازة — التسجيل متاح والمشرف هو اللي يقرر (موافقة/رفض) */
   r = await req(DAS, '/api/courier/attendance/request', { body: { das_code: 'E5QCD1', action: 'check_in' } });
-  ok('day-off check-in rejected', r.status === 409 && /إجاز/.test(r.data?.error || ''), r.data?.error);
+  ok('day-off check-in accepted as Pending', r.status === 200 && r.data?.request?.status === 'Pending', r.data?.error);
+  const e5req = (await req(ROSTER, '/api/das/requests/inbox', { headers: rHdr })).data.requests
+    .find(x => x.employee_code === 'E5QCD1' && x.status === 'Pending' && x.action === 'check_in');
+  r = await req(ROSTER, `/api/das/requests/${e5req.id}/decide`, { headers: rHdr, body: { decision: 'approve' } });
+  ok('admin approved E5 day-off check-in', r.status === 200 && r.data.status === 'Approved');
 
-  /* 8) D4: حضور فورًا (شيفته هينتهي بعد دقيقة) → موافقة الأدمن */
+  /* 8) D4: حضور → موافقة → انصراف فورًا حتى لو الشيفت ما خلصش */
   r = await req(DAS, '/api/courier/attendance/request', { body: { das_code: 'D4QCD1', action: 'check_in', device_time: '00:00' } });
-  ok('D4 check-in pending (window open)', r.status === 200 && r.data?.request?.status === 'Pending', JSON.stringify(r.data?.request || r.data));
+  ok('D4 check-in pending', r.status === 200 && r.data?.request?.status === 'Pending', JSON.stringify(r.data?.request || r.data));
   const d4InId = r.data?.request?.id;
   const d4PendingNow = (await req(ROSTER, '/api/das/requests/inbox', { headers: rHdr })).data.requests
     .find(x => x.employee_code === 'D4QCD1' && x.status === 'Pending' && x.action === 'check_in');
   r = await req(ROSTER, `/api/das/requests/${d4PendingNow.id}/decide`, { headers: rHdr, body: { decision: 'approve' } });
   ok('admin approved D4 check-in', r.status === 200 && r.data.status === 'Approved');
+  const d4InSynced = await waitFor(async () => {
+    const s = (await req(DAS, '/api/courier/attendance/D4QCD1')).data;
+    return s.requests?.find(x => x.id === d4InId)?.status === 'Approved' ? s : null;
+  });
+  ok('DAS sees D4 check-in Approved', !!d4InSynced);
+  ok('D4 check-out available right after approval', d4InSynced?.state?.next === 'check_out', d4InSynced?.state?.why);
+  r = await req(DAS, '/api/courier/attendance/request', { body: { das_code: 'D4QCD1', action: 'check_out', device_time: '17:00' } });
+  ok('D4 check-out accepted before shift end', r.status === 200 && r.data?.request?.status === 'Pending', JSON.stringify(r.data?.request || r.data));
+  const d4OutId = r.data?.request?.id;
+  const d4Out = (await req(ROSTER, '/api/das/requests/inbox', { headers: rHdr })).data.requests
+    .find(x => x.employee_code === 'D4QCD1' && x.status === 'Pending' && x.action === 'check_out');
+  ok('roster inbox pending D4 check-out', !!d4Out);
+  r = await req(ROSTER, `/api/das/requests/${d4Out.id}/decide`, { headers: rHdr, body: { decision: 'approve' } });
+  ok('admin approved D4 check-out', r.status === 200);
 
-  /* 9) A1: حضور → Pending → دبل كليك → موافقات */
+  /* 9) A1: حضور → Pending → دبل كليك → صلاحيات الفروع */
   r = await req(DAS, '/api/courier/attendance/request', { body: { das_code: 'A1QCD1', action: 'check_in', device_time: '07:40' } });
   ok('A1 check-in created Pending', r.status === 200 && r.data?.request?.status === 'Pending', r.data?.request?.attendance_date);
   const a1InboxId = r.data?.request?.id;
@@ -139,31 +164,32 @@ async function main() {
   r = await req(ROSTER, `/api/das/requests/${a1req.id}/decide`, { headers: rHdr, body: { decision: 'approve' } });
   ok('admin approved check-in', r.status === 200 && r.data.status === 'Approved');
 
-  /* 10) مزامنة DAS + الانصراف لسه مقفول (نهاية الشيفت بعد ساعتين) */
+  /* 10) بعد موافقة الحضور: الانصراف متاح فورًا — مفيش نافذة وقت */
   st = await waitFor(async () => {
     const s = (await req(DAS, '/api/courier/attendance/A1QCD1')).data;
     return s.requests?.find(x => x.id === a1InboxId)?.status === 'Approved' ? s : null;
   });
   ok('DAS sees Approved after sync', !!st);
-  ok('A1 check-out locked until shift end', st?.state?.blocked === true && /الانصراف/.test(st?.state?.why || ''), st?.state?.why);
+  ok('A1 check-out open right after approval', st?.state?.next === 'check_out', st?.state?.why);
   r = await req(DAS, '/api/courier/attendance/request', { body: { das_code: 'A1QCD1', action: 'check_out' } });
-  ok('early check-out rejected', r.status === 409 && /الانصراف/.test(r.data?.error || ''), r.data?.error);
+  ok('A1 check-out created immediately', r.status === 200 && r.data?.request?.status === 'Pending', r.data?.error);
+  const a1OutId = r.data?.request?.id;
+  const a1Out = (await req(ROSTER, '/api/das/requests/inbox', { headers: rHdr })).data.requests
+    .find(x => x.employee_code === 'A1QCD1' && x.status === 'Pending' && x.action === 'check_out');
+  ok('roster inbox pending A1 check-out', !!a1Out);
+  r = await req(ROSTER, `/api/das/requests/${a1Out.id}/decide`, { headers: rHdr, body: { decision: 'approve' } });
+  ok('admin approved A1 check-out', r.status === 200 && r.data.status === 'Approved');
 
-  /* 11) D4: بعد ما وقته خلص ينفع انصراف */
-  const d4Ready = await waitFor(async () => {
-    const s = (await req(DAS, '/api/courier/attendance/D4QCD1')).data;
-    const done = s.requests?.find(x => x.id === d4InId)?.status === 'Approved';
-    return done && s.state?.next === 'check_out' ? s : null;
-  }, 24, 5000);
-  ok('D4 check-out opens at shift end', !!d4Ready, d4Ready?.state?.shift?.end);
-  r = await req(DAS, '/api/courier/attendance/request', { body: { das_code: 'D4QCD1', action: 'check_out', device_time: '17:00' } });
-  ok('D4 check-out created', r.status === 200, JSON.stringify(r.data?.request || r.data));
-  const d4OutId = r.data?.request?.id;
-  const d4Out = (await req(ROSTER, '/api/das/requests/inbox', { headers: rHdr })).data.requests
-    .find(x => x.employee_code === 'D4QCD1' && x.status === 'Pending' && x.action === 'check_out');
-  ok('roster inbox pending D4 check-out', !!d4Out);
-  r = await req(ROSTER, `/api/das/requests/${d4Out.id}/decide`, { headers: rHdr, body: { decision: 'approve' } });
-  ok('admin approved D4 check-out', r.status === 200);
+  /* 11) الدورة كاملة النهاردة → حضور تاني ممنوع (قاعدة يوم مش قاعدة وقت) */
+  const a1Done = await waitFor(async () => {
+    const s = (await req(DAS, '/api/courier/attendance/A1QCD1')).data;
+    return s.requests?.find(x => x.id === a1OutId)?.status === 'Approved' ? s : null;
+  });
+  ok('DAS sees A1 check-out Approved', !!a1Done);
+  st = (await req(DAS, '/api/courier/attendance/A1QCD1')).data;
+  ok('full cycle blocks same-day re check-in', st.state?.blocked === true && /النهاردة/.test(st.state?.why || ''), st.state?.why);
+  r = await req(DAS, '/api/courier/attendance/request', { body: { das_code: 'A1QCD1', action: 'check_in' } });
+  ok('same-day re check-in rejected', r.status === 409, r.data?.error);
   const d4Synced = await waitFor(async () => {
     const s = (await req(DAS, '/api/courier/attendance/D4QCD1')).data;
     return s.requests?.find(x => x.id === d4OutId)?.status === 'Approved' ? s : null;
