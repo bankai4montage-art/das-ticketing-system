@@ -1827,6 +1827,8 @@
     const openPicks = new Set(); // لوحات الأصوات المفتوحة — بنرجّعها بعد أي رندر جديد
     const prevVotesTotal = {};   // لتوتير "صوت جديد" لما حد يصوّت
     let detailsCardId = null;    // الكارت المفتوح في نافذة التفاصيل (null = مقفولة)
+    let detailsData = null;      // آخر بيانات جات من /details
+    const detailsFilters = { branch: '', type: '', shift: '' }; // فلاتر الفرع/الدوام/الشيفت
 
     async function fetchCards(force) {
       // ممنوع التجميد: لو الأدمن بيسحب كارت أو مودال الكارت مفتوح، بنقفل الجولة دي
@@ -1997,6 +1999,7 @@
     // ---------- نافذة التفاصيل: اسم كل مندوب + الفرع + Full/Part لكل إجابة ----------
     function closeCardDetails() {
       detailsCardId = null;
+      detailsData = null;
       closeModal('cardDetailsModal');
     }
 
@@ -2007,6 +2010,10 @@
     async function openCardDetails(id) {
       const c = allCards.find(x => x.id === id);
       detailsCardId = id;
+      detailsData = null;
+      detailsFilters.branch = '';
+      detailsFilters.type = '';
+      detailsFilters.shift = '';
       $('cardDetailsTitle').textContent = c ? c.title : DAS.t('تفاصيل الكارت');
       $('cardDetailsSub').textContent = '';
       $('cardDetailsBody').innerHTML = `<div class="cd-loading"><span class="spinner"></span> <span>${DAS.t('بيتحمّل...')}</span></div>`;
@@ -2023,6 +2030,13 @@
       return d.toLocaleString(rLocale(), { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
     }
 
+    // الشيفت جاي من الروستر كنص حر — بنعرّب القيم المعروفة وبنسيب أي قيمة تانية زي ما هي
+    const SHIFT_LABELS = { morning: 'صباحي', mid: 'ميد', evening: 'مسائي', night: 'ليلي' };
+    function shiftLabel(value) {
+      const key = SHIFT_LABELS[String(value || '').trim().toLowerCase()];
+      return key ? DAS.t(key) : String(value || '');
+    }
+
     function employmentBadge(v, rosterOk) {
       if (!rosterOk) return `<span class="badge" title="${DAS.t('الروستر مش مربوط')}">—</span>`;
       if (!v.in_roster) return `<span class="badge warn">${DAS.t('مش في الروستر')}</span>`;
@@ -2032,13 +2046,94 @@
     }
 
     function renderCardDetails(data) {
-      const options = Array.isArray(data.options) ? data.options : [];
-      const total = Number(data.total) || 0;
-      const roster = data.roster || {};
-      const when = detailsTimeLabel(data.generated_at);
-      $('cardDetailsTitle').textContent = (data.card && data.card.title) || DAS.t('تفاصيل الكارت');
-      $('cardDetailsSub').textContent =
-        `${total} ${total === 1 ? DAS.t('مندوب') : DAS.t('مناديب')} ${DAS.t('صوّتوا')} · ${options.length} ${DAS.t('إجابة')}` +
+      detailsData = data;
+      paintCardDetails();
+    }
+
+    function detailsFiltersActive() {
+      return !!(detailsFilters.branch || detailsFilters.type || detailsFilters.shift);
+    }
+
+    function setCardDetailsFilter(key, value) {
+      if (!(key in detailsFilters)) return;
+      detailsFilters[key] = String(value || '');
+      paintCardDetails();
+    }
+
+    function resetCardDetailsFilters() {
+      detailsFilters.branch = '';
+      detailsFilters.type = '';
+      detailsFilters.shift = '';
+      paintCardDetails();
+    }
+
+    // قيم الفلاتر بتتجمّع من أصوات الكارت نفسها — مفيش قيم ثابتة، الروستر حر
+    function cardDetailsFilterMeta() {
+      const branches = new Set();
+      const shifts = new Set();
+      (detailsData.options || []).forEach((o) => {
+        (o.voters || []).forEach((v) => {
+          if (!v.in_roster) return;
+          if (v.branch) branches.add(String(v.branch));
+          if (v.shift) shifts.add(String(v.shift));
+        });
+      });
+      const sortAr = (a, b) => a.localeCompare(b, 'ar');
+      return {
+        branches: [...branches].sort(sortAr),
+        shifts: [...shifts].sort(sortAr),
+        hasAnyShift: shifts.size > 0
+      };
+    }
+
+    function cardDetailsFiltered() {
+      const f = detailsFilters;
+      const match = (v) => {
+        if (f.branch && String(v.branch || '') !== f.branch) return false;
+        if (f.type && String(v.employment_type || '') !== f.type) return false;
+        if (f.shift === '__none') { if (v.shift) return false; }
+        else if (f.shift && String(v.shift || '') !== f.shift) return false;
+        return true;
+      };
+      const options = (detailsData.options || []).map((o) => {
+        const voters = (o.voters || []).filter(match);
+        return {
+          ...o,
+          voters,
+          count: voters.length,
+          full: voters.filter(v => v.employment_type === 'FT').length,
+          part: voters.filter(v => v.employment_type === 'PT').length,
+          percent: 0
+        };
+      });
+      const shown = options.reduce((n, o) => n + o.count, 0);
+      options.forEach((o) => { o.percent = shown ? Math.round(o.count * 100 / shown) : 0; });
+      return { options, shown };
+    }
+
+    function paintCardDetails() {
+      if (!detailsData) return;
+      const roster = detailsData.roster || {};
+      const total = Number(detailsData.total) || 0;
+      const allOptions = Array.isArray(detailsData.options) ? detailsData.options : [];
+      const when = detailsTimeLabel(detailsData.generated_at);
+      const meta = cardDetailsFilterMeta();
+      const activeNoShift = allOptions.some(o => (o.voters || []).some(v => v.in_roster && !v.shift));
+
+      // لو قيمة فلتر قديمة اختفت بعد Refresh (مندوب اتغيّر شيفته مثلًا) نرجّعها للكل
+      if (detailsFilters.branch && !meta.branches.includes(detailsFilters.branch)) detailsFilters.branch = '';
+      if (detailsFilters.type && !['FT', 'PT'].includes(detailsFilters.type)) detailsFilters.type = '';
+      if (detailsFilters.shift && detailsFilters.shift !== '__none' && !meta.shifts.includes(detailsFilters.shift)) detailsFilters.shift = '';
+      if (detailsFilters.shift === '__none' && !(meta.hasAnyShift && activeNoShift)) detailsFilters.shift = '';
+
+      const { options, shown } = cardDetailsFiltered();
+      const active = detailsFiltersActive();
+
+      $('cardDetailsTitle').textContent = (detailsData.card && detailsData.card.title) || DAS.t('تفاصيل الكارت');
+      const countText = active
+        ? `${DAS.t('معروض')} ${shown} ${DAS.t('من')} ${total}`
+        : `${total} ${total === 1 ? DAS.t('مندوب') : DAS.t('مناديب')} ${DAS.t('صوّتوا')}`;
+      $('cardDetailsSub').textContent = `${countText} · ${allOptions.length} ${DAS.t('إجابة')}` +
         (when ? ` · ${DAS.t('آخر تحديث')} ${when}` : '');
 
       let banner = '';
@@ -2056,12 +2151,48 @@
 
       const legend = roster.ok ? `<div class="cd-legend">${DAS.icon('users')}<span>${DAS.t('الفرع ونوع الدوام من الروستر — الأسماء دي بتتطابق بكود المندوب')}</span></div>` : '';
 
-      const optionsHTML = options.map((o, oi) => {
+      // شريط الفلاتر: الفرع + نوع الدوام + الشيفت (لو الروستر راجع بيانات)
+      let filtersHTML = '';
+      if (roster.ok && total) {
+        const sel = (a, b) => a === b ? ' selected' : '';
+        filtersHTML = `<div class="cd-filters">
+          ${meta.branches.length ? `<div class="cd-filter">
+            <label for="cdFilterBranch">${DAS.t('الفرع')}</label>
+            <select id="cdFilterBranch" class="input cd-select" onchange="setCardDetailsFilter('branch', this.value)">
+              <option value="">${DAS.t('كل الفروع')}</option>
+              ${meta.branches.map(b => `<option value="${DAS.esc(b)}"${sel(b, detailsFilters.branch)}>${DAS.esc(b)}</option>`).join('')}
+            </select>
+          </div>` : ''}
+          <div class="cd-filter">
+            <label for="cdFilterType">${DAS.t('نوع الدوام')}</label>
+            <select id="cdFilterType" class="input cd-select" onchange="setCardDetailsFilter('type', this.value)">
+              <option value="">${DAS.t('كل الأنواع')}</option>
+              <option value="FT"${sel('FT', detailsFilters.type)}>${DAS.t('كامل')} (FT)</option>
+              <option value="PT"${sel('PT', detailsFilters.type)}>${DAS.t('جزئي')} (PT)</option>
+            </select>
+          </div>
+          ${meta.hasAnyShift ? `<div class="cd-filter">
+            <label for="cdFilterShift">${DAS.t('الشيفت')}</label>
+            <select id="cdFilterShift" class="input cd-select" onchange="setCardDetailsFilter('shift', this.value)">
+              <option value="">${DAS.t('كل الشيفتات')}</option>
+              ${meta.shifts.map(s => `<option value="${DAS.esc(s)}"${sel(s, detailsFilters.shift)}>${DAS.esc(shiftLabel(s))}</option>`).join('')}
+              ${activeNoShift ? `<option value="__none"${sel('__none', detailsFilters.shift)}>${DAS.t('بدون شيفت')}</option>` : ''}
+            </select>
+          </div>` : ''}
+          ${active ? `<button type="button" class="btn btn-ghost btn-sm cd-filters-reset" onclick="resetCardDetailsFilters()">${DAS.icon('refresh')} ${DAS.t('مسح الفلاتر')}</button>` : ''}
+        </div>`;
+      }
+
+      const visibleOptions = active ? options.filter(o => o.count > 0) : options;
+      const optionsHTML = visibleOptions.map((o, oi) => {
         const voters = Array.isArray(o.voters) ? o.voters : [];
-        const pct = total ? Math.round((Number(o.count) || 0) * 100 / total) : 0;
+        const pct = Number(o.percent) || 0;
         const unknownN = voters.filter(v => !v.in_roster).length;
-        const rows = voters.map((v, vi) => `
-          <div class="cd-vrow">
+        const rows = voters.map((v, vi) => {
+          const shiftBadge = (roster.ok && meta.hasAnyShift && v.in_roster)
+            ? `<span class="badge" title="${DAS.t('الشيفت')}">${DAS.icon('clock')} ${DAS.esc(v.shift ? shiftLabel(v.shift) : DAS.t('بدون شيفت'))}</span>`
+            : '';
+          return `<div class="cd-vrow">
             <span class="cd-num mono">${vi + 1}</span>
             <div class="cd-person">
               <b class="cd-name" data-copy-name="${DAS.esc(v.name)}" data-copy-code="${DAS.esc(v.das_code)}" dir="auto" title="${DAS.t('اضغط على الاسم عشان تنسخه')}">${DAS.esc(v.name)}</b>
@@ -2069,14 +2200,15 @@
             </div>
             <div class="cd-tags">
               ${roster.ok
-                ? `<span class="badge" title="${DAS.t('الفرع')}">${DAS.icon('building')} ${DAS.esc(v.branch || '—')}</span>${employmentBadge(v, true)}`
+                ? `<span class="badge" title="${DAS.t('الفرع')}">${DAS.icon('building')} ${DAS.esc(v.branch || '—')}</span>${shiftBadge}${employmentBadge(v, true)}`
                 : `<span class="badge" title="${DAS.t('الفرع ونوع الدوام مش متاحين')}">${DAS.t('غير متاح')}</span>`}
             </div>
-          </div>`).join('');
+          </div>`;
+        }).join('');
 
         return `<section class="cd-opt">
           <div class="cd-opt-head">
-            <div class="cd-opt-title"><span class="cd-opt-num mono">${oi + 1}</span> <b dir="auto">${DAS.esc(o.label)}</b></div>
+            <div class="cd-opt-title"><span class="cd-opt-num mono">${(o.index != null ? Number(o.index) : oi) + 1}</span> <b dir="auto">${DAS.esc(o.label)}</b></div>
             <div class="cd-opt-stats">
               ${roster.ok ? `<span class="badge ok">${DAS.t('كامل')} ${Number(o.full) || 0}</span><span class="badge info">${DAS.t('جزئي')} ${Number(o.part) || 0}</span>` : ''}
               ${roster.ok && unknownN ? `<span class="badge warn">${DAS.t('مش في الروستر')} ${unknownN}</span>` : ''}
@@ -2084,15 +2216,20 @@
             </div>
           </div>
           <div class="por-bar"><span class="por-fill" style="width:${pct}%"></span></div>
-          ${rows ? `<div class="cd-voters">${rows}</div>` : `<div class="cd-empty">${DAS.t('لسه محدش اختار الإجابة دي')}</div>`}
+          ${rows ? `<div class="cd-voters">${rows}</div>` : `<div class="cd-empty">${DAS.t('مفيش نتائج مطابقة')}</div>`}
         </section>`;
       }).join('');
 
-      $('cardDetailsBody').innerHTML = `
-        ${banner}
-        ${legend}
-        ${total ? optionsHTML : `<div class="empty fade"><div class="eic">${DAS.icon('users', 'ico-lg')}</div><b>${DAS.t('لسه مفيش أصوات')}</b>${DAS.t('لما المناديب يصوّتوا هتشوف كل اسم بفرعه ونوع دوامه هنا')}</div>`}
-      `;
+      let content;
+      if (!total) {
+        content = `<div class="empty fade"><div class="eic">${DAS.icon('users', 'ico-lg')}</div><b>${DAS.t('لسه مفيش أصوات')}</b>${DAS.t('لما المناديب يصوّتوا هتشوف كل اسم بفرعه ونوع دوامه هنا')}</div>`;
+      } else if (active && !shown) {
+        content = `<div class="empty fade"><div class="eic">${DAS.icon('search', 'ico-lg')}</div><b>${DAS.t('مفيش مناديب مطابقين للفلاتر')}</b><button type="button" class="btn btn-ghost btn-sm" onclick="resetCardDetailsFilters()">${DAS.icon('refresh')} ${DAS.t('مسح الفلاتر')}</button></div>`;
+      } else {
+        content = optionsHTML;
+      }
+
+      $('cardDetailsBody').innerHTML = `${banner}${legend}${filtersHTML}${content}`;
     }
 
     async function loadCardDetails(id) {
