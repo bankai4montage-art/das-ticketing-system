@@ -544,6 +544,25 @@
     </div>
   </div>
 
+  <!-- ============ نافذة تفاصيل كارت (الأصوات + الفرع + نوع الدوام) ============ -->
+  <div id="cardDetailsModal" class="modal-back" onclick="if(event.target===this)closeCardDetails()">
+    <div class="modal cd-modal">
+      <div class="form-head">
+        <div class="cd-head-text">
+          <h3 id="cardDetailsTitle" dir="auto">تفاصيل الكارت</h3>
+          <div id="cardDetailsSub" class="cd-sub"></div>
+        </div>
+        <div class="cd-head-actions">
+          <button type="button" class="btn btn-ghost btn-sm" id="cardDetailsRefresh" onclick="refreshCardDetails()" title="تحديث">
+            <i data-ico="refresh"></i> <span data-i18n="تحديث">تحديث</span>
+          </button>
+          <button type="button" class="btn btn-ghost btn-icon" onclick="closeCardDetails()" aria-label="إغلاق"><i data-ico="close"></i></button>
+        </div>
+      </div>
+      <div id="cardDetailsBody" class="cd-body"></div>
+    </div>
+  </div>
+
   <!-- ============ نافذة محادثة الشكوى ============ -->
   <div id="ticketChatModal" class="modal-back" onclick="if(event.target===this)closeTicketChat()">
     <div class="modal" style="max-width:620px;display:flex;flex-direction:column">
@@ -1465,6 +1484,7 @@
 
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
+        if ($('cardDetailsModal').classList.contains('open')) { closeCardDetails(); return; }
         if ($('courierEditModal').classList.contains('open')) { closeCourierEdit(); return; }
         if ($('courierModal').classList.contains('open')) toggleCourierModal();
         if ($('advanceModal').classList.contains('open')) toggleAdvanceModal();
@@ -1806,6 +1826,7 @@
     let cardsSig = null;
     const openPicks = new Set(); // لوحات الأصوات المفتوحة — بنرجّعها بعد أي رندر جديد
     const prevVotesTotal = {};   // لتوتير "صوت جديد" لما حد يصوّت
+    let detailsCardId = null;    // الكارت المفتوح في نافذة التفاصيل (null = مقفولة)
 
     async function fetchCards(force) {
       // ممنوع التجميد: لو الأدمن بيسحب كارت أو مودال الكارت مفتوح، بنقفل الجولة دي
@@ -1973,13 +1994,132 @@
         ${t.total ? `<div class="por-hint">${DAS.icon('copy')}<span>${DAS.t('اضغط على أي اسم عشان تنسخه')}</span><span class="por-hint-k">(<kbd data-i18n-raw>Shift</kbd> + <span>${DAS.t('دوس = الكود')}</span>)</span></div>` : ''}`;
     }
 
+    // ---------- نافذة التفاصيل: اسم كل مندوب + الفرع + Full/Part لكل إجابة ----------
+    function closeCardDetails() {
+      detailsCardId = null;
+      closeModal('cardDetailsModal');
+    }
+
+    function refreshCardDetails() {
+      if (detailsCardId) loadCardDetails(detailsCardId);
+    }
+
+    async function openCardDetails(id) {
+      const c = allCards.find(x => x.id === id);
+      detailsCardId = id;
+      $('cardDetailsTitle').textContent = c ? c.title : DAS.t('تفاصيل الكارت');
+      $('cardDetailsSub').textContent = '';
+      $('cardDetailsBody').innerHTML = `<div class="cd-loading"><span class="spinner"></span> <span>${DAS.t('بيتحمّل...')}</span></div>`;
+      const modal = $('cardDetailsModal');
+      modal.classList.remove('closing');
+      if (!modal.classList.contains('open')) toggleModal('cardDetailsModal');
+      await loadCardDetails(id);
+    }
+
+    function detailsTimeLabel(iso) {
+      if (!iso) return '';
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return '';
+      return d.toLocaleString(rLocale(), { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    }
+
+    function employmentBadge(v, rosterOk) {
+      if (!rosterOk) return `<span class="badge" title="${DAS.t('الروستر مش مربوط')}">—</span>`;
+      if (!v.in_roster) return `<span class="badge warn">${DAS.t('مش في الروستر')}</span>`;
+      if (v.employment_type === 'FT') return `<span class="badge ok">${DAS.t('كامل')} <span class="mono">FT</span></span>`;
+      if (v.employment_type === 'PT') return `<span class="badge info">${DAS.t('جزئي')} <span class="mono">PT</span></span>`;
+      return `<span class="badge warn">${DAS.t('غير محدد')}</span>`;
+    }
+
+    function renderCardDetails(data) {
+      const options = Array.isArray(data.options) ? data.options : [];
+      const total = Number(data.total) || 0;
+      const roster = data.roster || {};
+      const when = detailsTimeLabel(data.generated_at);
+      $('cardDetailsTitle').textContent = (data.card && data.card.title) || DAS.t('تفاصيل الكارت');
+      $('cardDetailsSub').textContent =
+        `${total} ${total === 1 ? DAS.t('مندوب') : DAS.t('مناديب')} ${DAS.t('صوّتوا')} · ${options.length} ${DAS.t('إجابة')}` +
+        (when ? ` · ${DAS.t('آخر تحديث')} ${when}` : '');
+
+      let banner = '';
+      if (!roster.configured) {
+        banner = `<div class="cd-banner warn">${DAS.icon('alert')}<div>
+          <b>${DAS.t('الفرع ونوع الدوام مش متاحين')}</b>
+          <span>${DAS.t('الروستر مش مربوط — اربط الروستر عشان تشوف فرع كل مندوب وهل دوامه كامل ولا جزئي')}</span>
+        </div></div>`;
+      } else if (!roster.ok) {
+        banner = `<div class="cd-banner bad">${DAS.icon('alert')}<div>
+          <b>${DAS.t('تعذر جلب بيانات الروستر')}</b>
+          <span>${DAS.esc(roster.error || DAS.t('الفرع ونوع الدوام مش متاحين دلوقتي — جرّب تحديث تاني'))}</span>
+        </div></div>`;
+      }
+
+      const legend = roster.ok ? `<div class="cd-legend">${DAS.icon('users')}<span>${DAS.t('الفرع ونوع الدوام من الروستر — الأسماء دي بتتطابق بكود المندوب')}</span></div>` : '';
+
+      const optionsHTML = options.map((o, oi) => {
+        const voters = Array.isArray(o.voters) ? o.voters : [];
+        const pct = total ? Math.round((Number(o.count) || 0) * 100 / total) : 0;
+        const unknownN = voters.filter(v => !v.in_roster).length;
+        const rows = voters.map((v, vi) => `
+          <div class="cd-vrow">
+            <span class="cd-num mono">${vi + 1}</span>
+            <div class="cd-person">
+              <b class="cd-name" data-copy-name="${DAS.esc(v.name)}" data-copy-code="${DAS.esc(v.das_code)}" dir="auto" title="${DAS.t('اضغط على الاسم عشان تنسخه')}">${DAS.esc(v.name)}</b>
+              <span class="mono cd-code">${DAS.esc(v.das_code)}</span>
+            </div>
+            <div class="cd-tags">
+              ${roster.ok
+                ? `<span class="badge" title="${DAS.t('الفرع')}">${DAS.icon('building')} ${DAS.esc(v.branch || '—')}</span>${employmentBadge(v, true)}`
+                : `<span class="badge" title="${DAS.t('الفرع ونوع الدوام مش متاحين')}">${DAS.t('غير متاح')}</span>`}
+            </div>
+          </div>`).join('');
+
+        return `<section class="cd-opt">
+          <div class="cd-opt-head">
+            <div class="cd-opt-title"><span class="cd-opt-num mono">${oi + 1}</span> <b dir="auto">${DAS.esc(o.label)}</b></div>
+            <div class="cd-opt-stats">
+              ${roster.ok ? `<span class="badge ok">${DAS.t('كامل')} ${Number(o.full) || 0}</span><span class="badge info">${DAS.t('جزئي')} ${Number(o.part) || 0}</span>` : ''}
+              ${roster.ok && unknownN ? `<span class="badge warn">${DAS.t('مش في الروستر')} ${unknownN}</span>` : ''}
+              <span class="badge info"><span class="mono">${Number(o.count) || 0}</span> · ${pct}%</span>
+            </div>
+          </div>
+          <div class="por-bar"><span class="por-fill" style="width:${pct}%"></span></div>
+          ${rows ? `<div class="cd-voters">${rows}</div>` : `<div class="cd-empty">${DAS.t('لسه محدش اختار الإجابة دي')}</div>`}
+        </section>`;
+      }).join('');
+
+      $('cardDetailsBody').innerHTML = `
+        ${banner}
+        ${legend}
+        ${total ? optionsHTML : `<div class="empty fade"><div class="eic">${DAS.icon('users', 'ico-lg')}</div><b>${DAS.t('لسه مفيش أصوات')}</b>${DAS.t('لما المناديب يصوّتوا هتشوف كل اسم بفرعه ونوع دوامه هنا')}</div>`}
+      `;
+    }
+
+    async function loadCardDetails(id) {
+      const body = $('cardDetailsBody');
+      const refreshBtn = $('cardDetailsRefresh');
+      if (refreshBtn) refreshBtn.disabled = true;
+      try {
+        const res = await adminFetch('/api/admin/cards/' + id + '/details');
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || DAS.t('فشل جلب تفاصيل الكارت'));
+        if (detailsCardId !== id) return;
+        renderCardDetails(data);
+      } catch (e) {
+        if (detailsCardId !== id) return;
+        body.innerHTML = `<div class="empty fade"><div class="eic">${DAS.icon('alert', 'ico-lg')}</div><b>${DAS.esc(e.message || DAS.t('فشل جلب تفاصيل الكارت'))}</b></div>`;
+      } finally {
+        if (refreshBtn) refreshBtn.disabled = false;
+      }
+    }
+
     // ---- نسخ اسم المندوب بالضغط على شريحته ----
     // التفويض على document لأن لوحة الأصوات بتترندر من جديد كل ما الداتا تتغير،
     // فأي مستمع مت 직접 على العنصر هيتوه مع أول رندر.
     document.addEventListener('click', async (e) => {
       const el = e.target;
       if (!el || !el.closest) return;
-      const pill = el.closest('.who-pill[data-copy-name]');
+      const pill = el.closest('[data-copy-name]');
       if (!pill) return;
       const name = pill.dataset.copyName || '';
       const code = pill.dataset.copyCode || '';
@@ -2006,6 +2146,7 @@
             ${cardChoiceLabels(c).length ? `
               <div class="picks-line">
                 <button class="btn btn-ghost btn-sm" onclick="toggleCardPicks(${c.id})">🗳️ ${DAS.t('الأصوات')} <span class="mono">${(c.picks || {}).total || 0}</span></button>
+                <button class="btn btn-ghost btn-sm" onclick="openCardDetails(${c.id})">${DAS.icon('list')} ${DAS.t('تفاصيل')}</button>
               </div>
               <div id="cardPicks${c.id}" class="card-picks"></div>` : ''}
             <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">

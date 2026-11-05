@@ -1650,11 +1650,18 @@ function cardPayload(b) {
   return { title, body, btnText, btnUrl, audience, audienceValue, startDate, endDate, choicesText };
 }
 
+// خيارات الكارت المخزنة كنص JSON — بترجع [] لو الكارت مش تفاعلي أو النص بايظ
+function cardChoices(card) {
+  try {
+    const p = JSON.parse((card && card.choices) || '[]');
+    return Array.isArray(p) ? p.map(c => String(c == null ? '' : c)) : [];
+  } catch (e) { return []; }
+}
+
 // تجميع أصوات كارت على اختياراته — عشان الأدمن يشوف مين اختار إيه
 // الأصوات اليتيمة (اختيار اتشال من الكارت) مبتتحسبش — وبتتنضف من القاعدة عند الحفظ
 function tallyPicks(card, picks) {
-  const choices = [];
-  try { const p = JSON.parse(card.choices || '[]'); if (Array.isArray(p)) choices.push(...p); } catch (e) {}
+  const choices = cardChoices(card);
   const per = picks.filter(k => k.card_id === card.id && Number(k.choice) < choices.length);
   return {
     total: per.length,
@@ -1698,6 +1705,103 @@ app.get('/api/admin/cards', (req, res) => {
       res.json({ cards });
     });
   });
+});
+
+// 19-ب-1. تفاصيل كارت واحد: كل إجابة ومين اختارها — بالفرع ونوع الدوام (Full/Part)
+// الفرع ونوع الدوام بييجوا من الروستر (زي شروط ظهور الكارت بالظبط). لو الروستر
+// مش مربوط أو وقع، بترجع الأسماء عادي مع flag إن بيانات الروستر مش متاحة.
+function promiseWithTimeout(promise, ms) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('timeout')), ms);
+    Promise.resolve(promise).then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (err) => { clearTimeout(timer); reject(err); }
+    );
+  });
+}
+
+app.get('/api/admin/cards/:id/details', async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'كارت غير صحيح' });
+
+  try {
+    const card = await new Promise((resolve, reject) => {
+      db.get("SELECT * FROM cards WHERE id = ?", [id], (err, row) => err ? reject(err) : resolve(row));
+    });
+    if (!card) return res.status(404).json({ error: 'الكارت غير موجود' });
+
+    const picks = await new Promise((resolve, reject) => {
+      db.all(
+        "SELECT das_code, courier_name, choice, updated_at FROM card_picks WHERE card_id = ?",
+        [id],
+        (err, rows) => err ? reject(err) : resolve(rows || [])
+      );
+    });
+
+    const labels = cardChoices(card);
+    const valid = picks.filter((p) => {
+      const ch = Number(p.choice);
+      return Number.isInteger(ch) && ch >= 0 && ch < labels.length;
+    });
+
+    const total = valid.length;
+
+    // بيانات الروستر: كود المندوب = employee_code، زي باقي النظام
+    // مش بننده الروستر لو مفيش أصوات — مفيش داعي نستنى الشبكة على كارت فاضي
+    const roster = { configured: rosterConfigured(), ok: false, error: '' };
+    const empByCode = new Map();
+    if (roster.configured && total) {
+      try {
+        const emps = await promiseWithTimeout(rosterEmployees(), 8000);
+        (emps || []).forEach((e) => {
+          const code = String((e && e.employee_code) || '').trim().toUpperCase();
+          if (code) empByCode.set(code, e);
+        });
+        roster.ok = true;
+      } catch (e) {
+        roster.error = e && e.message === 'timeout' ? 'الروستر اتأخر في الرد' : 'تعذر الاتصال بالروستر';
+      }
+    }
+    const options = labels.map((label, index) => {
+      const mine = valid.filter((p) => Number(p.choice) === index);
+      const voters = mine.map((p) => {
+        const code = String(p.das_code || '').trim().toUpperCase();
+        const emp = empByCode.get(code) || null;
+        let type = emp ? String(emp.employment_type || '').trim().toUpperCase() : '';
+        if (type === 'FULL' || type === 'FULL_TIME' || type === 'FULLTIME') type = 'FT';
+        if (type === 'PART' || type === 'PART_TIME' || type === 'PARTTIME') type = 'PT';
+        return {
+          das_code: code,
+          name: String(p.courier_name || '').trim() || String((emp && emp.name) || code).trim(),
+          branch: emp ? String(emp.branch || '').trim() : '',
+          employment_type: type,
+          shift: emp ? String(emp.shift || '').trim() : '',
+          in_roster: !!emp,
+          at: p.updated_at || ''
+        };
+      }).sort((a, b) => a.name.localeCompare(b.name, 'ar'));
+
+      return {
+        index,
+        label,
+        count: voters.length,
+        percent: total ? Math.round(voters.length * 100 / total) : 0,
+        full: voters.filter(v => v.employment_type === 'FT').length,
+        part: voters.filter(v => v.employment_type === 'PT').length,
+        voters
+      };
+    });
+
+    res.json({
+      card: { id: card.id, title: card.title, active: !!card.active, choices: labels, created_at: card.created_at },
+      total,
+      roster,
+      options,
+      generated_at: new Date().toISOString()
+    });
+  } catch (e) {
+    res.status(500).json({ error: 'فشل جلب تفاصيل الكارت' });
+  }
 });
 
 // 19-ب-2. حفظ ترتيب الكروت بعد السحب والإفلات — بنستلم كل الـ IDs بالترتيب الجديد
