@@ -206,19 +206,6 @@ db.serialize(() => {
   `);
   db.run("INSERT OR IGNORE INTO app_release (id) VALUES (1)");
 
-  // متابعة مين سجّل دخول على تطبيق المندوب: صف واحد لكل كود (آخر دخول) + الفرع.
-  // الدخول بيتسجل من تطبيق Bankai Smart نفسه (أو من جلسة محفوظة) مش من ضغطة تحميل.
-  db.run(`
-    CREATE TABLE IF NOT EXISTS app_logins (
-      das_code TEXT PRIMARY KEY,
-      branch TEXT DEFAULT '',
-      source TEXT DEFAULT 'app',
-      first_login_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      last_login_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-  db.run('CREATE INDEX IF NOT EXISTS idx_app_logins_branch ON app_logins(branch)');
-
   // أصوات المناديب على الخيارات التفاعلية — صوت واحد لكل مندوب لكل كارت (وبيقدر يغيره)
   db.run(`
     CREATE TABLE IF NOT EXISTS card_picks (
@@ -564,54 +551,6 @@ async function notifyCardTargets(card) {
 // بنمرّر الملف من السيرفر بدل التحويل، عشان Service Worker تطبيق الطابور
 // مايقدرش يعترض اللينك ويرجّع صفحة HTML بدل ملف التطبيق.
 const APP_APK_URL = process.env.APP_APK_URL || 'https://bankai-smart-queue-api-production.up.railway.app/app';
-const APP_LOGIN_SECRET = process.env.APP_LOGIN_SECRET || '';
-
-// تسجيل دخول التطبيق: تطبيق Bankai Smart بيبلّغنا بالكود بعد نجاح الدخول
-// (أو أول فتح بجلسة محفوظة). بنعرف الفرع من الروستر وقت الحدث ونحتفظ بيه.
-async function appLoginBranch(code) {
-  if (!rosterConfigured()) return '';
-  try {
-    const emps = await promiseWithTimeout(rosterEmployees(), 5000);
-    const emp = (emps || []).find((e) => String((e && e.employee_code) || '').trim().toUpperCase() === code);
-    return emp ? String(emp.branch || '').trim() : '';
-  } catch (e) {
-    return '';
-  }
-}
-
-async function recordAppLogin(code, branch, source) {
-  const clean = String(code || '').trim().toUpperCase();
-  if (!clean) return false;
-  const courier = await new Promise((resolve, reject) => {
-    db.get("SELECT das_code FROM couriers WHERE UPPER(das_code) = ?", [clean], (err, row) => err ? reject(err) : resolve(row));
-  });
-  if (!courier) return false;
-
-  let finalBranch = String(branch || '').trim().slice(0, 20);
-  if (!finalBranch) finalBranch = await appLoginBranch(clean);
-  if (!finalBranch) {
-    const prev = await new Promise((resolve) => {
-      db.get("SELECT branch FROM app_logins WHERE das_code = ?", [clean], (err, row) => resolve(err ? null : row));
-    });
-    finalBranch = String((prev && prev.branch) || '').trim();
-  }
-
-  await new Promise((resolve, reject) => {
-    db.run(
-      `INSERT INTO app_logins (das_code, branch, source)
-       VALUES (?, ?, ?)
-       ON CONFLICT(das_code) DO UPDATE SET
-         last_login_at = CURRENT_TIMESTAMP,
-         source = excluded.source,
-         branch = CASE WHEN excluded.branch <> '' THEN excluded.branch ELSE app_logins.branch END`,
-      [clean, finalBranch, String(source || 'app').slice(0, 24)],
-      (err) => err ? reject(err) : resolve()
-    );
-  });
-  BUS.publish('app-logins', { das_code: clean, branch: finalBranch });
-  return true;
-}
-
 app.get('/app', async (req, res) => {
   try {
     const controller = new AbortController();
@@ -736,24 +675,6 @@ app.get('/api/courier/app-release/:das_code', async (req, res) => {
   } catch (e) {
     res.status(500).json({ error: 'خطأ في السيرفر' });
   }
-});
-
-// تسجيل دخول المندوب على تطبيق Bankai Smart — بيتنادى من سيرفر التطبيق بعد نجاح الدخول
-// أو أول فتح بجلسة محفوظة. المفتاح اختياري؛ لو APP_LOGIN_SECRET متظبط لازم يتطابق.
-app.post('/api/das/app-login', (req, res) => {
-  if (APP_LOGIN_SECRET && !safeEq(String(req.headers['x-app-secret'] || ''), APP_LOGIN_SECRET)) {
-    return res.status(403).json({ error: 'غير مصرح' });
-  }
-  if (rateLimited(req, 'das-app-login', 300, 60e3)) return res.status(429).json({ error: 'محاولات كتير — استنى شوية' });
-  const code = String((req.body || {}).das_code || '').trim().toUpperCase();
-  const branch = String((req.body || {}).branch || '').trim().slice(0, 20);
-  if (!code) return res.status(400).json({ error: 'كود المندوب مطلوب' });
-  recordAppLogin(code, branch, 'app')
-    .then((ok) => {
-      if (!ok) return res.status(404).json({ error: 'كود المندوب غير مسجل' });
-      res.json({ success: true });
-    })
-    .catch(() => res.status(500).json({ error: 'خطأ في السيرفر' }));
 });
 
 app.get('/api/courier/tickets/:das_code', (req, res) => {
@@ -1773,103 +1694,6 @@ app.put('/api/admin/app-release', (req, res) => {
       BUS.publish('app-release', { reason: 'update' });
     }
   );
-});
-
-// 20-ب. متابعة دخول التطبيق: مين سجّل دخول على Bankai Smart من كل فرع ومين لسه.
-// الداتا بتيجي من app_logins (بيتسجل من التطبيق نفسه)، والفرع الحالي من الروستر،
-// ولو الروستر مش متاح بنرجع لآخر فرع محفوظ وقت الدخول.
-app.get('/api/admin/app-logins', async (req, res) => {
-  try {
-    const couriers = await new Promise((resolve, reject) => {
-      db.all("SELECT das_code, name, phone FROM couriers", [], (err, rows) => err ? reject(err) : resolve(rows || []));
-    });
-    const downloads = await new Promise((resolve, reject) => {
-      db.all("SELECT * FROM app_logins", [], (err, rows) => err ? reject(err) : resolve(rows || []));
-    });
-
-    const roster = { configured: rosterConfigured(), ok: false, error: '' };
-    let employees = [];
-    if (roster.configured) {
-      try {
-        employees = await promiseWithTimeout(rosterEmployees(), 8000);
-        roster.ok = true;
-      } catch (e) {
-        roster.error = e && e.message === 'timeout' ? 'الروستر اتأخر في الرد' : 'تعذر الاتصال بالروستر';
-      }
-    }
-
-    const empByCode = new Map();
-    (employees || []).forEach((e) => {
-      const code = String((e && e.employee_code) || '').trim().toUpperCase();
-      if (code) empByCode.set(code, e);
-    });
-    const dlByCode = new Map();
-    (downloads || []).forEach((d) => {
-      const code = String((d && d.das_code) || '').trim().toUpperCase();
-      if (code) dlByCode.set(code, d);
-    });
-
-    const branchStats = new Map();
-    ['QCD 1', 'QCD 2'].forEach((b) => branchStats.set(b, { branch: b, total: 0, logged_in: 0, pending: 0, percent: 0 }));
-    const ensureBranch = (branch) => {
-      if (!branchStats.has(branch)) branchStats.set(branch, { branch, total: 0, logged_in: 0, pending: 0, percent: 0 });
-      return branchStats.get(branch);
-    };
-
-    const rows = [];
-    for (const c of couriers) {
-      const code = String((c && c.das_code) || '').trim().toUpperCase();
-      if (!code) continue;
-      const emp = empByCode.get(code) || null;
-      const dl = dlByCode.get(code) || null;
-      // الموظف المتوقف من الروستر واللي مادخلش التطبيق مش بنحسبه من اللي لسه؛
-      // لو دخل قبل كده بيفضل ظاهر في قائمة اللي دخلوا.
-      if (emp && emp.active === false && !dl) continue;
-
-      const branch = String((emp && emp.branch) || (dl && dl.branch) || '').trim();
-      let type = emp ? String(emp.employment_type || '').trim().toUpperCase() : '';
-      if (type === 'FULL' || type === 'FULL_TIME' || type === 'FULLTIME') type = 'FT';
-      if (type === 'PART' || type === 'PART_TIME' || type === 'PARTTIME') type = 'PT';
-      const loggedIn = !!dl;
-      const st = ensureBranch(branch);
-      st.total += 1;
-      if (loggedIn) st.logged_in += 1; else st.pending += 1;
-
-      rows.push({
-        das_code: code,
-        name: String((emp && emp.name) || (c && c.name) || code).trim(),
-        phone: String((c && c.phone) || '').trim(),
-        branch,
-        employment_type: type,
-        shift: emp ? String(emp.shift || '').trim() : '',
-        active: emp ? emp.active !== false : true,
-        in_roster: !!emp,
-        logged_in: loggedIn,
-        last_login_at: loggedIn ? String(dl.last_login_at || '') : '',
-        first_login_at: loggedIn ? String(dl.first_login_at || '') : '',
-        source: loggedIn ? String(dl.source || '') : ''
-      });
-    }
-
-    branchStats.forEach((s) => { s.percent = s.total ? Math.round(s.logged_in * 100 / s.total) : 0; });
-    const branches = Array.from(branchStats.values()).sort((a, b) => {
-      const rank = (x) => x === 'QCD 1' ? 0 : x === 'QCD 2' ? 1 : 2;
-      return rank(a.branch) - rank(b.branch);
-    });
-    const totals = branches.reduce((acc, s) => {
-      acc.total += s.total; acc.logged_in += s.logged_in; acc.pending += s.pending; return acc;
-    }, { total: 0, logged_in: 0, pending: 0, percent: 0 });
-    totals.percent = totals.total ? Math.round(totals.logged_in * 100 / totals.total) : 0;
-
-    rows.sort((a, b) => {
-      const x = a.branch || 'zzz', y = b.branch || 'zzz';
-      return x.localeCompare(y, 'ar') || a.name.localeCompare(b.name, 'ar');
-    });
-
-    res.json({ branches, rows, totals, roster, generated_at: new Date().toISOString() });
-  } catch (e) {
-    res.status(500).json({ error: 'فشل تحميل متابعة التطبيق' });
-  }
 });
 
 app.get('/api/admin/cards', (req, res) => {

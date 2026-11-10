@@ -104,7 +104,7 @@
         </button>
         <div class="kpi rate" style="--i:5" title="متوسط تقييمات المناديب للحلول">
           <div class="top"><span data-i18n="رضا التيم">رضا التيم</span><div class="ki"><i data-ico="star"></i></div></div>
-          <b id="statRate">لا يوجد</b>
+          <b id="statRate">—</b>
         </div>
       </section>
 
@@ -170,7 +170,7 @@
         <section class="glass adv-head rise">
           <div>
             <b>طلبات السلف</b>
-            <div class="adv-summary" id="advSummary">لا يوجد</div>
+            <div class="adv-summary" id="advSummary">—</div>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
             <div class="chips" data-branch-target="advances">
@@ -290,55 +290,6 @@
           </div>
 
           <p id="appMsg" class="err-text" style="min-height:18px"></p>
-        </section>
-
-        <section class="glass app-track rise" id="appTracking">
-          <div class="app-track-head">
-            <div>
-              <b data-i18n="متابعة دخول التطبيق">متابعة دخول التطبيق</b>
-              <div class="adv-summary" id="appTrackSummary">—</div>
-              <div class="app-track-hint">بيتسجل الدخول لما المندوب يفتح تطبيق Bankai Smart ويسجّل دخول بكوده، أو يفتح جلسة محفوظة.</div>
-            </div>
-            <button class="btn btn-ghost btn-sm" id="appTrackRefresh" onclick="loadAppTracking(true)">
-              <span class="spinner"></span><i data-ico="refresh"></i><span data-i18n="تحديث">تحديث</span>
-            </button>
-          </div>
-
-          <div class="app-branch-grid" id="appBranchStats"></div>
-
-          <div class="app-track-toolbar">
-            <div class="chips" id="appTrackStatus">
-              <button class="chip active" data-app-status="all" aria-pressed="true"><span data-i18n="الكل">الكل</span> <span id="appCountAll">0</span></button>
-              <button class="chip" data-app-status="loggedin" aria-pressed="false"><span data-i18n="دخلوا التطبيق">دخلوا التطبيق</span> <span id="appCountLoggedIn">0</span></button>
-              <button class="chip" data-app-status="pending" aria-pressed="false"><span data-i18n="لسه">لسه</span> <span id="appCountPending">0</span></button>
-            </div>
-            <div class="search">
-              <input type="text" id="appTrackSearch" class="input" placeholder="ابحث بالاسم أو الكود..." data-i18n-placeholder="ابحث بالاسم أو الكود..." aria-label="بحث في المناديب" data-i18n-aria="بحث في المناديب" autocomplete="off">
-              <i data-ico="search"></i>
-            </div>
-          </div>
-
-          <div class="app-track-note hidden" id="appTrackRosterNote"></div>
-
-          <div class="table-wrap app-track-table" id="appTrackTable">
-            <table class="tbl">
-              <thead>
-                <tr>
-                  <th data-i18n="المندوب">المندوب</th>
-                  <th data-i18n="الكود">الكود</th>
-                  <th data-i18n="الفرع">الفرع</th>
-                  <th data-i18n="الحالة">الحالة</th>
-                  <th data-i18n="آخر دخول">آخر دخول</th>
-                </tr>
-              </thead>
-              <tbody id="appTrackRows"></tbody>
-            </table>
-          </div>
-          <div id="appTrackEmpty" class="empty hidden">
-            <div class="eic"><i data-ico="users"></i></div>
-            <b data-i18n="مفيش مناديب في العرض الحالي">مفيش مناديب في العرض الحالي</b>
-            <span data-i18n="غيّر الفلتر أو ابحث بكود تاني.">غيّر الفلتر أو ابحث بكود تاني.</span>
-          </div>
         </section>
       </div>
 
@@ -550,7 +501,7 @@
         <div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px;justify-content:space-between">
             <span style="font-size:12px;font-weight:700;color:var(--text-3)" data-i18n="خيارات تفاعلية (اختياري)">خيارات تفاعلية (اختياري)</span>
-            <button type="button" class="btn btn-ghost btn-sm card-chip" onclick="addCardChoiceRow()" id="addChoiceBtn"><i data-ico="plus"></i> <span data-i18n="زود اختيار">زود اختيار</span></button>
+            <button type="button" class="btn btn-ghost btn-sm card-chip" onclick="addCardChoiceRow()" id="addChoiceBtn">➕ <span data-i18n="زود اختيار">زود اختيار</span></button>
           </div>
           <div style="display:grid;gap:8px" id="cardChoicesWrap"></div>
           <div class="hint" style="margin-top:6px" data-i18n="لو حطيت اختيارات — الكارت بيبقى قابل للتصويت: كل مندوب يدوس على اختياره وانت تشوف مين اختار إيه في واجهة الكارت">لو حطيت اختيارات — الكارت بيبقى قابل للتصويت: كل مندوب يدوس على اختياره وانت تشوف مين اختار إيه في واجهة الكارت</div>
@@ -869,7 +820,7 @@
       DAS.countUp($('statOffice'), off);
       DAS.countUp($('statResolved'), ok);
       const rated = allTickets.filter(t => t.rating != null);
-      $('statRate').textContent = rated.length ? (rated.reduce((s, t) => s + t.rating, 0) / rated.length).toFixed(1) + '★' : 'لا يوجد';
+      $('statRate').textContent = rated.length ? (rated.reduce((s, t) => s + t.rating, 0) / rated.length).toFixed(1) + '★' : '—';
       const pct = (v) => total ? (v / total * 100) : 0;
       $('dBarOk').style.width = pct(ok) + '%';
       $('dBarBad').style.width = pct(off) + '%';
@@ -2557,7 +2508,6 @@
 
     // ================= تطبيق المندوب (زر التحميل) =================
     let releaseLoaded = false;
-    const appTrack = { data: null, branch: 'all', status: 'all', q: '', loading: false };
 
     function renderAppAudience() {
       const value = $('appAudience').value;
@@ -2599,12 +2549,7 @@
       const on = $('appEnabled').checked;
       const sel = $('appAudience');
       const label = sel && sel.selectedOptions[0] ? sel.selectedOptions[0].textContent : '';
-      let text = on ? ((DAS.lang === 'en' ? 'Visible — ' : 'ظاهر — ') + label) : (DAS.lang === 'en' ? 'Hidden' : 'مخفي');
-      const t = appTrack.data && appTrack.data.totals;
-      if (t && t.total) {
-        text += ` · ${t.logged_in}/${t.total} ${DAS.lang === 'en' ? 'signed in' : 'دخلوا'}`;
-      }
-      $('appSummary').textContent = text;
+      $('appSummary').textContent = on ? ('ظاهر — ' + label) : 'مخفي';
     }
 
     async function loadAppRelease(force) {
@@ -2667,143 +2612,6 @@
       }
     }
 
-    // ---------- متابعة مين سجّل دخول على التطبيق ----------
-    function appTrackBranchMatch(row) {
-      if (appTrack.branch === 'all') return true;
-      if (appTrack.branch === '__unknown') return !row.branch;
-      return row.branch === appTrack.branch;
-    }
-
-    function renderAppTracking() {
-      const data = appTrack.data;
-      if (!data) return;
-      const en = DAS.lang === 'en';
-      const t = data.totals || { total: 0, logged_in: 0, pending: 0, percent: 0 };
-      const branchList = (data.branches || []).filter((b) => b.total > 0 || b.branch === 'QCD 1' || b.branch === 'QCD 2');
-      const visibleBranches = data.roster && data.roster.ok ? branchList : branchList.filter((b) => b.total > 0);
-      const cards = [{ branch: 'all', total: t.total, logged_in: t.logged_in, pending: t.pending, percent: t.percent }].concat(visibleBranches);
-      const keys = cards.map((b) => b.branch === 'all' ? 'all' : (b.branch || '__unknown'));
-      if (!keys.includes(appTrack.branch)) appTrack.branch = 'all';
-
-      $('appTrackSummary').textContent = t.total
-        ? (en
-            ? `${t.logged_in} of ${t.total} ${t.total === 1 ? 'courier' : 'couriers'} signed in (${t.percent}%) · ${t.pending} not yet`
-            : `دخلوا التطبيق ${t.logged_in} من ${t.total} ${t.total === 1 ? 'مندوب' : 'مناديب'} (${t.percent}%) · لسه ${t.pending}`)
-        : (en ? 'No couriers registered yet' : 'لسه مفيش مناديب مسجلين');
-
-      const note = $('appTrackRosterNote');
-      if (data.roster && !data.roster.configured) {
-        note.classList.remove('hidden');
-        note.textContent = en
-          ? 'Roster is not connected. Branch totals will show as “Unassigned” until you connect it from the roster sync tab.'
-          : 'الروستر مش مربوط — الأفرع هتظهر «غير محدد». اربط الروستر من تاب مزامنة الروستر عشان التوزيع يبقى دقيق.';
-      } else if (data.roster && !data.roster.ok) {
-        note.classList.remove('hidden');
-        note.textContent = en
-          ? 'Could not fetch branches from the roster. Showing the last saved branch from the download record.'
-          : 'تعذر جلب الأفرع من الروستر — بنعرض آخر فرع محفوظ مع تحميل كل مندوب.';
-      } else {
-        note.classList.add('hidden');
-      }
-
-      $('appBranchStats').innerHTML = cards.map((b) => {
-        const isAll = b.branch === 'all';
-        const label = isAll ? (en ? 'All branches' : 'كل الفروع') : (b.branch || (en ? 'Unassigned' : 'غير محدد'));
-        const val = isAll ? 'all' : (b.branch || '__unknown');
-        const active = (appTrack.branch === val) ? ' active' : '';
-        return `<button type="button" class="app-branch-card${active}" data-app-branch="${DAS.esc(val)}" aria-pressed="${appTrack.branch === val}">
-          <div class="abc-top"><span>${DAS.esc(label)}</span><b>${b.logged_in}<small>/${b.total}</small></b></div>
-          <div class="abc-track"><i style="width:${b.percent || 0}%"></i></div>
-          <div class="abc-foot"><span>${b.percent || 0}%</span><span>${b.pending || 0} ${en ? 'left' : 'لسه'}</span></div>
-        </button>`;
-      }).join('');
-
-      const base = (data.rows || []).filter((r) => appTrackBranchMatch(r) && (
-        !appTrack.q ||
-        String(r.name || '').toLowerCase().includes(appTrack.q) ||
-        String(r.das_code || '').toLowerCase().includes(appTrack.q) ||
-        String(r.phone || '').toLowerCase().includes(appTrack.q)
-      ));
-      const counts = {
-        all: base.length,
-        loggedin: base.filter((r) => r.logged_in).length,
-        pending: base.filter((r) => !r.logged_in).length
-      };
-      $('appCountAll').textContent = counts.all;
-      $('appCountLoggedIn').textContent = counts.loggedin;
-      $('appCountPending').textContent = counts.pending;
-      document.querySelectorAll('#appTrackStatus [data-app-status]').forEach((chip) => {
-        const active = chip.dataset.appStatus === appTrack.status;
-        chip.classList.toggle('active', active);
-        chip.setAttribute('aria-pressed', String(active));
-      });
-
-      const rows = appTrack.status === 'all' ? base : base.filter((r) => appTrack.status === 'loggedin' ? r.logged_in : !r.logged_in);
-      $('appTrackRows').innerHTML = rows.map((r) => {
-        const sub = [r.employment_type, r.shift].filter(Boolean).join(' · ');
-        const badge = r.logged_in
-          ? `<span class="badge ok"><i class="dot"></i>${en ? 'Signed in' : 'دخل'}</span>`
-          : `<span class="badge warn"><i class="dot"></i>${en ? 'Not yet' : 'لسه'}</span>`;
-        return `<tr data-app-code="${DAS.esc(r.das_code)}" class="${r.logged_in ? '' : 'is-pending'}">
-          <td class="app-who-cell" data-label="${en ? 'Courier' : 'المندوب'}"><div class="app-who"><b>${DAS.esc(r.name)}</b>${sub ? `<small>${DAS.esc(sub)}</small>` : ''}</div></td>
-          <td class="app-code-cell mono" data-label="${en ? 'Code' : 'الكود'}" dir="ltr">${DAS.esc(r.das_code)}</td>
-          <td class="app-branch-cell" data-label="${en ? 'Branch' : 'الفرع'}">${r.branch ? DAS.esc(r.branch) : `<span style="color:var(--text-3)">${en ? 'Unassigned' : 'غير محدد'}</span>`}</td>
-          <td class="app-status-cell" data-label="${en ? 'Status' : 'الحالة'}">${badge}</td>
-          <td class="app-date-cell" data-label="${en ? 'Last sign-in' : 'آخر دخول'}"><span class="app-date-label">${en ? 'Last sign-in' : 'آخر دخول'}:</span> ${r.logged_in ? DAS.esc(DAS.fmtDateTime(r.last_login_at)) : '—'}</td>
-        </tr>`;
-      }).join('');
-
-      const empty = rows.length === 0;
-      $('appTrackEmpty').classList.toggle('hidden', !empty);
-      $('appTrackTable').classList.toggle('hidden', empty);
-      updateAppSummary();
-    }
-
-    async function loadAppTracking(force) {
-      if (appTrack.loading) return;
-      if (appTrack.data && !force) { renderAppTracking(); return; }
-      appTrack.loading = true;
-      if (!$('appTrackSummary')) { appTrack.loading = false; return; }
-      $('appTrackSummary').textContent = 'جارٍ التحميل…';
-      const btn = $('appTrackRefresh');
-      if (btn) DAS.busy(btn, true);
-      try {
-        const res = await adminFetch('/api/admin/app-logins');
-        const d = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          $('appTrackSummary').textContent = d.error || 'تعذر تحميل بيانات التطبيق';
-          return;
-        }
-        appTrack.data = d;
-        renderAppTracking();
-      } catch (e) {
-        $('appTrackSummary').textContent = 'تعذر الاتصال بالسيرفر';
-      } finally {
-        appTrack.loading = false;
-        if (btn) DAS.busy(btn, false);
-      }
-    }
-
-    $('appTrackStatus').addEventListener('click', (e) => {
-      const chip = e.target.closest('[data-app-status]');
-      if (!chip) return;
-      appTrack.status = chip.dataset.appStatus;
-      renderAppTracking();
-    });
-    $('appBranchStats').addEventListener('click', (e) => {
-      const card = e.target.closest('[data-app-branch]');
-      if (!card) return;
-      appTrack.branch = card.dataset.appBranch || '__unknown';
-      renderAppTracking();
-    });
-    $('appTrackSearch').addEventListener('input', () => {
-      appTrack.q = String($('appTrackSearch').value || '').trim().toLowerCase();
-      renderAppTracking();
-    });
-    document.addEventListener('das:lang', () => {
-      if (appTrack.data) renderAppTracking();
-    });
-
     function switchView(v) {
       const adv = v === 'advances', cards = v === 'cards', sync = v === 'sync', pay = v === 'payroll', app = v === 'app';
       const show = app ? $('appView') : (pay ? $('payrollView') : (sync ? $('syncView') : (cards ? $('cardsView') : (adv ? $('advancesView') : $('ticketsView')))));
@@ -2821,7 +2629,7 @@
       $('tabSync').classList.toggle('active', sync);
       $('tabPayroll').classList.toggle('active', pay);
       $('tabApp').classList.toggle('active', app);
-      if (app) { loadAppRelease(true); loadAppTracking(true); }
+      if (app) loadAppRelease(true);
       else if (adv) fetchAdvances(true);
       else if (cards) fetchCards(true);
       else if (sync) loadSync();
