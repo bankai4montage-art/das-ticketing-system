@@ -2241,8 +2241,8 @@ app.get('/api/courier/attendance/:das_code', async (req, res) => {
   db.all("SELECT * FROM att_requests WHERE das_code = ? ORDER BY id DESC LIMIT 15", [code], async (err, rows) => {
     if (err) return res.status(500).json({ error: 'خطأ في جلب طلبات الحضور' });
     rows = rows || [];
-    // شيفت الموظف (من كاش الروستر) بيتعرض للمندوب كمعلومة بس — صار مفيش نافذة
-    // وقت على تسجيل الحضور أو الانصراف، وكل طلب بيتقرر من المشرف.
+    // شيفت الموظف (من كاش الروستر) بيتعرض للمندوب كمعلومة بس — التسجيل فوري
+    // من غير موافقة مشرف، والوقت والقواعد من الروستر.
     let emp = null;
     if (dasEnabled()) {
       try {
@@ -2257,9 +2257,8 @@ app.get('/api/courier/attendance/:das_code', async (req, res) => {
 });
 
 // الحالة المحسوبة للسجل: إيه اللي ينفع يتسجّل دلوقتي بناءً على الطلبات المسجّلة.
-// مفيش أي نافذة وقت على تسجيل الحضور أو الانصراف: المندوب يدوس "تحضير/انصراف"
-// في أي وقت، والطلب بيتحوّل Pending ومشرف الفرع (أو الأدمن) في لوحة الروستر
-// هو اللي يوافق أو يرفض بنفسه.
+// التسجيل فوري من غير موافقة: الحضور بيسمح بالانصراف، وبعد دورة كاملة مفيش
+// حضور تاني في نفس يوم الشيفت. صفوف Pending القديمة بس هي اللي لسه بتمنع.
 function attendanceState(rows, emp) {
   const plan = emp ? shiftPlan(emp) : null;
   const shiftInfo = plan ? { text: plan.shift, start: plan.start, end: plan.end, day_off: (emp && emp.day_off) || '' } : null;
@@ -2267,25 +2266,23 @@ function attendanceState(rows, emp) {
   const pend = rows.find(r => r.status === 'Pending');
   if (pend) {
     return { next: null, blocked: true, shift: shiftInfo,
-      why: pend.action === 'check_in' ? 'في طلب حضور مستني موافقة المشرف' : 'في طلب انصراف مستني موافقة المشرف' };
+      why: pend.action === 'check_in' ? 'طلب حضور قديم لسه بيتزامن — جرّب تحديث الصفحة' : 'طلب انصراف قديم لسه بيتزامن — جرّب تحديث الصفحة' };
   }
 
   const lastIn = rows.find(r => r.action === 'check_in' && r.status === 'Approved');
   const outAfter = lastIn ? rows.find(r => r.action === 'check_out' && r.id > lastIn.id && r.status === 'Approved') : null;
 
   if (!lastIn) {
-    // مفيش حضور معتمد: تسجيل الحضور متاح في أي وقت (حتى حديد الشيفت/الإجازة) —
-    // اللي بيحدد الموقف النهائي هو قرار المشرف على الطلب.
+    // مفيش حضور: تسجيل الحضور متاح في أي وقت — الروستر هو اللي بيحدد التأخير والغرامة.
     return { next: 'check_in', blocked: false, why: '', shift: shiftInfo };
   }
 
   if (!outAfter) {
-    // حضور معتمد مالوش انصراف بعده: تسجيل الانصراف متاح في أي وقت
+    // حضور مسجّل مالوش انصراف بعده: تسجيل الانصراف متاح في أي وقت.
     return { next: 'check_out', blocked: false, why: '', shift: shiftInfo };
   }
 
-  // الدورة كاملة (حضور + انصراف معتمدين): حضور تاني ممنوع في نفس يوم الشيفت —
-  // الروستر نفسه بيرفض حضور تاني لنفس اليوم (409)، فبنمنعه هنا برسالة واضحة.
+  // الدورة كاملة (حضور + انصراف): حضور تاني ممنوع في نفس يوم الشيفت.
   if (lastIn.attendance_date === cairoToday()) {
     return { next: null, blocked: true, shift: shiftInfo,
       why: 'حضورك وانصرافك اتسجلوا رسميًا — مش هينفع حضور تاني النهاردة' };
@@ -2352,7 +2349,7 @@ async function rosterDasFetch(path, opts = {}) {
   return res;
 }
 
-// 24. تسجيل حضور أو انصراف من المندوب — بيتحوّل لطلب Pending في الروستر
+// 24. تسجيل حضور أو انصراف من المندوب — الروستر بيسجّله فورًا (من غير موافقة).
 // والكود بيتسحب من الداتابيز (مش من الجسم)، والوقت هنا هو وقت استلام السيرفر.
 // وقت الجهاز اللي بيبعته متصفح المندوب للعرض فقط — مش بيتسجّل كتوقيت رسمي لي أي حاجة.
 app.post('/api/courier/attendance/request', async (req, res) => {
@@ -2389,8 +2386,8 @@ app.post('/api/courier/attendance/request', async (req, res) => {
       if (st.blocked) return res.status(409).json({ error: st.why });
       if (st.next && st.next !== action) {
         return res.status(409).json({ error: action === 'check_in'
-          ? 'حضورك مسجّل ومعتمد بالفعل — سجّل الانصراف'
-          : 'مفيش حضور معتمد لتسجيل انصراف بعده — سجّل حضور الأول' });
+          ? 'حضورك مسجّل بالفعل — سجّل الانصراف'
+          : 'مفيش حضور مسجل لتسجيل انصراف بعده — سجّل حضور الأول' });
       }
 
       try {
@@ -2404,18 +2401,35 @@ app.post('/api/courier/attendance/request', async (req, res) => {
           return res.status(r.status === 404 ? 409 : r.status === 409 ? 409 : 502).json({ error: msg });
         }
         const day = data.attendance_date || cairoToday();
+        const status = data.status || 'Approved';
+        const note = data.message || (status === 'Approved'
+          ? (action === 'check_in' ? 'تم تسجيل حضورك تلقائيًا' : 'تم تسجيل انصرافك تلقائيًا')
+          : '');
         db.run(
-          `INSERT INTO att_requests (das_code, courier_name, roster_req_id, attendance_date, action, status, requested_at, device_time)
-           VALUES (?, ?, ?, ?, ?, 'Pending', ?, ?)`,
-          [cleanCode, courier.name, data.id, day, action, receivedAt, deviceTime],
+          `INSERT INTO att_requests
+             (das_code, courier_name, roster_req_id, attendance_date, action, status,
+              requested_at, device_time, roster_decided_at, decision_note)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [cleanCode, courier.name, data.id, day, action, status, receivedAt, deviceTime,
+            status === 'Approved' ? (data.decided_at || receivedAt) : '', note],
           function (err3) {
             if (err3) {
-              // تكرار متزامن (دبل-كليك): مطلوب موجود Pending بالفعل
-              if (err3 && err3.code === 'SQLITE_CONSTRAINT') return res.status(409).json({ error: 'نفس الطلب مسجّل بالفعل ومستني موافقة' });
+              // تكرار متزامن (دبل-كليك): مطلوب موجود بالفعل
+              if (err3 && err3.code === 'SQLITE_CONSTRAINT') return res.status(409).json({ error: 'نفس الطلب مسجّل بالفعل' });
               return res.status(500).json({ error: 'فشل تسجيل طلب الحضور' });
             }
-            const attStateLocal = { next: null, blocked: true };
-            res.json({ success: true, request: { id: this.lastID, action, status: 'Pending', attendance_date: day, requested_at: receivedAt }, state: attStateLocal });
+            res.json({
+              success: true,
+              message: note,
+              request: {
+                id: this.lastID, action, status, attendance_date: day,
+                requested_at: receivedAt,
+                worked_minutes: data.worked_minutes || 0,
+                early: !!data.early,
+                early_minutes: data.early_minutes || 0
+              },
+              state: { next: status === 'Approved' ? (action === 'check_in' ? 'check_out' : null) : null, blocked: false }
+            });
             BUS.publish('attendance', { das_code: cleanCode, id: this.lastID, reason: 'new' });
           }
         );

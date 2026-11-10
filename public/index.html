@@ -1069,11 +1069,11 @@
     }
 
     // ================= الحضور والانصراف (روستر Rawahel) =================
-    // الطلب بيتسجّل Pending وبيروح لمشرف الفرع في الروستر. بعد الموافقة الحضور
-    // بيتسجّل رسمي هناك، والحالة هتتحدّث هنا تلقائي.
+    // التسجيل فوري: الحضور والانصراف بيتسجلوا في الروستر على طول من غير موافقة
+    // مشرف. الانصراف قبل نهاية الشيفت بيبعت تنبيه للمشرف.
     const ATT_STATUS = {
       Pending:  { cls: 'warn', label: 'قيد المراجعة' },
-      Approved: { cls: 'ok',   label: 'معتمد' },
+      Approved: { cls: 'ok',   label: 'مسجل' },
       Rejected: { cls: 'bad',  label: 'مرفوض' }
     };
     const attSt = (s) => ATT_STATUS[s] || ATT_STATUS.Pending;
@@ -1117,22 +1117,22 @@
       } else if (data.state && data.state.blocked) {
         stateEl.innerHTML = `<div class="att-pend">${DAS.icon('clock')}<span data-i18n-raw>${DAS.esc(data.state.why)}</span></div>`;
       } else if (data.state && data.state.next === 'check_in') {
-        stateEl.innerHTML = `<button type="button" class="btn btn-primary att-btn" id="attNextBtn" onclick="requestAtt('check_in')"><span class="spinner"></span><span class="label" data-i18n="تسجيل حضور">تسجيل حضور</span></button><p class="hint-text" style="margin:8px 0 0;text-align:center">الطلب بيروح لمشرف فرعك في الروستر — وبعد الموافقة حضورك بيتسجّل رسمي</p>`;
+        stateEl.innerHTML = `<button type="button" class="btn btn-primary att-btn" id="attNextBtn" onclick="requestAtt('check_in')"><span class="spinner"></span><span class="label" data-i18n="تسجيل حضور">تسجيل حضور</span></button><p class="hint-text" style="margin:8px 0 0;text-align:center">هيتسجل فورًا في الروستر — وتقدر تسجّل انصرافك في أي وقت</p>`;
       } else if (data.state && data.state.next === 'check_out') {
-        stateEl.innerHTML = `<button type="button" class="btn btn-primary att-btn" id="attNextBtn" onclick="requestAtt('check_out')"><span class="spinner"></span><span class="label" data-i18n="تسجيل انصراف">تسجيل انصراف</span></button><p class="hint-text" style="margin:8px 0 0;text-align:center">إنت مسجّل حضور — سجّل الانصراف لما تخلص، والمشرف هو اللي يوافق عليه</p>`;
+        stateEl.innerHTML = `<button type="button" class="btn btn-primary att-btn" id="attNextBtn" onclick="requestAtt('check_out')"><span class="spinner"></span><span class="label" data-i18n="تسجيل انصراف">تسجيل انصراف</span></button><p class="hint-text" style="margin:8px 0 0;text-align:center">إنت مسجّل حضور — سجّل انصرافك لما تخلص، وهيتسجل فورًا. لو قبل نهاية الشيفت هيوصل تنبيه للمشرف</p>`;
       } else {
         stateEl.innerHTML = '';
       }
-      // شيفت المندوب الحالي — معلومة عرض بس: التسجيل متاح في أي وقت والقرار من المشرف
+      // شيفت المندوب الحالي — التسجيل فوري ومتاح في أي وقت
       if (data.enabled && data.shift && data.shift.text) {
         stateEl.insertAdjacentHTML('beforeend',
-          `<p class="hint-text" style="margin:10px 0 0;text-align:center">شيفتك: <b>${DAS.esc(data.shift.text)}</b> — تقدر تسجّل حضورك وانصرافك في أي وقت، والقرار بيبقى من مشرفك</p>`);
+          `<p class="hint-text" style="margin:10px 0 0;text-align:center">شيفتك: <b>${DAS.esc(data.shift.text)}</b> — التسجيل فوري ومتاح في أي وقت</p>`);
       }
 
       // سجل الطلبات
       const container = $('attReqList');
       if (!rows.length) {
-        container.innerHTML = `<div class="empty fade"><div class="eic">${DAS.icon('calendar', 'ico-lg')}</div><b>مفيش طلبات حضور لسه</b>دوس تسجيل حضور أول ما توصل، والمشرف هو اللي بيأكد التسجيل</div>`;
+        container.innerHTML = `<div class="empty fade"><div class="eic">${DAS.icon('calendar', 'ico-lg')}</div><b>مفيش تسجيلات حضور لسه</b>دوس تسجيل حضور أول ما توصل — التسجيل بيتم فورًا</div>`;
         return;
       }
 
@@ -1151,7 +1151,7 @@
           <div class="meta">يوم الشيفت: ${DAS.esc(r.attendance_date)}</div>
           ${r.status !== 'Pending' && r.decision_note ? `
             <div class="reply">
-              <strong>${DAS.icon('msg')} رد المشرف</strong>
+              <strong>${DAS.icon('msg')} تفاصيل التسجيل</strong>
               <span data-i18n-raw>${DAS.esc(r.decision_note)}</span>
             </div>` : ''}
           <div class="ticket-foot">
@@ -1177,7 +1177,13 @@
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || 'فشل تسجيل الطلب — حاول تاني');
-        DAS.toast('طلبك مزال للمشرف في الروستر — هتتابع النتيجة هنا');
+        const req = data.request || {};
+        if (req.status === 'Approved') {
+          if (window.DAS && DAS.confetti) DAS.confetti();
+          DAS.toast(data.message || (action === 'check_in' ? 'تم تسجيل حضورك ✅' : 'تم تسجيل انصرافك ✅'));
+        } else {
+          DAS.toast(data.message || 'تم تسجيل الطلب — هتتابع الحالة هنا');
+        }
         attSig = null;
         await loadMyAttendance(true);
       } catch (e) {
