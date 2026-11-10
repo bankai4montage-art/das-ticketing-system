@@ -968,7 +968,10 @@
               <div class="chat-list" id="chatList-${t.id}">
                 <div class="chat-empty">افتح الشكوى لمتابعة المحادثة</div>
               </div>
+              <div class="chat-attach-preview hidden" id="chatPreview-${t.id}"></div>
               <form class="chat-form" data-chat-form="${t.id}" onsubmit="sendChat(event, ${t.id})">
+                <input type="file" accept="image/*" class="chat-file" id="chatFile-${t.id}" onchange="stageChatImage(event, ${t.id})">
+                <button type="button" class="btn btn-ghost btn-icon chat-attach" onclick="pickChatImage(${t.id})" aria-label="إرفاق صورة">${DAS.icon('upload')}</button>
                 <input type="text" class="input chat-input" id="chatInput-${t.id}" maxlength="1000" placeholder="اكتب رسالتك للإدارة..." dir="auto" autocomplete="off">
                 <button type="submit" class="btn btn-primary btn-sm chat-send"><span class="spinner"></span>إرسال</button>
               </form>
@@ -1001,9 +1004,12 @@
 
     function chatBubble(m) {
       const mine = m.sender === 'courier';
+      const image = m.has_image
+        ? `<img class="chat-img" loading="lazy" alt="مرفق" src="/api/attachments/${m.id}?das_code=${encodeURIComponent(currentCourier.das_code)}">`
+        : '';
       return `
         <div class="chat-msg ${mine ? 'me' : 'admin'}">
-          <div class="chat-bubble" dir="auto">${DAS.esc(m.body)}</div>
+          <div class="chat-bubble" dir="auto">${DAS.esc(m.body)}${image}</div>
           <time>${mine ? 'أنت' : 'الإدارة'} · ${DAS.fmtDateTime(m.created_at)}</time>
         </div>`;
     }
@@ -1044,22 +1050,58 @@
       } catch (e) { /* الشبكة قطعت */ }
     }
 
+    const chatImageDrafts = {};
+
+    function pickChatImage(id) {
+      const input = $('chatFile-' + id);
+      if (input) input.click();
+    }
+
+    function stageChatImage(ev, id) {
+      const file = ev.target.files && ev.target.files[0];
+      if (!file) return;
+      if (!file.type.startsWith('image/')) { DAS.toast('اختار صورة', 'err'); return; }
+      DAS.readImageFile(file, (dataUrl) => {
+        chatImageDrafts[id] = dataUrl;
+        const box = $('chatPreview-' + id);
+        if (box) {
+          box.innerHTML = `<img src="${dataUrl}" alt="معاينة"><button type="button" onclick="clearChatImage(${id})" aria-label="إزالة">×</button>`;
+          box.classList.remove('hidden');
+        }
+      });
+    }
+
+    function clearChatImage(id) {
+      delete chatImageDrafts[id];
+      const box = $('chatPreview-' + id);
+      if (box) { box.innerHTML = ''; box.classList.add('hidden'); }
+      const input = $('chatFile-' + id);
+      if (input) input.value = '';
+    }
+
     async function sendChat(ev, id) {
       ev.preventDefault();
       if (!currentCourier) return;
       const input = $('chatInput-' + id);
       const btn = ev.target.querySelector('.chat-send');
       const body = (input && input.value || '').trim();
-      if (!body) { DAS.toast('اكتب رسالتك الأول', 'err'); return; }
+      const image = chatImageDrafts[id] || '';
+      if (!body && !image) { DAS.toast('اكتب رسالتك أو ارفق صورة', 'err'); return; }
       DAS.busy(btn, true);
       try {
         const res = await fetch(`/api/courier/tickets/${id}/messages`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ das_code: currentCourier.das_code, body })
+          body: JSON.stringify({
+            das_code: currentCourier.das_code,
+            body,
+            image,
+            image_mime: 'image/jpeg'
+          })
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || 'فشل إرسال الرسالة');
         input.value = '';
+        clearChatImage(id);
         await loadChat(id, true);
       } catch (e) {
         DAS.toast(e.message, 'err');

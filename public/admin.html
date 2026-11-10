@@ -576,7 +576,12 @@
       </div>
       <div id="ticketChatMeta" class="hint" style="margin:0 0 10px"></div>
       <div id="adminChatList" class="chat-list" style="max-height:46vh;min-height:120px"></div>
+      <div id="adminChatPreview" class="chat-attach-preview hidden"></div>
       <form id="adminChatForm" onsubmit="sendAdminChat(event)" style="display:flex;gap:8px;margin-top:10px">
+        <input type="file" id="adminChatFile" accept="image/*" class="chat-file" onchange="stageAdminChatImage(event)">
+        <button type="button" class="btn btn-ghost btn-icon" onclick="$('adminChatFile').click()" aria-label="إرفاق صورة">
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5M12 3v12"/></svg>
+        </button>
         <input type="text" id="adminChatInput" class="input" maxlength="1000" placeholder="اكتب ردك للمندوب..." dir="auto" autocomplete="off">
         <button type="submit" class="btn btn-primary" id="adminChatSend"><span class="spinner"></span><span class="label">إرسال</span></button>
       </form>
@@ -1070,12 +1075,40 @@
     let chatTicketId = null;
     let chatPollTimer = null;
     let chatState = null;
+    let adminChatImageDraft = '';
+
+    function stageAdminChatImage(ev) {
+      const file = ev.target.files && ev.target.files[0];
+      if (!file) return;
+      if (!file.type.startsWith('image/')) { DAS.toast('اختار صورة', 'err'); return; }
+      DAS.readImageFile(file, (dataUrl) => {
+        adminChatImageDraft = dataUrl;
+        const box = $('adminChatPreview');
+        box.innerHTML = `<img src="${dataUrl}" alt="معاينة"><button type="button" onclick="clearAdminChatImage()" aria-label="إزالة">×</button>`;
+        box.classList.remove('hidden');
+      });
+    }
+
+    function clearAdminChatImage() {
+      adminChatImageDraft = '';
+      const box = $('adminChatPreview');
+      if (box) { box.innerHTML = ''; box.classList.add('hidden'); }
+      const input = $('adminChatFile');
+      if (input) input.value = '';
+    }
+
+    function adminTokenValue() {
+      try { return sessionStorage.getItem('das_admin_token') || ''; } catch (e) { return ''; }
+    }
 
     function chatMsgHtml(m) {
       const mine = m.sender === 'admin';
+      const image = m.has_image
+        ? `<img class="chat-img" loading="lazy" alt="مرفق" src="/api/attachments/${m.id}?admin_token=${encodeURIComponent(adminTokenValue())}">`
+        : '';
       return `
         <div class="chat-msg ${mine ? 'me' : 'them'}">
-          <div class="chat-bubble" dir="auto">${DAS.esc(m.body)}</div>
+          <div class="chat-bubble" dir="auto">${DAS.esc(m.body)}${image}</div>
           <time>${mine ? 'الإدارة' : DAS.t('المندوب')} · ${DAS.fmtDateTime(m.created_at)}</time>
         </div>`;
     }
@@ -1117,6 +1150,7 @@
     function openTicketChat(id) {
       chatTicketId = Number(id);
       chatState = null;
+      clearAdminChatImage();
       $('ticketChatModal').classList.add('open');
       $('ticketChatTitle').textContent = `محادثة الشكوى #${id}`;
       $('adminChatList').innerHTML = `<div class="chat-empty">جاري تحميل المحادثة...</div>`;
@@ -1128,6 +1162,7 @@
 
     function closeTicketChat() {
       closeModal('ticketChatModal');
+      clearAdminChatImage();
       if (chatPollTimer) { clearInterval(chatPollTimer); chatPollTimer = null; }
       chatTicketId = null;
       chatState = null;
@@ -1138,16 +1173,18 @@
       if (!chatTicketId) return;
       const input = $('adminChatInput');
       const body = String(input.value || '').trim();
-      if (!body) { DAS.toast('اكتب ردك الأول', 'err'); return; }
+      const image = adminChatImageDraft;
+      if (!body && !image) { DAS.toast('اكتب ردك أو ارفق صورة', 'err'); return; }
       const btn = $('adminChatSend');
       DAS.busy(btn, true);
       try {
         const res = await adminFetch(`/api/admin/tickets/${chatTicketId}/messages`, {
-          method: 'POST', body: JSON.stringify({ body })
+          method: 'POST', body: JSON.stringify({ body, image, image_mime: 'image/jpeg' })
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || 'فشل إرسال الرد');
         input.value = '';
+        clearAdminChatImage();
         await loadTicketChat(true);
         fetchTickets(true);
       } catch (e) {

@@ -332,6 +332,35 @@
       requestAnimationFrame(tick);
     },
 
+    // يقرأ صورة من المتصفح ويصغّرها ويحوّلها JPEG base64 — للشات والمرفقات
+    readImageFile(file, cb, max) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const img = new Image();
+        img.onload = () => {
+          const limit = max || 1280;
+          let width = img.width;
+          let height = img.height;
+          if (width > limit || height > limit) {
+            const scale = Math.min(limit / width, limit / height);
+            width = Math.round(width * scale);
+            height = Math.round(height * scale);
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, width, height);
+          ctx.drawImage(img, 0, 0, width, height);
+          cb(canvas.toDataURL('image/jpeg', 0.82));
+        };
+        img.onerror = () => this.toast('الصورة غير صالحة', 'err');
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    },
+
     confetti() {
       const colors = ['#6366f1', '#8b5cf6', '#34d399', '#fbbf24', '#fb7185', '#38bdf8'];
       const box = document.createElement('div');

@@ -1207,6 +1207,12 @@ tr.maybe-row td { background: color-mix(in srgb, var(--warn) 6%, transparent); }
 .chat-msg time { font-size: 10px; color: var(--text-3); padding-inline: 4px; }
 .chat-form { display: flex; gap: 8px; margin-top: 10px; }
 .chat-input { flex: 1; min-width: 0; }
+.chat-file { display: none; }
+.chat-attach { flex: 0 0 auto; }
+.chat-img { display: block; max-width: 220px; max-height: 260px; border-radius: 12px; margin-top: 6px; object-fit: cover; }
+.chat-attach-preview { display: flex; align-items: center; gap: 8px; padding: 8px 2px 0; }
+.chat-attach-preview img { width: 54px; height: 54px; object-fit: cover; border-radius: 10px; border: 1px solid var(--line, #2a2f3a); }
+.chat-attach-preview button { border: 0; background: transparent; color: var(--text-2, #9aa4b2); font-size: 22px; line-height: 1; cursor: pointer; }
 .chat-send { white-space: nowrap; }
 .chat-closed-note {
   margin-top: 10px; font-size: 12px; line-height: 1.6; color: var(--text-2); text-align: center;
