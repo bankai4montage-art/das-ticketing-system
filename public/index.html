@@ -328,22 +328,6 @@
       }
     }
 
-    // منع تكرار التسجيل مش مهم — السيرفر بيحتفظ بآخر تحميل لكل كود.
-    // keepalive عشان الطلب يكمل حتى لو المتصفح فتح الرابط في تاب/تطبيق تاني.
-    const appDownloadBtn = $('adBtn');
-    if (appDownloadBtn) {
-      appDownloadBtn.addEventListener('click', () => {
-        const code = currentCourier && currentCourier.das_code;
-        if (!code) return;
-        fetch('/api/courier/app-download', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ das_code: code }),
-          keepalive: true
-        }).catch(() => {});
-      });
-    }
-
     function showMainScreen() {
       $('loginScreen').classList.add('hidden');
       $('mainScreen').classList.remove('hidden');

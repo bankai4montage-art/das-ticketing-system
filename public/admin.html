@@ -104,7 +104,7 @@
         </button>
         <div class="kpi rate" style="--i:5" title="متوسط تقييمات المناديب للحلول">
           <div class="top"><span data-i18n="رضا التيم">رضا التيم</span><div class="ki"><i data-ico="star"></i></div></div>
-          <b id="statRate">—</b>
+          <b id="statRate">لا يوجد</b>
         </div>
       </section>
 
@@ -170,7 +170,7 @@
         <section class="glass adv-head rise">
           <div>
             <b>طلبات السلف</b>
-            <div class="adv-summary" id="advSummary">—</div>
+            <div class="adv-summary" id="advSummary">لا يوجد</div>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
             <div class="chips" data-branch-target="advances">
@@ -295,9 +295,9 @@
         <section class="glass app-track rise" id="appTracking">
           <div class="app-track-head">
             <div>
-              <b data-i18n="متابعة تحميل التطبيق">متابعة تحميل التطبيق</b>
+              <b data-i18n="متابعة دخول التطبيق">متابعة دخول التطبيق</b>
               <div class="adv-summary" id="appTrackSummary">—</div>
-              <div class="app-track-hint">بيتسجل التحميل لما المندوب يفتح بوابة المناديب ويضغط زر تحميل التطبيق.</div>
+              <div class="app-track-hint">بيتسجل الدخول لما المندوب يفتح تطبيق Bankai Smart ويسجّل دخول بكوده، أو يفتح جلسة محفوظة.</div>
             </div>
             <button class="btn btn-ghost btn-sm" id="appTrackRefresh" onclick="loadAppTracking(true)">
               <span class="spinner"></span><i data-ico="refresh"></i><span data-i18n="تحديث">تحديث</span>
@@ -309,7 +309,7 @@
           <div class="app-track-toolbar">
             <div class="chips" id="appTrackStatus">
               <button class="chip active" data-app-status="all" aria-pressed="true"><span data-i18n="الكل">الكل</span> <span id="appCountAll">0</span></button>
-              <button class="chip" data-app-status="downloaded" aria-pressed="false"><span data-i18n="حمّلوا">حمّلوا</span> <span id="appCountDownloaded">0</span></button>
+              <button class="chip" data-app-status="loggedin" aria-pressed="false"><span data-i18n="دخلوا التطبيق">دخلوا التطبيق</span> <span id="appCountLoggedIn">0</span></button>
               <button class="chip" data-app-status="pending" aria-pressed="false"><span data-i18n="لسه">لسه</span> <span id="appCountPending">0</span></button>
             </div>
             <div class="search">
@@ -328,7 +328,7 @@
                   <th data-i18n="الكود">الكود</th>
                   <th data-i18n="الفرع">الفرع</th>
                   <th data-i18n="الحالة">الحالة</th>
-                  <th data-i18n="آخر تحميل">آخر تحميل</th>
+                  <th data-i18n="آخر دخول">آخر دخول</th>
                 </tr>
               </thead>
               <tbody id="appTrackRows"></tbody>
@@ -550,7 +550,7 @@
         <div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px;justify-content:space-between">
             <span style="font-size:12px;font-weight:700;color:var(--text-3)" data-i18n="خيارات تفاعلية (اختياري)">خيارات تفاعلية (اختياري)</span>
-            <button type="button" class="btn btn-ghost btn-sm card-chip" onclick="addCardChoiceRow()" id="addChoiceBtn">➕ <span data-i18n="زود اختيار">زود اختيار</span></button>
+            <button type="button" class="btn btn-ghost btn-sm card-chip" onclick="addCardChoiceRow()" id="addChoiceBtn"><i data-ico="plus"></i> <span data-i18n="زود اختيار">زود اختيار</span></button>
           </div>
           <div style="display:grid;gap:8px" id="cardChoicesWrap"></div>
           <div class="hint" style="margin-top:6px" data-i18n="لو حطيت اختيارات — الكارت بيبقى قابل للتصويت: كل مندوب يدوس على اختياره وانت تشوف مين اختار إيه في واجهة الكارت">لو حطيت اختيارات — الكارت بيبقى قابل للتصويت: كل مندوب يدوس على اختياره وانت تشوف مين اختار إيه في واجهة الكارت</div>
@@ -869,7 +869,7 @@
       DAS.countUp($('statOffice'), off);
       DAS.countUp($('statResolved'), ok);
       const rated = allTickets.filter(t => t.rating != null);
-      $('statRate').textContent = rated.length ? (rated.reduce((s, t) => s + t.rating, 0) / rated.length).toFixed(1) + '★' : '—';
+      $('statRate').textContent = rated.length ? (rated.reduce((s, t) => s + t.rating, 0) / rated.length).toFixed(1) + '★' : 'لا يوجد';
       const pct = (v) => total ? (v / total * 100) : 0;
       $('dBarOk').style.width = pct(ok) + '%';
       $('dBarBad').style.width = pct(off) + '%';
@@ -2602,7 +2602,7 @@
       let text = on ? ((DAS.lang === 'en' ? 'Visible — ' : 'ظاهر — ') + label) : (DAS.lang === 'en' ? 'Hidden' : 'مخفي');
       const t = appTrack.data && appTrack.data.totals;
       if (t && t.total) {
-        text += ` · ${t.downloaded}/${t.total} ${DAS.lang === 'en' ? 'downloaded' : 'حمّلوا'}`;
+        text += ` · ${t.logged_in}/${t.total} ${DAS.lang === 'en' ? 'signed in' : 'دخلوا'}`;
       }
       $('appSummary').textContent = text;
     }
@@ -2667,7 +2667,7 @@
       }
     }
 
-    // ---------- متابعة مين حمّل التطبيق ----------
+    // ---------- متابعة مين سجّل دخول على التطبيق ----------
     function appTrackBranchMatch(row) {
       if (appTrack.branch === 'all') return true;
       if (appTrack.branch === '__unknown') return !row.branch;
@@ -2678,17 +2678,17 @@
       const data = appTrack.data;
       if (!data) return;
       const en = DAS.lang === 'en';
-      const t = data.totals || { total: 0, downloaded: 0, pending: 0, percent: 0 };
+      const t = data.totals || { total: 0, logged_in: 0, pending: 0, percent: 0 };
       const branchList = (data.branches || []).filter((b) => b.total > 0 || b.branch === 'QCD 1' || b.branch === 'QCD 2');
       const visibleBranches = data.roster && data.roster.ok ? branchList : branchList.filter((b) => b.total > 0);
-      const cards = [{ branch: 'all', total: t.total, downloaded: t.downloaded, pending: t.pending, percent: t.percent }].concat(visibleBranches);
+      const cards = [{ branch: 'all', total: t.total, logged_in: t.logged_in, pending: t.pending, percent: t.percent }].concat(visibleBranches);
       const keys = cards.map((b) => b.branch === 'all' ? 'all' : (b.branch || '__unknown'));
       if (!keys.includes(appTrack.branch)) appTrack.branch = 'all';
 
       $('appTrackSummary').textContent = t.total
         ? (en
-            ? `${t.downloaded} of ${t.total} ${t.total === 1 ? 'courier' : 'couriers'} downloaded (${t.percent}%) · ${t.pending} not yet`
-            : `حمّلوا ${t.downloaded} من ${t.total} ${t.total === 1 ? 'مندوب' : 'مناديب'} (${t.percent}%) · لسه ${t.pending}`)
+            ? `${t.logged_in} of ${t.total} ${t.total === 1 ? 'courier' : 'couriers'} signed in (${t.percent}%) · ${t.pending} not yet`
+            : `دخلوا التطبيق ${t.logged_in} من ${t.total} ${t.total === 1 ? 'مندوب' : 'مناديب'} (${t.percent}%) · لسه ${t.pending}`)
         : (en ? 'No couriers registered yet' : 'لسه مفيش مناديب مسجلين');
 
       const note = $('appTrackRosterNote');
@@ -2712,7 +2712,7 @@
         const val = isAll ? 'all' : (b.branch || '__unknown');
         const active = (appTrack.branch === val) ? ' active' : '';
         return `<button type="button" class="app-branch-card${active}" data-app-branch="${DAS.esc(val)}" aria-pressed="${appTrack.branch === val}">
-          <div class="abc-top"><span>${DAS.esc(label)}</span><b>${b.downloaded}<small>/${b.total}</small></b></div>
+          <div class="abc-top"><span>${DAS.esc(label)}</span><b>${b.logged_in}<small>/${b.total}</small></b></div>
           <div class="abc-track"><i style="width:${b.percent || 0}%"></i></div>
           <div class="abc-foot"><span>${b.percent || 0}%</span><span>${b.pending || 0} ${en ? 'left' : 'لسه'}</span></div>
         </button>`;
@@ -2726,11 +2726,11 @@
       ));
       const counts = {
         all: base.length,
-        downloaded: base.filter((r) => r.downloaded).length,
-        pending: base.filter((r) => !r.downloaded).length
+        loggedin: base.filter((r) => r.logged_in).length,
+        pending: base.filter((r) => !r.logged_in).length
       };
       $('appCountAll').textContent = counts.all;
-      $('appCountDownloaded').textContent = counts.downloaded;
+      $('appCountLoggedIn').textContent = counts.loggedin;
       $('appCountPending').textContent = counts.pending;
       document.querySelectorAll('#appTrackStatus [data-app-status]').forEach((chip) => {
         const active = chip.dataset.appStatus === appTrack.status;
@@ -2738,18 +2738,18 @@
         chip.setAttribute('aria-pressed', String(active));
       });
 
-      const rows = appTrack.status === 'all' ? base : base.filter((r) => appTrack.status === 'downloaded' ? r.downloaded : !r.downloaded);
+      const rows = appTrack.status === 'all' ? base : base.filter((r) => appTrack.status === 'loggedin' ? r.logged_in : !r.logged_in);
       $('appTrackRows').innerHTML = rows.map((r) => {
         const sub = [r.employment_type, r.shift].filter(Boolean).join(' · ');
-        const badge = r.downloaded
-          ? `<span class="badge ok"><i class="dot"></i>${en ? 'Downloaded' : 'حمّل'}</span>`
+        const badge = r.logged_in
+          ? `<span class="badge ok"><i class="dot"></i>${en ? 'Signed in' : 'دخل'}</span>`
           : `<span class="badge warn"><i class="dot"></i>${en ? 'Not yet' : 'لسه'}</span>`;
-        return `<tr data-app-code="${DAS.esc(r.das_code)}" class="${r.downloaded ? '' : 'is-pending'}">
+        return `<tr data-app-code="${DAS.esc(r.das_code)}" class="${r.logged_in ? '' : 'is-pending'}">
           <td class="app-who-cell" data-label="${en ? 'Courier' : 'المندوب'}"><div class="app-who"><b>${DAS.esc(r.name)}</b>${sub ? `<small>${DAS.esc(sub)}</small>` : ''}</div></td>
           <td class="app-code-cell mono" data-label="${en ? 'Code' : 'الكود'}" dir="ltr">${DAS.esc(r.das_code)}</td>
           <td class="app-branch-cell" data-label="${en ? 'Branch' : 'الفرع'}">${r.branch ? DAS.esc(r.branch) : `<span style="color:var(--text-3)">${en ? 'Unassigned' : 'غير محدد'}</span>`}</td>
           <td class="app-status-cell" data-label="${en ? 'Status' : 'الحالة'}">${badge}</td>
-          <td class="app-date-cell" data-label="${en ? 'Last download' : 'آخر تحميل'}"><span class="app-date-label">${en ? 'Last download' : 'آخر تحميل'}:</span> ${r.downloaded ? DAS.esc(DAS.fmtDateTime(r.last_downloaded_at)) : '—'}</td>
+          <td class="app-date-cell" data-label="${en ? 'Last sign-in' : 'آخر دخول'}"><span class="app-date-label">${en ? 'Last sign-in' : 'آخر دخول'}:</span> ${r.logged_in ? DAS.esc(DAS.fmtDateTime(r.last_login_at)) : '—'}</td>
         </tr>`;
       }).join('');
 
@@ -2768,7 +2768,7 @@
       const btn = $('appTrackRefresh');
       if (btn) DAS.busy(btn, true);
       try {
-        const res = await adminFetch('/api/admin/app-downloads');
+        const res = await adminFetch('/api/admin/app-logins');
         const d = await res.json().catch(() => ({}));
         if (!res.ok) {
           $('appTrackSummary').textContent = d.error || 'تعذر تحميل بيانات التطبيق';
