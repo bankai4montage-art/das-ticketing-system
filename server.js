@@ -47,7 +47,7 @@ function safeEq(a, b) {
 }
 
 // أعمدة الرسايل اللي بنرجّعها للعميل — الصورة نفسها بتتخدم من endpoint منفصل
-const MESSAGE_COLS = 'id, ticket_id, sender, body, created_at, seen_admin, seen_courier, (image IS NOT NULL) AS has_image';
+const MESSAGE_COLS = 'id, ticket_id, sender, body, created_at, seen_admin, seen_courier, (image IS NOT NULL) AS has_image, (audio IS NOT NULL) AS has_audio, audio_seconds';
 
 // صور المحادثة: JSON base64 (من غير مكتبات إضافية) — بحد أقصى 1.6MB
 function decodeImage(raw, mime) {
@@ -76,6 +76,39 @@ function decodeImage(raw, mime) {
   else if (isWebp) type = 'image/webp';
   else return { error: 'نوع الصورة غير مدعوم' };
   return { data: buf, mime: type };
+}
+
+// تسجيلات صوتية: MP4/M4A من التطبيق، WebM/OGG/MP3/AAC من المتصفح — بحد أقصى 2.4MB
+function decodeAudio(raw, mime, seconds) {
+  let data = String(raw == null ? '' : raw).trim();
+  let type = String(mime || '').toLowerCase();
+  if (!data) return null;
+  const match = data.match(/^data:(audio\/[a-z0-9.+-]+);base64,(.*)$/i);
+  if (match) {
+    type = match[1].toLowerCase();
+    data = match[2];
+  }
+  let buf;
+  try {
+    buf = Buffer.from(data, 'base64');
+  } catch (e) {
+    return { error: 'تسجيل غير صالح' };
+  }
+  if (!buf || !buf.length) return { error: 'تسجيل غير صالح' };
+  if (buf.length > 2.4 * 1024 * 1024) return { error: 'التسجيل كبير — أقصى 2.4 ميجا' };
+  const isMp4 = buf.length > 12 && buf.toString('ascii', 4, 8) === 'ftyp';
+  const isWebm = buf[0] === 0x1A && buf[1] === 0x45 && buf[2] === 0xDF && buf[3] === 0xA3;
+  const isOgg = buf.toString('ascii', 0, 4) === 'OggS';
+  const isAdts = buf[0] === 0xFF && (buf[1] & 0xF6) === 0xF0;
+  const isMp3 = buf.toString('ascii', 0, 3) === 'ID3' || (buf[0] === 0xFF && (buf[1] & 0xE0) === 0xE0);
+  if (isMp4) type = 'audio/mp4';
+  else if (isWebm) type = 'audio/webm';
+  else if (isOgg) type = 'audio/ogg';
+  else if (isAdts) type = 'audio/aac';
+  else if (isMp3) type = 'audio/mpeg';
+  else return { error: 'نوع التسجيل غير مدعوم' };
+  const duration = Math.max(0, Math.min(180, Number(seconds) || 0));
+  return { data: buf, mime: type, seconds: Math.round(duration) };
 }
 
 // مسار الداتا بيز (يدعم Railway Volume لو ضفته، أو يشتغل محلياً)
@@ -346,6 +379,9 @@ db.serialize(() => {
     const names = tmCols.map(c => c.name);
     if (!names.includes('image')) db.run("ALTER TABLE ticket_messages ADD COLUMN image BLOB");
     if (!names.includes('image_mime')) db.run("ALTER TABLE ticket_messages ADD COLUMN image_mime TEXT DEFAULT ''");
+    if (!names.includes('audio')) db.run("ALTER TABLE ticket_messages ADD COLUMN audio BLOB");
+    if (!names.includes('audio_mime')) db.run("ALTER TABLE ticket_messages ADD COLUMN audio_mime TEXT DEFAULT ''");
+    if (!names.includes('audio_seconds')) db.run("ALTER TABLE ticket_messages ADD COLUMN audio_seconds INTEGER DEFAULT 0");
   });
 
   // قاعدة قديمة؟ نزود الأعمدة الناقصة تلقائي (بعد إنشاء الجدول)
@@ -812,9 +848,11 @@ app.post('/api/courier/tickets/:id/messages', (req, res) => {
   const cleanCode = String(das_code || '').trim().toUpperCase();
   const body = String((req.body || {}).body || '').trim().slice(0, 1000);
   const img = decodeImage((req.body || {}).image, (req.body || {}).image_mime);
+  const audio = decodeAudio((req.body || {}).audio, (req.body || {}).audio_mime, (req.body || {}).audio_seconds);
   if (!Number.isFinite(ticketId) || !cleanCode) return res.status(400).json({ error: 'بيانات ناقصة' });
   if (img && img.error) return res.status(413).json({ error: img.error });
-  if (!body && !img) return res.status(400).json({ error: 'اكتب رسالتك أو ارفق صورة' });
+  if (audio && audio.error) return res.status(413).json({ error: audio.error });
+  if (!body && !img && !audio) return res.status(400).json({ error: 'اكتب رسالتك أو ارفق صورة/تسجيل' });
 
   db.get("SELECT * FROM tickets WHERE id = ?", [ticketId], (err, t) => {
     if (err) return res.status(500).json({ error: 'خطأ في السيرفر' });
@@ -822,8 +860,9 @@ app.post('/api/courier/tickets/:id/messages', (req, res) => {
     if (String(t.das_code || '').toUpperCase() !== cleanCode) return res.status(403).json({ error: 'الشكوى دي مش بتاعتك' });
     if (t.closed_at) return res.status(409).json({ error: 'الشكوى دي مقفولة نهائيًا — كلم الإدارة لو محتاج حاجة تانية' });
 
-    db.run("INSERT INTO ticket_messages (ticket_id, sender, body, image, image_mime, seen_admin, seen_courier) VALUES (?, 'courier', ?, ?, ?, 0, 1)",
-      [ticketId, body, img ? img.data : null, img ? img.mime : ''],
+    db.run("INSERT INTO ticket_messages (ticket_id, sender, body, image, image_mime, audio, audio_mime, audio_seconds, seen_admin, seen_courier) VALUES (?, 'courier', ?, ?, ?, ?, ?, ?, 0, 1)",
+      [ticketId, body, img ? img.data : null, img ? img.mime : '',
+        audio ? audio.data : null, audio ? audio.mime : '', audio ? audio.seconds : 0],
       function (e2) {
         if (e2) return res.status(500).json({ error: 'فشل إرسال الرسالة' });
         db.run("UPDATE tickets SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", [ticketId], () => {});
@@ -850,6 +889,26 @@ app.get('/api/attachments/:id', (req, res) => {
     res.set('Content-Type', row.image_mime || 'image/jpeg');
     res.set('Cache-Control', 'private, max-age=86400');
     res.send(row.image);
+  });
+});
+
+// 3-و. تسجيلات المحادثة الصوتية — نفس صلاحيات المرفقات
+app.get('/api/audio/:id', (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: 'تسجيل غير صحيح' });
+  const code = String(req.query.das_code || '').trim().toUpperCase();
+  const adminToken = String(req.query.admin_token || '');
+  db.get(`SELECT m.audio, m.audio_mime, t.das_code
+          FROM ticket_messages m JOIN tickets t ON t.id = m.ticket_id
+          WHERE m.id = ? AND m.audio IS NOT NULL`, [id], (err, row) => {
+    if (err) return res.status(500).json({ error: 'خطأ في السيرفر' });
+    if (!row) return res.status(404).json({ error: 'التسجيل غير موجود' });
+    const isAdmin = safeEq(adminToken, ADMIN_TOKEN);
+    const isCourier = !!code && String(row.das_code || '').toUpperCase() === code;
+    if (!isAdmin && !isCourier) return res.status(403).json({ error: 'غير مصرح' });
+    res.set('Content-Type', row.audio_mime || 'audio/mp4');
+    res.set('Cache-Control', 'private, max-age=86400');
+    res.send(row.audio);
   });
 });
 
@@ -1371,22 +1430,27 @@ app.post('/api/admin/tickets/:id/messages', (req, res) => {
   const ticketId = Number(req.params.id);
   const body = String((req.body || {}).body || '').trim().slice(0, 1000);
   const img = decodeImage((req.body || {}).image, (req.body || {}).image_mime);
+  const audio = decodeAudio((req.body || {}).audio, (req.body || {}).audio_mime, (req.body || {}).audio_seconds);
   if (!Number.isFinite(ticketId)) return res.status(400).json({ error: 'رقم الشكوى غير صحيح' });
   if (img && img.error) return res.status(413).json({ error: img.error });
-  if (!body && !img) return res.status(400).json({ error: 'اكتب ردك أو ارفق صورة' });
+  if (audio && audio.error) return res.status(413).json({ error: audio.error });
+  if (!body && !img && !audio) return res.status(400).json({ error: 'اكتب ردك أو ارفق صورة/تسجيل' });
 
   db.get("SELECT * FROM tickets WHERE id = ?", [ticketId], (err, t) => {
     if (err) return res.status(500).json({ error: 'خطأ في السيرفر' });
     if (!t) return res.status(404).json({ error: 'الشكوى غير موجودة' });
     if (t.closed_at) return res.status(409).json({ error: 'الشكوى مقفولة نهائيًا — اعمل إعادة فتح الأول لو عايز ترد' });
 
-    db.run("INSERT INTO ticket_messages (ticket_id, sender, body, image, image_mime, seen_admin, seen_courier) VALUES (?, 'admin', ?, ?, ?, 1, 0)",
-      [ticketId, body, img ? img.data : null, img ? img.mime : ''],
+    db.run("INSERT INTO ticket_messages (ticket_id, sender, body, image, image_mime, audio, audio_mime, audio_seconds, seen_admin, seen_courier) VALUES (?, 'admin', ?, ?, ?, ?, ?, ?, 1, 0)",
+      [ticketId, body, img ? img.data : null, img ? img.mime : '',
+        audio ? audio.data : null, audio ? audio.mime : '', audio ? audio.seconds : 0],
       function (e2) {
         if (e2) return res.status(500).json({ error: 'فشل إرسال الرد' });
         db.run("UPDATE tickets SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", [ticketId], () => {});
         BUS.publish('ticket-chat', { ticket_id: ticketId, das_code: t.das_code, sender: 'admin' });
-        notifyCourier(t.das_code, 'رد جديد على شكواك', body ? body.slice(0, 160) : 'صورة جديدة', { kind: 'ticket', ref: 'ticket:' + ticketId });
+        notifyCourier(t.das_code, 'رد جديد على شكواك',
+          body ? body.slice(0, 160) : (audio ? 'رسالة صوتية' : 'صورة جديدة'),
+          { kind: 'ticket', ref: 'ticket:' + ticketId });
         res.json({ success: true, id: this.lastID });
       });
   });

@@ -1007,9 +1007,12 @@
       const image = m.has_image
         ? `<img class="chat-img" loading="lazy" alt="مرفق" src="/api/attachments/${m.id}?das_code=${encodeURIComponent(currentCourier.das_code)}">`
         : '';
+      const audio = m.has_audio
+        ? `<audio class="chat-audio" controls preload="none" src="/api/audio/${m.id}?das_code=${encodeURIComponent(currentCourier.das_code)}"></audio>`
+        : '';
       return `
         <div class="chat-msg ${mine ? 'me' : 'admin'}">
-          <div class="chat-bubble" dir="auto">${DAS.esc(m.body)}${image}</div>
+          <div class="chat-bubble" dir="auto">${DAS.esc(m.body)}${image}${audio}</div>
           <time>${mine ? 'أنت' : 'الإدارة'} · ${DAS.fmtDateTime(m.created_at)}</time>
         </div>`;
     }

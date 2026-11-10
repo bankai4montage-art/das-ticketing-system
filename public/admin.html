@@ -1106,9 +1106,12 @@
       const image = m.has_image
         ? `<img class="chat-img" loading="lazy" alt="مرفق" src="/api/attachments/${m.id}?admin_token=${encodeURIComponent(adminTokenValue())}">`
         : '';
+      const audio = m.has_audio
+        ? `<audio class="chat-audio" controls preload="none" src="/api/audio/${m.id}?admin_token=${encodeURIComponent(adminTokenValue())}"></audio>`
+        : '';
       return `
         <div class="chat-msg ${mine ? 'me' : 'them'}">
-          <div class="chat-bubble" dir="auto">${DAS.esc(m.body)}${image}</div>
+          <div class="chat-bubble" dir="auto">${DAS.esc(m.body)}${image}${audio}</div>
           <time>${mine ? 'الإدارة' : DAS.t('المندوب')} · ${DAS.fmtDateTime(m.created_at)}</time>
         </div>`;
     }
