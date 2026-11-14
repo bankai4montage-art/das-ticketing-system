@@ -218,8 +218,9 @@
       <section class="glass tickets-card rise" style="animation-delay:.42s">
         <div class="section-title" style="margin:0 0 16px">
           <span style="font-size:16px;color:var(--text);font-weight:800">سلفك وحالتها</span>
-          <span class="live"><i></i> تحديث تلقائي</span>
+          <span class="live"><i></i> أسبوعي</span>
         </div>
+        <div class="adv-summary" id="myAdvSummary" style="margin:-6px 0 12px"></div>
         <div id="myAdvancesList" class="ticket-list">
           <div class="skeleton" style="height:90px"></div>
         </div>
@@ -736,6 +737,21 @@
       advFirstLoad = false;
 
       const container = $('myAdvancesList');
+
+      // ملخص أسبوعي: الأسبوع الحالي + إجمالي سلفك
+      const weekKey = (a) => DAS.weekStart(a.created_at);
+      const sumAmt = (arr) => arr.reduce((t, a) => t + (Number(a.amount) || 0), 0);
+      const curWeek = DAS.weekStart(new Date());
+      const curAdv = advances.filter(a => weekKey(a) === curWeek);
+      const curPaid = curAdv.filter(a => a.status === 'تمت الصرف');
+      const allPaid = advances.filter(a => a.status === 'تمت الصرف');
+      const sumEl = $('myAdvSummary');
+      if (sumEl) {
+        sumEl.textContent = advances.length
+          ? `${DAS.weekLabel(curWeek)}: ${curAdv.length} ${curAdv.length === 1 ? 'سلفة' : 'سلف'} (${sumAmt(curPaid)} ج مصروفة) · إجمالي سلفك: ${advances.length} (${sumAmt(allPaid)} ج مصروفة)`
+          : 'مفيش سلف لسه — أول سلفة ليك هتظهر هنا في أسبوعها';
+      }
+
       if (!advances.length) {
         container.innerHTML = `
           <div class="empty fade">
@@ -746,36 +762,62 @@
         return;
       }
 
-      container.innerHTML = advances.map((a, i) => {
-        const s = advSt(a.status);
-        const anim = (animate || changed.has(a.id)) ? '' : 'animation:none';
-        const isOpen = openAdvances.has(String(a.id));
-        return `
-        <details class="ticket s-${s.cls} ${changed.has(a.id) ? 'flash' : ''}" data-aid="${a.id}" ${isOpen ? 'open' : ''} style="--i:${animate ? i : 0};${anim}">
-          <summary class="ticket-top" aria-label="تفاصيل السلفة ${a.id}">
-            <div class="l">
-              <span class="tag adv">سلفة</span>
-              <span class="amt">${DAS.esc(a.amount)} ج</span>
+      // تجميع سلفك بالأسبوع — كل سلفة بتظهر في الأسبوع بتاعها
+      const groups = new Map();
+      advances.forEach(a => {
+        const k = weekKey(a);
+        if (!groups.has(k)) groups.set(k, []);
+        groups.get(k).push(a);
+      });
+      const weekKeys = [...groups.keys()].sort((x, y) => {
+        if (!x) return 1;
+        if (!y) return -1;
+        return y.localeCompare(x);
+      });
+
+      let idx = 0;
+      container.innerHTML = weekKeys.map(k => {
+        const items = groups.get(k);
+        const paidSum = sumAmt(items.filter(a => a.status === 'تمت الصرف'));
+        const head = `
+          <div class="adv-week-sep">
+            <span class="aws-label">${DAS.icon('calendar')}${k ? DAS.esc(DAS.weekLabel(k)) : 'بدون تاريخ'}</span>
+            <span class="aws-stats">${items.length} ${items.length === 1 ? 'سلفة' : 'سلف'} · مصروف ${paidSum} ج</span>
+          </div>`;
+        const cards = items.map((a) => {
+          const i = idx++;
+          const s = advSt(a.status);
+          const anim = (animate || changed.has(a.id)) ? '' : 'animation:none';
+          const isOpen = openAdvances.has(String(a.id));
+          return `
+          <details class="ticket s-${s.cls} ${changed.has(a.id) ? 'flash' : ''}" data-aid="${a.id}" ${isOpen ? 'open' : ''} style="--i:${animate ? i : 0};${anim}">
+            <summary class="ticket-top" aria-label="تفاصيل السلفة ${a.id}">
+              <div class="l">
+                <span class="tag adv">سلفة</span>
+                <span class="amt">${DAS.esc(a.amount)} ج</span>
+              </div>
+              <div class="t-right">
+                ${advBadge(a.status)}
+                <span class="t-chev" aria-hidden="true">${DAS.icon('chev')}</span>
+              </div>
+            </summary>
+            <div class="ticket-body">
+              <p class="desc" data-i18n-raw>${DAS.esc(a.reason)}</p>
+              <div class="meta">المحفظة: <span class="mono">${DAS.esc(a.wallet)}</span></div>
+              ${a.admin_note ? `
+                <div class="reply">
+                  <strong>${DAS.icon('msg')} رد الإدارة</strong>
+                  <span data-i18n-raw>${DAS.esc(a.admin_note)}</span>
+                </div>` : ''}
+              <div class="ticket-foot">
+                <span>رقم الطلب: #${a.id}</span>
+                <span>${k ? DAS.esc(DAS.weekLabel(k)) : ''}</span>
+                <span>${DAS.fmtDateTime(a.created_at)}</span>
+              </div>
             </div>
-            <div class="t-right">
-              ${advBadge(a.status)}
-              <span class="t-chev" aria-hidden="true">${DAS.icon('chev')}</span>
-            </div>
-          </summary>
-          <div class="ticket-body">
-            <p class="desc" data-i18n-raw>${DAS.esc(a.reason)}</p>
-            <div class="meta">المحفظة: <span class="mono">${DAS.esc(a.wallet)}</span></div>
-            ${a.admin_note ? `
-              <div class="reply">
-                <strong>${DAS.icon('msg')} رد الإدارة</strong>
-                <span data-i18n-raw>${DAS.esc(a.admin_note)}</span>
-              </div>` : ''}
-            <div class="ticket-foot">
-              <span>رقم الطلب: #${a.id}</span>
-              <span>${DAS.fmtDateTime(a.created_at)}</span>
-            </div>
-          </div>
-        </details>`;
+          </details>`;
+        }).join('');
+        return head + cards;
       }).join('');
     }
 

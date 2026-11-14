@@ -243,6 +243,58 @@
       return new Date(Date.UTC(parts[0], parts[1] - 1, 15)).toLocaleDateString(this.locale(), { timeZone: 'Africa/Cairo', month: 'long', year: 'numeric' });
     },
 
+    // ===== منطق الأسابيع (أحد → سبت) =====
+    // نفس منطق الحضور والقبض في النظام: الأسبوع بيبدأ الأحد وينتهي السبت،
+    // والتواريخ بتتحسب بتوقيت القاهرة عشان السلفة اللي بعد نص الليل تتحسب في يومها الصح.
+    cairoDay(s) {
+      const d = (s instanceof Date) ? s : this.parseUtc(s);
+      if (!d || isNaN(d)) return '';
+      return d.toLocaleDateString('en-CA', { timeZone: 'Africa/Cairo' }); // YYYY-MM-DD
+    },
+
+    dayAdd(ymd, n) {
+      const d = new Date(String(ymd || '') + 'T00:00:00Z');
+      if (isNaN(d)) return '';
+      d.setUTCDate(d.getUTCDate() + n);
+      return d.toISOString().slice(0, 10);
+    },
+
+    // مفتاح الأسبوع = تاريخ أول يوم فيه (الأحد) — بنستخدمه للمقارنة والتجميع
+    weekStart(s) {
+      const v = String(s || '');
+      const ymd = /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : this.cairoDay(s);
+      if (!ymd) return '';
+      const dow = new Date(ymd + 'T00:00:00Z').getUTCDay(); // 0 = الأحد
+      return this.dayAdd(ymd, -dow);
+    },
+
+    weekEnd(ws) { return this.dayAdd(ws, 6); },
+
+    weekNo(ws) {
+      if (!ws) return 0;
+      const ye = +this.weekEnd(ws).slice(0, 4);
+      const first = this.weekStart(ye + '-01-01');
+      return Math.round((new Date(ws + 'T00:00:00Z') - new Date(first + 'T00:00:00Z')) / 864e5 / 7) + 1;
+    },
+
+    weekLocale() {
+      return this.lang === 'en' ? 'en-EG-u-nu-latn' : 'ar-EG-u-nu-latn';
+    },
+
+    weekRangeLabel(ws) {
+      if (!ws) return '';
+      const a = new Date(ws + 'T00:00:00Z');
+      const b = new Date(this.weekEnd(ws) + 'T00:00:00Z');
+      const f = { timeZone: 'UTC', day: 'numeric', month: 'short' };
+      return a.toLocaleDateString(this.weekLocale(), f) + ' – ' +
+        b.toLocaleDateString(this.weekLocale(), { timeZone: 'UTC', day: 'numeric', month: 'short', year: 'numeric' });
+    },
+
+    weekLabel(ws) {
+      if (!ws) return '';
+      return (this.lang === 'en' ? 'Week ' : 'الأسبوع ') + this.weekNo(ws) + ' · ' + this.weekRangeLabel(ws);
+    },
+
     // CSV بمحارف معلّمة عشان Excel يفتحه عربي صح
     csvCell(v) {
       return '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';

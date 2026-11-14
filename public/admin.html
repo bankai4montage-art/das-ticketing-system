@@ -183,8 +183,9 @@
               <input type="text" id="advSearchInput" class="input" placeholder="ابحث بكود/اسم/سبب/محفظة..." aria-label="بحث في السلف">
               <i data-ico="search"></i>
             </div>
+            <span id="advWeekWrap"></span>
             <button class="btn btn-ghost btn-sm" onclick="exportAdvances()"><i data-ico="download"></i> تصدير</button>
-            <button class="btn btn-ghost btn-sm" onclick="toggleReportModal()"><i data-ico="layers"></i> التقرير الشهري</button>
+            <button class="btn btn-ghost btn-sm" onclick="toggleReportModal()"><i data-ico="layers"></i> التقرير الأسبوعي</button>
             <button class="btn btn-ok btn-sm" onclick="toggleAdvanceModal()"><i data-ico="plus"></i> تسجيل سلفة مصروفة</button>
           </div>
         </section>
@@ -589,19 +590,21 @@
     </div>
   </div>
 
-  <!-- ============ نافذة التقرير الشهري للسلف ============ -->
+  <!-- ============ نافذة التقرير الأسبوعي للسلف ============ -->
   <div id="reportModal" class="modal-back" onclick="if(event.target===this)toggleReportModal()">
     <div class="modal" style="max-width:680px">
       <div class="form-head">
-        <h3 id="reportTitle">التقرير الشهري للسلف</h3>
+        <h3 id="reportTitle">التقرير الأسبوعي للسلف</h3>
         <button class="btn btn-ghost btn-icon" onclick="toggleReportModal()" aria-label="إغلاق"><i data-ico="close"></i></button>
       </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-        <span id="reportMonthWrap"></span>
+        <span id="reportWeekWrap"></span>
         <button class="btn btn-ghost btn-sm" onclick="exportReport()"><i data-ico="download"></i> تصدير التقرير</button>
       </div>
       <div class="report-sum" id="reportSummary"></div>
       <div id="reportTable"></div>
+      <div class="section-title" style="margin:18px 0 10px">إجمالي كل الأسابيع (كل المناديب)</div>
+      <div id="reportWeeksTable"></div>
     </div>
   </div>
 
@@ -626,6 +629,8 @@
     let advSig = null;
     let advPrevIds = new Set();
     let advFirstRender = true;
+    let filterAdvWeek = 'all';   // فلتر الأسبوع في تاب السلف
+    let advWeekSig = '';         // آخر قايمة أسابيع اتعرضت في الفلتر
     let sig = null;
     let prevIds = new Set();
     let firstRender = true;
@@ -1260,7 +1265,11 @@
     DAS.ddChanged = (id) => {
       if (id.startsWith('dd-status-')) updateTicket(Number(id.slice(10)));
       else if (id.startsWith('dd-advstatus-')) updateAdvance(Number(id.slice(13)));
-      else if (id === 'dd-reportMonth') renderReport();
+      else if (id === 'dd-reportWeek') renderReport();
+      else if (id === 'dd-advWeek') {
+        filterAdvWeek = $('dd-advWeek').dataset.value || 'all';
+        renderAdvances();
+      }
     };
 
     document.querySelectorAll('.kpi').forEach(k => k.addEventListener('click', () => {
@@ -1604,6 +1613,7 @@
           <div class="mini-stat bad"><b>${weak}</b><span>تقييمات ضعيفة (★2-)</span></div>
           <div class="mini-stat"><b>${advs.length}</b><span>عدد السلف</span></div>
           <div class="mini-stat"><b>${advTotal}</b><span>إجمالي السلف (ج)</span></div>
+          <div class="mini-stat warn"><b>${advs.filter(a => DAS.weekStart(a.created_at) === DAS.weekStart(new Date())).length}</b><span>سلف هذا الأسبوع</span></div>
         </div>
         <div class="section-title" style="margin:18px 0 10px">الشكاوى</div>
         ${tickets.length ? profileTicketsTable(tickets) : `<div class="empty fade"><b>مفيش شكاوى</b></div>`}
@@ -1636,6 +1646,7 @@
       const rows = advs.sort((a, b) => b.id - a.id).map((a, i) => `
         <tr style="--i:${Math.min(i, 12)};${i < 12 ? '' : 'animation:none'}">
           <td class="mono" style="color:var(--text-3);font-size:12px">#${a.id}</td>
+          <td data-label="الأسبوع"><span class="week-tag">${DAS.esc(DAS.weekLabel(DAS.weekStart(a.created_at)) || '—')}</span></td>
           <td data-label="المبلغ"><span class="amt">${DAS.esc(a.amount)} ج</span></td>
           <td data-label="السبب" class="desc-cell"><span data-i18n-raw>${DAS.esc(a.reason)}</span><div class="meta">${DAS.fmtDateTime(a.created_at)}</div></td>
           <td data-label="الحالة"><span class="badge ${ADV_CLS[a.status] || 'warn'}"><span class="dot"></span>${DAS.esc(a.status)}</span></td>
@@ -1643,7 +1654,7 @@
       return `
         <div class="table-wrap" style="border:none;box-shadow:none;background:transparent;padding:0">
           <table class="tbl">
-            <thead><tr><th>#</th><th>المبلغ</th><th>السبب</th><th>الحالة</th></tr></thead>
+            <thead><tr><th>#</th><th>الأسبوع</th><th>المبلغ</th><th>السبب</th><th>الحالة</th></tr></thead>
             <tbody>${rows}</tbody>
           </table>
         </div>`;
@@ -1758,32 +1769,40 @@
       }
     }
 
-    // ---------- التقرير الشهري للسلف ----------
+    // ---------- التقرير الأسبوعي للسلف ----------
     function toggleReportModal() {
       const opening = !$('reportModal').classList.contains('open');
       toggleModal('reportModal');
       if (opening) {
-        buildReportMonths();
+        buildReportWeeks();
         renderReport();
       }
     }
 
-    function buildReportMonths() {
-      const keys = [...new Set(allAdvances.map(a => DAS.fmtMonthKey(a.created_at)).filter(Boolean))].sort().reverse();
-      $('reportMonthWrap').innerHTML = keys.length
-        ? DAS.ddHtml('dd-reportMonth', keys[0], keys, null, (k) => DAS.fmtMonthLabel(k))
+    // كل الأسابيع اللي فيها سلف (الأحدث الأول) — الأسبوع بيبدأ أحد وينتهي سبت
+    function reportWeeks() {
+      return [...new Set(allAdvances.map(a => DAS.weekStart(a.created_at)).filter(Boolean))].sort().reverse();
+    }
+
+    function buildReportWeeks() {
+      const weeks = reportWeeks();
+      const ddOld = $('dd-reportWeek');
+      const prev = ddOld ? ddOld.dataset.value : '';
+      const value = weeks.includes(prev) ? prev : weeks[0];
+      $('reportWeekWrap').innerHTML = weeks.length
+        ? DAS.ddHtml('dd-reportWeek', value, weeks, null, (k) => DAS.weekLabel(k))
         : '<span style="font-size:13px;color:var(--text-3)">— مفيش سلف لسه —</span>';
-      // لما مفيش سلف مفيش dropdown أصلاً — فالعنصر مش موجود (كان بيقع null.setAttribute)
-      const ddMonth = $('dd-reportMonth');
-      if (ddMonth) ddMonth.setAttribute('data-inline', '');
+      // لما مفيش سلف مفيش dropdown أصلاً — فالعنصر مش موجود
+      const ddWeek = $('dd-reportWeek');
+      if (ddWeek) ddWeek.setAttribute('data-inline', '');
     }
 
     function reportData() {
-      const ddEl = $('dd-reportMonth');
+      const ddEl = $('dd-reportWeek');
       const key = ddEl ? ddEl.dataset.value : '';
-      const monthAdv = key ? allAdvances.filter(a => DAS.fmtMonthKey(a.created_at) === key) : [];
+      const weekAdv = key ? allAdvances.filter(a => DAS.weekStart(a.created_at) === key) : [];
       const byCourier = new Map();
-      monthAdv.forEach(a => {
+      weekAdv.forEach(a => {
         const rec = byCourier.get(a.das_code) || { das_code: a.das_code, name: a.courier_name, count: 0, paid: 0, pending: 0, rejected: 0 };
         rec.count++;
         const amt = Number(a.amount) || 0;
@@ -1793,43 +1812,70 @@
         byCourier.set(a.das_code, rec);
       });
       const couriers = [...byCourier.values()].sort((x, y) => (y.paid + y.pending) - (x.paid + x.pending));
-      return { key, monthAdv, couriers };
+      // إجمالي كل أسبوع لوحده (كل المناديب) — عشان تشوف الأسبوع ككل أو تفصيل كل مندوب
+      const weeks = reportWeeks().map(ws => {
+        const rows = allAdvances.filter(a => DAS.weekStart(a.created_at) === ws);
+        const sumSt = (st) => rows.filter(a => a.status === st).reduce((t, a) => t + (Number(a.amount) || 0), 0);
+        return { key: ws, count: rows.length, paid: sumSt('تمت الصرف'), pending: sumSt('قيد المراجعة'), rejected: sumSt('مرفوضة') };
+      });
+      return { key, weekAdv, couriers, weeks };
     }
 
     function renderReport() {
-      const { key, monthAdv, couriers } = reportData();
-      $('reportTitle').textContent = 'التقرير الشهري للسلف — ' + (key ? DAS.fmtMonthLabel(key) : '—');
-      const sumBy = (st) => monthAdv.filter(a => a.status === st).reduce((t, a) => t + (Number(a.amount) || 0), 0);
+      const { key, weekAdv, couriers, weeks } = reportData();
+      $('reportTitle').textContent = 'التقرير الأسبوعي للسلف — ' + (key ? DAS.weekLabel(key) : '—');
+      const sumBy = (st) => weekAdv.filter(a => a.status === st).reduce((t, a) => t + (Number(a.amount) || 0), 0);
       $('reportSummary').innerHTML = `
-        <div class="mini-stat warn"><b>${monthAdv.length}</b><span>عدد السلف</span></div>
+        <div class="mini-stat warn"><b>${weekAdv.length}</b><span>عدد السلف</span></div>
         <div class="mini-stat ok"><b>${sumBy('تمت الصرف')}</b><span>إجمالي المصروف (ج)</span></div>
         <div class="mini-stat warn"><b>${sumBy('قيد المراجعة')}</b><span>قيد المراجعة (ج)</span></div>
         <div class="mini-stat bad"><b>${sumBy('مرفوضة')}</b><span>المرفوض (ج)</span></div>`;
       $('reportTable').innerHTML = couriers.length ? `
         <div class="table-wrap" style="border:none;box-shadow:none;background:transparent;padding:0">
           <table class="tbl">
-            <thead><tr><th>المندوب</th><th>عدد السلف</th><th>مصروف (ج)</th><th>قيد المراجعة (ج)</th><th>مرفوض (ج)</th></tr></thead>
+            <thead><tr><th>المندوب</th><th>الأسبوع</th><th>عدد السلف</th><th>مصروف (ج)</th><th>قيد المراجعة (ج)</th><th>مرفوض (ج)</th></tr></thead>
             <tbody>${couriers.map(c => `
               <tr>
                 <td data-label="المندوب"><div class="cell-courier clickable" data-profile-code="${DAS.esc(c.das_code)}" title="فتح بروفايل المندوب"><div class="av" style="background:${DAS.gradient(c.das_code)}" data-i18n-raw>${DAS.esc(DAS.initials(c.name))}</div><div><b data-i18n-raw>${DAS.esc(c.name)}</b><small class="mono">${DAS.esc(c.das_code)}</small></div></div></td>
+                <td data-label="الأسبوع"><span class="week-tag">${DAS.esc(DAS.weekLabel(key))}</span></td>
                 <td data-label="عدد السلف">${c.count}</td>
                 <td data-label="مصروف (ج)"><span class="amt">${c.paid}</span></td>
                 <td data-label="قيد المراجعة (ج)" style="color:var(--warn);font-weight:700">${c.pending}</td>
                 <td data-label="مرفوض (ج)" style="color:var(--bad);font-weight:700">${c.rejected}</td>
               </tr>`).join('')}</tbody>
           </table>
-        </div>` : `<div class="empty fade"><div class="eic">${DAS.icon('banknote', 'ico-lg')}</div><b>مفيش سلف في الشهر ده</b>اختار شهر تاني أو سجل سلف جديدة</div>`;
+        </div>` : `<div class="empty fade"><div class="eic">${DAS.icon('banknote', 'ico-lg')}</div><b>مفيش سلف في الأسبوع ده</b>اختار أسبوع تاني أو سجل سلف جديدة</div>`;
+      $('reportWeeksTable').innerHTML = weeks.length ? `
+        <div class="table-wrap" style="border:none;box-shadow:none;background:transparent;padding:0">
+          <table class="tbl">
+            <thead><tr><th>الأسبوع</th><th>عدد السلف</th><th>مصروف (ج)</th><th>قيد المراجعة (ج)</th><th>مرفوض (ج)</th></tr></thead>
+            <tbody>${weeks.map(w => `
+              <tr${w.key === key ? ' class="sel-week"' : ''}>
+                <td data-label="الأسبوع"><span class="week-tag">${DAS.esc(DAS.weekLabel(w.key))}</span></td>
+                <td data-label="عدد السلف">${w.count}</td>
+                <td data-label="مصروف (ج)"><span class="amt">${w.paid}</span></td>
+                <td data-label="قيد المراجعة (ج)" style="color:var(--warn);font-weight:700">${w.pending}</td>
+                <td data-label="مرفوض (ج)" style="color:var(--bad);font-weight:700">${w.rejected}</td>
+              </tr>`).join('')}</tbody>
+          </table>
+        </div>` : '';
     }
 
     function exportReport() {
-      const { key, couriers } = reportData();
+      const { key, couriers, weeks } = reportData();
       if (!key || !couriers.length) { DAS.toast('مفيش داتا للتصدير', 'err'); return; }
       const total = couriers.reduce((t, c) => ({ count: t.count + c.count, paid: t.paid + c.paid, pending: t.pending + c.pending, rejected: t.rejected + c.rejected }), { count: 0, paid: 0, pending: 0, rejected: 0 });
-      DAS.downloadCsv(`das-advances-report-${key}.csv`, [
-        [`${DAS.t('التقرير الشهري للسلف')} — ${DAS.fmtMonthLabel(key)}`],
-        ['الكود', 'الاسم', 'عدد السلف', 'مصروف (ج)', 'قيد المراجعة (ج)', 'مرفوض (ج)'].map(DAS.t),
-        ...couriers.map(c => [c.das_code, c.name, c.count, c.paid, c.pending, c.rejected]),
-        [DAS.t('الإجمالي'), '', total.count, total.paid, total.pending, total.rejected]
+      const allTotal = weeks.reduce((t, w) => ({ count: t.count + w.count, paid: t.paid + w.paid, pending: t.pending + w.pending, rejected: t.rejected + w.rejected }), { count: 0, paid: 0, pending: 0, rejected: 0 });
+      DAS.downloadCsv(`das-advances-report-week-${key}.csv`, [
+        [`${DAS.t('التقرير الأسبوعي للسلف')} — ${DAS.weekLabel(key)}`],
+        ['الأسبوع', 'الكود', 'الاسم', 'عدد السلف', 'مصروف (ج)', 'قيد المراجعة (ج)', 'مرفوض (ج)'].map(DAS.t),
+        ...couriers.map(c => [DAS.weekLabel(key), c.das_code, c.name, c.count, c.paid, c.pending, c.rejected]),
+        [DAS.t('الإجمالي'), '', '', total.count, total.paid, total.pending, total.rejected],
+        [],
+        [DAS.t('إجمالي كل الأسابيع (كل المناديب)')],
+        ['الأسبوع', 'عدد السلف', 'مصروف (ج)', 'قيد المراجعة (ج)', 'مرفوض (ج)'].map(DAS.t),
+        ...weeks.map(w => [DAS.weekLabel(w.key), w.count, w.paid, w.pending, w.rejected]),
+        [DAS.t('الإجمالي'), allTotal.count, allTotal.paid, allTotal.pending, allTotal.rejected]
       ]);
       DAS.toast('تم تنزيل التقرير');
     }
@@ -3280,6 +3326,32 @@
       updateTabBadges();
     }
 
+    // مفتاح الأسبوع بتاع السلفة (تاريخ الأحد) — الأساس اللي بنفلتر ونجمّع بيه
+    function advWeekKey(a) {
+      return DAS.weekStart(a && a.created_at) || '';
+    }
+
+    function buildAdvWeekFilter() {
+      const wrap = $('advWeekWrap');
+      if (!wrap) return;
+      if (!allAdvances.length) {
+        wrap.innerHTML = '';
+        advWeekSig = '';
+        return;
+      }
+      const weeks = [...new Set(allAdvances.map(advWeekKey).filter(Boolean))].sort().reverse();
+      if (filterAdvWeek !== 'all' && !weeks.includes(filterAdvWeek)) filterAdvWeek = 'all';
+      const values = ['all', ...weeks];
+      // اللغة جزء من التوقيع — عشان ليبلات الأسابيع تتغير مع تبديل عربي/إنجليزي
+      const sig = DAS.lang + '|' + values.join('|') + '#' + filterAdvWeek;
+      if (sig === advWeekSig) return;
+      advWeekSig = sig;
+      // لو القايمة مفتوحة وقت rebuild (سلفة جديدة ضافت أسبوع) بنقفلها الأول
+      if (DAS.ddOpen()) DAS.closeDd();
+      wrap.innerHTML = '<span class="week-filter-label">الأسبوع:</span>' +
+        DAS.ddHtml('dd-advWeek', filterAdvWeek, values, null, (k) => (k === 'all' ? DAS.t('كل الأسابيع') : DAS.weekLabel(k)));
+    }
+
     function advSearchList() {
       const q = $('advSearchInput').value.trim().toLowerCase();
       const branchReady = Object.keys(syncBranchMap).length > 0;
@@ -3288,6 +3360,8 @@
       allAdvances.forEach(a => {
         const mq = !q || [a.das_code, a.courier_name, a.reason, a.wallet].some(v => String(v || '').toLowerCase().includes(q));
         if (!mq) return;
+        // فلتر الأسبوع: كل سلفة بتظهر في الأسبوع بتاعها بس
+        if (filterAdvWeek !== 'all' && advWeekKey(a) !== filterAdvWeek) return;
         const br = syncBranchMap[a.das_code] || '';
         bCounts.all++;
         if (br === 'QCD 1' || br === 'QCD 2') bCounts[br]++; else bCounts.none++;
@@ -3335,8 +3409,15 @@
       const pending = allAdvances.filter(a => a.status === 'قيد المراجعة');
       const paid = allAdvances.filter(a => a.status === 'تمت الصرف');
       const sum = (arr) => arr.reduce((t, a) => t + (Number(a.amount) || 0), 0);
-      $('advSummary').textContent = `${allAdvances.length} ${allAdvances.length === 1 ? 'سلفة' : 'سلف'} — قيد المراجعة: ${pending.length} (${sum(pending)} ج) — مصروفة: ${paid.length} (${sum(paid)} ج)`;
+      // ملخص الأسبوع الحالي — عشان الأرقام تبقى أسبوعية مش تراكمية
+      const curWeek = DAS.weekStart(new Date());
+      const curAdv = allAdvances.filter(a => advWeekKey(a) === curWeek);
+      const curPaid = curAdv.filter(a => a.status === 'تمت الصرف');
+      $('advSummary').textContent =
+        `${allAdvances.length} ${allAdvances.length === 1 ? 'سلفة' : 'سلف'} — قيد المراجعة: ${pending.length} (${sum(pending)} ج) — مصروفة: ${paid.length} (${sum(paid)} ج)` +
+        ` · هذا الأسبوع: ${curAdv.length} ${curAdv.length === 1 ? 'سلفة' : 'سلف'} (${sum(curPaid)} ج مصروفة)`;
 
+      buildAdvWeekFilter();
       const list = advSearchList();
       const tbody = $('advTableBody');
       if (!allAdvances.length) {
@@ -3344,7 +3425,7 @@
         return;
       }
       if (!list.length) {
-        tbody.innerHTML = `<tr><td colspan="7"><div class="empty fade"><div class="eic">${DAS.icon('search', 'ico-lg')}</div><b>مفيش نتائج مطابقة</b>جرّب كلمة بحث مختلفة</div></td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="7"><div class="empty fade"><div class="eic">${DAS.icon('search', 'ico-lg')}</div><b>مفيش نتائج مطابقة</b>جرّب كلمة بحث مختلفة أو أسبوع تاني</div></td></tr>`;
         return;
       }
 
@@ -3352,37 +3433,70 @@
       advFirstRender = false;
       if (!animate && (isEditing('advTableBody') || DAS.isScrolling())) { advancesDeferred = true; return; }
 
-      tbody.innerHTML = list.map((a, i) => {
-        const cls = ADV_CLS[a.status] || 'warn';
-        const flash = advFlash.has(a.id) ? 'flash' : '';
-        const anim = (i < 12 && (animate || flash)) ? '' : (flash ? '' : 'animation:none');
-        return `
-        <tr class="${flash}" style="--i:${Math.min(i, 14)};${anim}">
-          <td class="mono">
-            <div class="row-head">
-              <span style="color:var(--text-3);font-size:12px">#${a.id}</span>
-              <button class="btn btn-del btn-icon" title="مسح السلفة" aria-label="مسح السلفة" onclick="deleteAdvance(${a.id})">${DAS.icon('trash')}</button>
-            </div>
-          </td>
-          <td data-label="المندوب">
-            <div class="cell-courier clickable" data-profile-code="${DAS.esc(a.das_code)}" title="فتح بروفايل المندوب">
-              <div class="av" style="background:${DAS.gradient(a.das_code)}" data-i18n-raw>${DAS.esc(DAS.initials(a.courier_name))}</div>
-              <div><b data-i18n-raw>${DAS.esc(a.courier_name)}</b><small class="mono">${DAS.esc(a.das_code)}</small>
-              ${syncBranchMap[a.das_code] ? `<span class="branch-tag">${DAS.esc(syncBranchMap[a.das_code])}</span>` : ''}</div>
-            </div>
-          </td>
-          <td data-label="المبلغ"><span class="amt">${DAS.esc(a.amount)} ج</span></td>
-          <td data-label="السبب" class="desc-cell"><span data-i18n-raw>${DAS.esc(a.reason)}</span><div class="meta">${DAS.fmtDateTime(a.created_at)}</div></td>
-          <td data-label="المحفظة" class="mono">${DAS.esc(a.wallet || '—')}</td>
-          <td data-label="الحالة">
-            ${DAS.ddHtml(`dd-advstatus-${a.id}`, a.status, ADV_OPTS, ADV_CLS)}
-            <span class="saved-tick" id="advtick-${a.id}">${DAS.icon('check')}</span>
-          </td>
-          <td data-label="ملاحظة">
-            <input type="text" id="advnote-${a.id}" class="input note-input" value="${DAS.esc(a.admin_note || '')}" placeholder="رد للمندوب..."
-              onchange="updateAdvance(${a.id})" onkeydown="if(event.key==='Enter')this.blur()">
-          </td>
-        </tr>`;
+      // تجميع السلف بالأسبوع: كل سلفة بتتسجل في الأسبوع بتاعها بهيدر إجمالياته
+      const groups = new Map();
+      list.forEach(a => {
+        const k = advWeekKey(a);
+        if (!groups.has(k)) groups.set(k, []);
+        groups.get(k).push(a);
+      });
+      const weekKeys = [...groups.keys()].sort((x, y) => {
+        if (!x) return 1;
+        if (!y) return -1;
+        return y.localeCompare(x);
+      });
+
+      let rowIndex = 0;
+      tbody.innerHTML = weekKeys.map(k => {
+        const items = groups.get(k);
+        const paidItems = items.filter(a => a.status === 'تمت الصرف');
+        const pendItems = items.filter(a => a.status === 'قيد المراجعة');
+        const head = `
+          <tr class="adv-week-row">
+            <td colspan="7">
+              <div class="adv-week-head">
+                <span class="awh-label">${DAS.icon('calendar')}${k ? DAS.esc(DAS.weekLabel(k)) : 'بدون تاريخ'}</span>
+                <span class="awh-stats">
+                  <b>${items.length}</b> ${items.length === 1 ? 'سلفة' : 'سلف'} ·
+                  مصروف <b class="ok">${sum(paidItems)} ج</b> ·
+                  قيد المراجعة <b class="warn">${sum(pendItems)} ج</b>
+                </span>
+              </div>
+            </td>
+          </tr>`;
+        const rows = items.map((a) => {
+          const i = rowIndex++;
+          const flash = advFlash.has(a.id) ? 'flash' : '';
+          const anim = (i < 12 && (animate || flash)) ? '' : (flash ? '' : 'animation:none');
+          return `
+          <tr class="${flash}" style="--i:${Math.min(i, 14)};${anim}">
+            <td class="mono">
+              <div class="row-head">
+                <span style="color:var(--text-3);font-size:12px">#${a.id}</span>
+                <button class="btn btn-del btn-icon" title="مسح السلفة" aria-label="مسح السلفة" onclick="deleteAdvance(${a.id})">${DAS.icon('trash')}</button>
+              </div>
+            </td>
+            <td data-label="المندوب">
+              <div class="cell-courier clickable" data-profile-code="${DAS.esc(a.das_code)}" title="فتح بروفايل المندوب">
+                <div class="av" style="background:${DAS.gradient(a.das_code)}" data-i18n-raw>${DAS.esc(DAS.initials(a.courier_name))}</div>
+                <div><b data-i18n-raw>${DAS.esc(a.courier_name)}</b><small class="mono">${DAS.esc(a.das_code)}</small>
+                ${syncBranchMap[a.das_code] ? `<span class="branch-tag">${DAS.esc(syncBranchMap[a.das_code])}</span>` : ''}</div>
+              </div>
+            </td>
+            <td data-label="المبلغ"><span class="amt">${DAS.esc(a.amount)} ج</span></td>
+            <td data-label="السبب" class="desc-cell"><span data-i18n-raw>${DAS.esc(a.reason)}</span><div class="meta">${DAS.fmtDateTime(a.created_at)}</div></td>
+            <td data-label="المحفظة" class="mono">${DAS.esc(a.wallet || '—')}</td>
+            <td data-label="الحالة">
+              ${DAS.ddHtml(`dd-advstatus-${a.id}`, a.status, ADV_OPTS, ADV_CLS)}
+              <span class="saved-tick" id="advtick-${a.id}">${DAS.icon('check')}</span>
+            </td>
+            <td data-label="ملاحظة">
+              <input type="text" id="advnote-${a.id}" class="input note-input" value="${DAS.esc(a.admin_note || '')}" placeholder="رد للمندوب..."
+                onchange="updateAdvance(${a.id})" onkeydown="if(event.key==='Enter')this.blur()">
+            </td>
+          </tr>`;
+        }).join('');
+        return head + rows;
       }).join('');
       advFlash.clear();
     }
@@ -3391,8 +3505,8 @@
       const list = advSearchList();
       if (!list.length) { DAS.toast('مفيش سلف للتصدير', 'err'); return; }
       DAS.downloadCsv(`das-advances-${new Date().toISOString().slice(0, 10)}.csv`, [
-        ['#', 'الكود', 'الاسم', 'المبلغ (ج)', 'السبب', 'المحفظة', 'الحالة', 'ملاحظة الإدارة', 'التاريخ'].map(DAS.t),
-        ...list.map(a => [a.id, a.das_code, a.courier_name, a.amount, a.reason, a.wallet || '', DAS.t(a.status), a.admin_note || '', DAS.fmtDateTime(a.created_at)])
+        ['#', 'الأسبوع', 'الكود', 'الاسم', 'المبلغ (ج)', 'السبب', 'المحفظة', 'الحالة', 'ملاحظة الإدارة', 'التاريخ'].map(DAS.t),
+        ...list.map(a => [a.id, DAS.weekLabel(advWeekKey(a)), a.das_code, a.courier_name, a.amount, a.reason, a.wallet || '', DAS.t(a.status), a.admin_note || '', DAS.fmtDateTime(a.created_at)])
       ]);
       DAS.toast('تم تنزيل ملف السلف');
     }
@@ -3470,7 +3584,7 @@
       renderTickets();
       renderAdvances();
       loadCouriers();
-      buildReportMonths();
+      buildReportWeeks();
       if ($('reportModal').classList.contains('open')) renderReport();
       if ($('profileModal').classList.contains('open') && profileCode) openProfile(profileCode);
     });

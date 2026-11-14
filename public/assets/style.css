@@ -632,7 +632,7 @@ html.scrolling .orb, html.scrolling .bg-fx::before { animation-play-state: pause
 .profile-sum { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
 @media (min-width: 640px) { .profile-sum { grid-template-columns: repeat(4, 1fr); } }
 
-/* ملخص التقرير الشهري */
+/* ملخص التقرير الأسبوعي */
 .report-sum { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 16px 0 6px; }
 @media (min-width: 640px) { .report-sum { grid-template-columns: repeat(4, 1fr); } }
 .report-sum .mini-stat b { font-size: 20px; }
@@ -659,6 +659,38 @@ html.scrolling .orb, html.scrolling .bg-fx::before { animation-play-state: pause
 .adv-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 14px 20px; margin-bottom: 14px; }
 .adv-head b { font-size: 15px; font-weight: 800; }
 .adv-summary { font-size: 12.5px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+
+/* ===== السلف بمنطق الأسابيع ===== */
+.week-filter-label { font-size: 12px; color: var(--text-3); font-weight: 700; margin-inline-end: 6px; }
+.adv-head #advWeekWrap { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+
+/* هيدر الأسبوع جوه جدول السلف */
+.tbl tbody tr.adv-week-row td { padding: 0; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.tbl tbody tr.adv-week-row:hover { background: transparent; }
+.adv-week-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 10px 16px; }
+.adv-week-head .awh-label { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 800; color: var(--accent); }
+.adv-week-head .awh-label .ico { width: 15px; height: 15px; }
+.adv-week-head .awh-stats { font-size: 12px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.adv-week-head .awh-stats b { font-weight: 800; }
+.adv-week-head .awh-stats b.ok { color: var(--ok); }
+.adv-week-head .awh-stats b.warn { color: var(--warn); }
+.week-tag { font-size: 11.5px; font-weight: 700; color: var(--text-2); white-space: nowrap; }
+
+/* الصف المحدد في جدول إجمالي الأسابيع */
+.tbl tbody tr.sel-week td { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+
+/* فواصل الأسابيع في صفحة المندوب */
+.adv-week-sep { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 2px 4px; }
+.adv-week-sep .aws-label { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 800; color: var(--accent); }
+.adv-week-sep .aws-label .ico { width: 15px; height: 15px; }
+.adv-week-sep .aws-stats { font-size: 11.5px; color: var(--text-3); font-weight: 700; font-variant-numeric: tabular-nums; }
+.ticket-foot { flex-wrap: wrap; gap: 6px 12px; }
+
+@media (max-width: 860px) {
+  .tbl tbody tr.adv-week-row { margin: 18px 0 6px; padding: 0; border: 0; background: transparent; border-radius: 0; }
+  .tbl tbody tr.adv-week-row td { padding: 0; border: 0; }
+  .adv-week-head { padding: 8px 4px; border-bottom: 1px dashed var(--border); }
+}
 
 /* Sheet (CSV) import */
 .upload-block { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); display: grid; gap: 10px; }
