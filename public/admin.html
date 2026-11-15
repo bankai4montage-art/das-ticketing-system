@@ -2839,7 +2839,7 @@
           <td>${DAS.payrollBranchTag(f.branch) || '<span style="color:var(--text-3)">—</span>'}</td>
           <td>${DAS.esc(f.zone || '—')}</td>
           <td class="num">${f.rows_n}</td>
-          <td class="num" style="color:${f.total_net >= 0 ? 'var(--ok)' : 'var(--bad)'}"><b>${Number(f.total_net).toFixed(0)} ج</b></td>
+          <td class="num" style="color:${f.total_net >= 0 ? 'var(--ok)' : 'var(--bad)'}"><b><span class="num-dir">${Number(f.total_net).toFixed(0)}</span> ج</b></td>
           <td class="mono" style="font-size:11px">${DAS.fmtDateTime(f.uploaded_at)}</td>
           <td>
             <button class="btn btn-ghost btn-sm" onclick="viewPayrollRows(${f.id})"><i data-ico="layers"></i> عرض</button>
@@ -2864,9 +2864,12 @@
     // قيمة خلية قبض: الخصومات متخزنة بالسالب، فبنعرضها إشارة واحدة بس
     function payrollCell(v, sign) {
       const n = Number(v) || 0;
-      if (sign === '-') return n ? '-' + Math.abs(n).toFixed(0) : '—';
-      if (sign === '+') return n ? '+' + n.toFixed(0) : '0';
-      return n.toFixed(0);
+      let txt;
+      if (sign === '-') txt = n ? '-' + Math.abs(n).toFixed(0) : '—';
+      else if (sign === '+') txt = n ? '+' + n.toFixed(0) : '0';
+      else txt = n.toFixed(0);
+      // direction:ltr عشان السالب يظهر قبل الرقم صح في واجهة عربي RTL
+      return txt === '—' ? '—' : `<span class="num-dir">${txt}</span>`;
     }
 
     function renderPayrollRows() {

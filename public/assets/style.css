@@ -654,6 +654,9 @@ html.scrolling .orb, html.scrolling .bg-fx::before { animation-play-state: pause
 
 /* Advances (سلفة) */
 .amt { font-size: 15px; font-weight: 800; color: var(--warn); font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* أرقام القبض في واجهة عربي RTL: الإشارة السالبة تظهر قبل الرقم */
+.num-dir { direction: ltr; unicode-bidi: isolate; display: inline-block; }
+.pay-val { font-size: 14px; font-weight: 800; direction: ltr; unicode-bidi: isolate; }
 .view-tabs { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
 .view-tabs .chip { display: inline-flex; align-items: center; gap: 7px; }
 .adv-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 14px 20px; margin-bottom: 14px; }

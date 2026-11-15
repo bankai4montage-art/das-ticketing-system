@@ -873,7 +873,7 @@
               ${r.zone ? `<span class="tag">${DAS.esc(r.zone)}</span>` : ''}
               ${r.branch ? DAS.payrollBranchTag(r.branch) : ''}
             </div>
-            <span class="amt" style="color:var(--ok)">${net} ج</span>
+            <span class="amt" style="color:var(--ok)"><span class="num-dir">${net}</span> ج</span>
           </div>
           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(82px,1fr));gap:8px 10px;margin:10px 0; padding:10px 12px; background:color-mix(in srgb, var(--text) 4%, transparent); border-radius:12px">
             ${grid.map(([key, label, sign]) => {
@@ -881,7 +881,7 @@
               return `
               <div style="text-align:center">
                 <div style="font-size:10.5px;color:var(--text-2);font-weight:600">${DAS.esc(label)}</div>
-                <div style="font-size:14px;font-weight:800;${sign === '-' && n ? 'color:var(--bad)' : sign === '+' && n ? 'color:var(--ok)' : ''}">
+                <div class="pay-val" style="${sign === '-' && n ? 'color:var(--bad)' : sign === '+' && n ? 'color:var(--ok)' : ''}">
                   ${payrollSigned(n, sign)}
                 </div>
               </div>`;
@@ -889,7 +889,7 @@
           </div>
           <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;padding:0 4px">
             <div class="meta" style="margin:0">
-              ${r.remaining_net >= 1000000 ? '' : 'الباقى قبل الرسوم: <span class="mono">' + payrollMoney(r.remaining) + ' ج</span>'}
+              ${r.remaining_net >= 1000000 ? '' : 'الباقى قبل الرسوم: <span class="mono num-dir">' + payrollMoney(r.remaining) + ' ج</span>'}
             </div>
             ${r.wallet ? `<div class="mono" style="font-size:12px">${DAS.esc(r.wallet)}${r.wallet_type ? ' · ' + DAS.esc(r.wallet_type) : ''}</div>` : ''}
           </div>
