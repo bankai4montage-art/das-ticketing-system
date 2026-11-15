@@ -291,6 +291,7 @@ db.serialize(() => {
       title TEXT NOT NULL,
       period TEXT DEFAULT '',
       zone TEXT DEFAULT '',
+      branch TEXT DEFAULT '',
       rows_n INTEGER DEFAULT 0,
       uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       uploaded_by TEXT DEFAULT ''
@@ -301,6 +302,7 @@ db.serialize(() => {
     CREATE TABLE IF NOT EXISTS payroll (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       file_id INTEGER NOT NULL,
+      branch TEXT DEFAULT '',
       period TEXT DEFAULT '',
       zone TEXT DEFAULT '',
       sp TEXT DEFAULT '',
@@ -309,6 +311,7 @@ db.serialize(() => {
       days REAL DEFAULT 0, orders_n REAL DEFAULT 0, order_price REAL DEFAULT 0, orders_value REAL DEFAULT 0,
       amazon_n REAL DEFAULT 0, guarantee_price REAL DEFAULT 0, guarantee_value REAL DEFAULT 0,
       salary REAL DEFAULT 0, bonus REAL DEFAULT 0, distance_bonus REAL DEFAULT 0, tibas REAL DEFAULT 0,
+      holiday_bonus REAL DEFAULT 0, prior_debt REAL DEFAULT 0, license REAL DEFAULT 0,
       total_pilot REAL DEFAULT 0, prev_taken REAL DEFAULT 0, office_bonus REAL DEFAULT 0,
       advance_deduct REAL DEFAULT 0, fine REAL DEFAULT 0, equipment REAL DEFAULT 0, fund REAL DEFAULT 0,
       remaining REAL DEFAULT 0, remaining_net REAL DEFAULT 0,
@@ -387,8 +390,31 @@ db.serialize(() => {
   // قاعدة قديمة؟ نزود الأعمدة الناقصة تلقائي (بعد إنشاء الجدول)
   db.all("PRAGMA table_info(payroll)", [], (pErr, pCols) => {
     if (pErr || !pCols) return;
-    const names = pCols.map(c => c.name);
-    if (!names.includes('sp')) db.run("ALTER TABLE payroll ADD COLUMN sp TEXT DEFAULT ''");
+    db.serialize(() => {
+      const names = pCols.map(c => c.name);
+      if (!names.includes('sp')) db.run("ALTER TABLE payroll ADD COLUMN sp TEXT DEFAULT ''");
+      // أعمدة الفروع الجديدة: بونص الأجازات + الديون السابقة + رخصة الإعلان + الفرع
+      if (!names.includes('holiday_bonus')) db.run("ALTER TABLE payroll ADD COLUMN holiday_bonus REAL DEFAULT 0");
+      if (!names.includes('prior_debt')) db.run("ALTER TABLE payroll ADD COLUMN prior_debt REAL DEFAULT 0");
+      if (!names.includes('license')) db.run("ALTER TABLE payroll ADD COLUMN license REAL DEFAULT 0");
+      if (!names.includes('branch')) db.run("ALTER TABLE payroll ADD COLUMN branch TEXT DEFAULT ''");
+      // تعبئة فرع الصفوف القديمة من المنطقة (الترتيب مضمون جوه serialize)
+      db.run(`UPDATE payroll SET branch = 'QCD 1'
+              WHERE (branch IS NULL OR branch = '') AND (LOWER(zone) LIKE '%mandra%' OR LOWER(zone) LIKE '%almandra%')`);
+      db.run(`UPDATE payroll SET branch = 'QCD 2'
+              WHERE (branch IS NULL OR branch = '') AND (LOWER(zone) LIKE '%semouha%' OR LOWER(zone) LIKE '%semooha%' OR LOWER(zone) LIKE '%smouha%')`);
+    });
+  });
+  db.all("PRAGMA table_info(payroll_files)", [], (pfErr, pfCols) => {
+    if (pfErr || !pfCols) return;
+    db.serialize(() => {
+      if (!pfCols.some(c => c.name === 'branch')) db.run("ALTER TABLE payroll_files ADD COLUMN branch TEXT DEFAULT ''");
+      // تعبئة الفرع للملفات القديمة اللي اترفعت قبل دعم الفروع (من المنطقة/العنوان)
+      db.run(`UPDATE payroll_files SET branch = 'QCD 1'
+              WHERE (branch IS NULL OR branch = '') AND (LOWER(zone) LIKE '%mandra%' OR LOWER(zone) LIKE '%almandra%' OR LOWER(title) LIKE '%mandra%')`);
+      db.run(`UPDATE payroll_files SET branch = 'QCD 2'
+              WHERE (branch IS NULL OR branch = '') AND (LOWER(zone) LIKE '%semouha%' OR LOWER(zone) LIKE '%semooha%' OR LOWER(zone) LIKE '%smouha%' OR LOWER(title) LIKE '%semouha%')`);
+    });
   });
 
   // قاعدة قديمة؟ نزود الأعمدة الناقصة تلقائي (بعد إنشاء الجدول)  // الكروت: sort_order للترتيب بالسحب والإفلات — الموجودين قبل التحديث بنرتّبهم
@@ -1030,61 +1056,134 @@ app.post('/api/courier/notifications/read', (req, res) => {
 const NUM = (v) => { const n = parseFloat(String(v ?? '').replace(/[,\s]/g, '')); return isNaN(n) ? 0 : n; };
 
 // ================= تفسير ملفات القبض (Accounting Amazon) =================
-// ملفات "Accounting Amazon" بتيجي بعناوين عربية، وساعات بتيجي العناوين نفسها
-// متلفة (كل العربي بيطلع "?" بعد الحفظ من برامج معينة) — فبنقراها بالاسم لو
-// موجود، وإلا بنرجع لترتيب الأعمدة الثابت بتاع الفورمات. عمودي "القيمة" المكررين
-// (قيمة الأوردرات + قيمة الضمان) بيتحددوا بالمكان مش بالاسم.
-const PAYROLL_FIELDS = [
-  ['id', 0, ['Rider ID', 'rider id', 'riderid']],
-  ['name', 1, ['Rider Name', 'rider name', 'name']],
-  ['sp', 2, ['SP']],
-  ['zone', 3, ['Zone']],
-  ['days', 4, ['عدد ايام العمل', 'عدد أيام العمل', 'ايام العمل']],
-  ['orders_n', 5, ['عدد اوردرات المندوب', 'اوردرات المندوب']],
-  ['order_price', 6, ['سعر الاوردر']],
-  ['orders_value', 7, ['القيمة_اوردرات']],
-  ['amazon_n', 8, ['عدد اوردرات امازون', 'اوردرات امازون']],
-  ['guarantee_price', 9, ['سعر اوردر الضمان']],
-  ['guarantee_value', 10, ['القيمة_ضمان']],
-  ['salary', 11, ['مرتب الطيار']],
-  ['bonus', 12, ['بونص الطيار']],
-  ['distance_bonus', 13, ['بونص مسافة']],
-  ['tibas', 14, ['تبس']],
-  ['total_pilot', 15, ['اجمالى مرتب الطيار', 'اجمالي مرتب الطيار', 'اجمالى المرتب']],
-  ['prev_taken', 16, ['قبض سابق']],
-  ['office_bonus', 17, ['بونص مكتب']],
-  ['advance_deduct', 18, ['سلفة الطيار', 'سلفة']],
-  ['fine', 19, ['غرامة']],
-  ['equipment', 20, ['معدات']],
-  ['fund', 21, ['صندوق زمالة', 'صندوق']],
-  ['remaining', 22, ['الباقى', 'الباقي']],
-  ['remaining_net', 23, ['الباقي بعد خصم الرسوم', 'الباقى بعد خصم الرسوم']],
-  ['wallet', 24, ['رقم المحفظة']],
-  ['wallet_type', 25, ['نوع المحفظة']],
-  ['status', 27, ['Status']]
-];
+// كل فرع بيبعت شيت مختلف — ولازم النظام يتعرف على الفرع ويظبط الأعمدة حسبه:
+//   QCD 1 · المندرة: فيه "بونص عمل في الاجازات" و"ديون سابقة".
+//   QCD 2 · سموحة: نفس الحاجات + عمود "رخصة اعلان" زيادة، وترتيب
+//   "بونص مسافة" و"بونص الاجازات" متبدل، وساعات فوق العناوين صف ترقيم (1,2,3...).
+// القارئ بيحدد صف العناوين الأول (ويتخطى الترقيم)، وبيقرا الأعمدة بالاسم.
+// ولو العناوين وصلت متلفة (كل العربي "?") بيرجع لترتيب أعمدة الفرع نفسه.
+const PAYROLL_FIELD_NAMES = {
+  id: ['Rider ID'],
+  name: ['Rider Name'],
+  sp: ['SP'],
+  zone: ['Zone'],
+  days: ['عدد ايام العمل', 'عدد أيام العمل', 'ايام العمل'],
+  orders_n: ['عدد اوردرات المندوب', 'اوردرات المندوب'],
+  order_price: ['سعر الاوردر'],
+  // عمودي "القيمة" المكررين (قيمة الأوردرات + قيمة الضمان) بيتحددوا بالمكان مش بالاسم
+  orders_value: ['قيمة الاوردرات', 'القيمة اوردرات'],
+  amazon_n: ['عدد اوردرات امازون', 'اوردرات امازون'],
+  guarantee_price: ['سعر اوردر الضمان'],
+  guarantee_value: ['قيمة الضمان', 'القيمة ضمان'],
+  salary: ['مرتب الطيار'],
+  bonus: ['بونص الطيار'],
+  distance_bonus: ['بونص مسافة'],
+  holiday_bonus: ['بونص عمل في الاجازات', 'بونص عمل في الاجازه', 'بونص اجازات', 'بونص الاجازات'],
+  tibas: ['تبس'],
+  total_pilot: ['اجمالى مرتب الطيار', 'اجمالي مرتب الطيار', 'اجمالى المرتب'],
+  prev_taken: ['قبض سابق'],
+  office_bonus: ['بونص مكتب'],
+  advance_deduct: ['سلفة الطيار', 'سلفة'],
+  fine: ['غرامة'],
+  prior_debt: ['ديون سابقة', 'ديون سابقه'],
+  license: ['رخصة اعلان', 'رخصة إعلان', 'رخصه اعلان', 'رخصه إعلان'],
+  equipment: ['معدات'],
+  fund: ['صندوق زمالة', 'صندوق'],
+  remaining: ['الباقى', 'الباقي'],
+  remaining_net: ['الباقي بعد خصم الرسوم', 'الباقى بعد خصم الرسوم'],
+  wallet: ['رقم المحفظة'],
+  wallet_type: ['نوع المحفظة'],
+  check: ['CHECK'],
+  status: ['Status']
+};
+const PAYROLL_FIELD_KEYS = Object.keys(PAYROLL_FIELD_NAMES);
+
+// ترتيب أعمدة كل فرع — للشيتات اللي عناوينها وصلت متلفة (???) ومفيش أسماء تتقرا
+const PAYROLL_POSITIONS = {
+  'QCD 1': {
+    id: 0, name: 1, sp: 2, zone: 3, days: 4, orders_n: 5, order_price: 6, orders_value: 7,
+    amazon_n: 8, guarantee_price: 9, guarantee_value: 10, salary: 11, bonus: 12,
+    holiday_bonus: 13, distance_bonus: 14, tibas: 15, total_pilot: 16, prev_taken: 17,
+    office_bonus: 18, advance_deduct: 19, fine: 20, prior_debt: 21, equipment: 22,
+    fund: 23, remaining: 24, remaining_net: 25, wallet: 26, wallet_type: 27, check: 28, status: 29
+  },
+  'QCD 2': {
+    id: 0, name: 1, sp: 2, zone: 3, days: 4, orders_n: 5, order_price: 6, orders_value: 7,
+    amazon_n: 8, guarantee_price: 9, guarantee_value: 10, salary: 11, bonus: 12,
+    distance_bonus: 13, holiday_bonus: 14, tibas: 15, total_pilot: 16, prev_taken: 17,
+    office_bonus: 18, advance_deduct: 19, fine: 20, prior_debt: 21, license: 22,
+    equipment: 23, fund: 24, remaining: 25, remaining_net: 26, wallet: 27, wallet_type: 28,
+    check: 29, status: 30
+  },
+  // الشكل القديم (قبل بونص الأجازات/الديون/الرخصة) — للتوافق مع أي شيت قديم
+  legacy: {
+    id: 0, name: 1, sp: 2, zone: 3, days: 4, orders_n: 5, order_price: 6, orders_value: 7,
+    amazon_n: 8, guarantee_price: 9, guarantee_value: 10, salary: 11, bonus: 12,
+    distance_bonus: 13, tibas: 14, total_pilot: 15, prev_taken: 16, office_bonus: 17,
+    advance_deduct: 18, fine: 19, equipment: 20, fund: 21, remaining: 22,
+    remaining_net: 23, wallet: 24, wallet_type: 25, check: 26, status: 27
+  }
+};
 
 function normPayrollHeader(v) {
   return String(v || '')
-    .replace(/[\u0640\u064B-\u0652]/g, '')           // تطويل وتشكيل
+    .replace(/[\u200e\u200f\u202a-\u202e]/g, '')  // علامات اتجاه مخفية
+    .replace(/[\u0640\u064B-\u0652]/g, '')         // تطويل وتشكيل
     .replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي').replace(/ة/g, 'ه')
     .replace(/\s+/g, ' ').trim().toLowerCase();
 }
 
-function payrollHeaderIndex(headers, names) {
+// الفرع من قيمة SP/Zone أو من اسم الملف/العنوان
+function payrollBranchFromText(...vals) {
+  const t = vals.map(normPayrollHeader).join(' ');
+  if (/qcd\s*[-_.]?\s*1\b/.test(t) || /almandra|elmandra|mandra|المندره|مندره|الماندرا/.test(t)) return 'QCD 1';
+  if (/qcd\s*[-_.]?\s*2\b/.test(t) || /semouha|semooha|smouha|السموحه|سموحه/.test(t)) return 'QCD 2';
+  return '';
+}
+
+// صف العناوين: أول صف فيه Rider ID / Rider Name / SP / Zone (عشان نتخطى صف الترقيم)
+function findPayrollHeaderRow(rows) {
+  const marks = ['riderid', 'ridername', 'sp', 'zone'];
+  let best = 0, bestScore = -1;
+  for (let i = 0; i < Math.min(rows.length, 8); i++) {
+    const flat = rows[i].map((c) => normPayrollHeader(c).replace(/\s+/g, ''));
+    const score = marks.filter((n) => flat.includes(n)).length;
+    if (score > bestScore) { bestScore = score; best = i; }
+  }
+  return bestScore >= 2 ? best : 0;
+}
+
+function payrollHeaderIndex(headers, names, used) {
   const norm = headers.map(normPayrollHeader);
   const squeeze = (s) => s.replace(/\s+/g, '');
+  const free = (i) => !used || !used.has(i);
   for (const name of names) {
-    const i = norm.indexOf(normPayrollHeader(name));
+    const i = norm.findIndex((h, k) => free(k) && h === normPayrollHeader(name));
     if (i >= 0) return i;
   }
   for (const name of names) {
     const n = squeeze(normPayrollHeader(name));
-    const i = norm.findIndex((h) => squeeze(h) === n);
+    const i = norm.findIndex((h, k) => free(k) && squeeze(h) === n);
     if (i >= 0) return i;
   }
   return -1;
 }
+
+function sniffPayrollBranch(rows, headerRow, headers, hint) {
+  // بيانات الشيت نفسها أصدق من اسم الملف — SP/Zone موجودين في كل الشيتات
+  const norm = headers.map(normPayrollHeader);
+  const compact = norm.map((h) => h.replace(/\s+/g, ''));
+  let spIdx = compact.indexOf('sp');
+  let zoneIdx = compact.indexOf('zone');
+  if (spIdx < 0) spIdx = 2;
+  if (zoneIdx < 0) zoneIdx = 3;
+  for (let i = headerRow + 1; i < Math.min(rows.length, headerRow + 12); i++) {
+    const b = payrollBranchFromText(rows[i][spIdx], rows[i][zoneIdx]);
+    if (b) return b;
+  }
+  return payrollBranchFromText(hint);
+}
+
 
 // قارئ CSV متسامح: علامات تنصيص، CRLF، وBOM
 function splitCsvRows(text) {
@@ -1110,59 +1209,84 @@ function splitCsvRows(text) {
   return rows.filter((r) => r.length > 1 || String(r[0] || '').trim() !== '');
 }
 
-// CSV → صفوف بالشكل اللي norm() بيفهمه
-function parsePayrollCsv(text) {
+// CSV → صفوف بالشكل اللي norm() بيفهمه + الفرع المكتشف
+function parsePayrollCsv(text, hint) {
   const rows = splitCsvRows(String(text || '').replace(/^\uFEFF/, ''));
-  if (rows.length < 2) return { rows: [], error: 'الملف فاضي أو مفيهوش صفوف' };
-  const headers = rows[0].map((h) => String(h == null ? '' : h).trim());
+  if (rows.length < 2) return { rows: [], branch: '', error: 'الملف فاضي أو مفيهوش صفوف' };
+  const headerRow = findPayrollHeaderRow(rows);
+  const headers = rows[headerRow].map((h) => String(h == null ? '' : h).trim());
+  const branch = sniffPayrollBranch(rows, headerRow, headers, hint);
+  const pos = PAYROLL_POSITIONS[branch] || PAYROLL_POSITIONS.legacy;
+
+  // أولاً بالاسم (بيتجاهل اختلاف ترتيب الأعمدة بين الفروع)، وبعدين بترتيب الفرع
+  const used = new Set();
   const idx = {};
-  for (const [key, pos, names] of PAYROLL_FIELDS) {
-    let i = payrollHeaderIndex(headers, names);
-    if (i < 0) i = pos;                       // العناوين متلفة أو مش موجودة؟ ترتيب الفورمات
+  for (const key of PAYROLL_FIELD_KEYS) {
+    const i = payrollHeaderIndex(headers, PAYROLL_FIELD_NAMES[key], used);
+    if (i >= 0) used.add(i);
     idx[key] = i;
   }
+  for (const key of PAYROLL_FIELD_KEYS) {
+    if (idx[key] < 0) idx[key] = pos[key] == null ? -1 : pos[key];
+  }
+
   const out = [];
-  for (const r of rows.slice(1)) {
+  const headerish = (v) => /^(rider\s*id|rider\s*name|\?+)$/i.test(String(v || '').trim());
+  for (const r of rows.slice(headerRow + 1)) {
     const get = (key) => { const i = idx[key]; return i >= 0 && r[i] != null ? String(r[i]).trim() : ''; };
     if (!get('id') && !get('name')) continue;  // صفوف فاضية
+    // لو العناوين كانت متلفة وصف العناوين نفسه اتقرا كصف بيانات — نتخطاه
+    if (headerish(get('id')) || headerish(get('name'))) continue;
     out.push({
       'Rider ID': get('id'), 'Rider Name': get('name'), SP: get('sp'), Zone: get('zone'),
       'عدد ايام العمل': get('days'), 'عدد اوردرات المندوب': get('orders_n'),
       'سعر الاوردر': get('order_price'), 'القيمة_اوردرات': get('orders_value'),
       'عدد اوردرات امازون': get('amazon_n'), 'سعر اوردر الضمان': get('guarantee_price'),
       'القيمة_ضمان': get('guarantee_value'), 'مرتب الطيار': get('salary'),
-      'بونص الطيار': get('bonus'), 'بونص مسافة': get('distance_bonus'), 'تبس': get('tibas'),
+      'بونص الطيار': get('bonus'), 'بونص مسافة': get('distance_bonus'),
+      'بونص عمل في الاجازات': get('holiday_bonus'), 'تبس': get('tibas'),
       'اجمالى مرتب الطيار': get('total_pilot'), 'قبض سابق': get('prev_taken'),
       'بونص مكتب': get('office_bonus'), 'سلفة الطيار': get('advance_deduct'),
-      'غرامة': get('fine'), 'معدات': get('equipment'), 'صندوق زمالة': get('fund'),
+      'غرامة': get('fine'), 'ديون سابقة': get('prior_debt'), 'رخصة اعلان': get('license'),
+      'معدات': get('equipment'), 'صندوق زمالة': get('fund'),
       'الباقى': get('remaining'), 'الباقي بعد خصم الرسوم': get('remaining_net'),
       'رقم المحفظة': get('wallet'), 'نوع المحفظة': get('wallet_type'),
-      Status: get('status')
+      Status: get('status') || get('check'), Branch: branch
     });
   }
-  if (!out.length) return { rows: [], error: 'الملف مفيهوش صفوف صالحة (Rider ID أو الاسم فاضي في كل الصفوف؟)' };
-  return { rows: out };
+  if (!out.length) return { rows: [], branch, error: 'الملف مفيهوش صفوف صالحة (Rider ID أو الاسم فاضي في كل الصفوف؟)' };
+  return { rows: out, branch };
 }
 
 app.post('/api/admin/payroll/upload', express.json({ limit: '6mb' }), (req, res) => {
   if (!safeEq(String(req.headers['x-admin-token'] || ''), ADMIN_TOKEN)) return res.status(401).json({ error: 'غير مصرح' });
   if (rateLimited(req, 'payroll-upload', 30, 60e3)) return res.status(429).json({ error: 'محاولات كتير — استنى دقيقة' });
 
-  const { title = '', period = '', zone = '' } = req.body || {};
+  const { title = '', period = '', zone = '', branch: branchHint = '' } = req.body || {};
   let rows = req.body && req.body.rows;
+  let detectedBranch = payrollBranchFromText(zone, title, branchHint);
   // المتصفح بيبعت الملف خام (csv) والسيرفر بيفسّره — كده العناوين العربية المتلفة
   // (???) ما بتوقفش الرفع، والتفسير واحد لكل المستخدمين. صفوف JSON القديمة لسه مدعومة.
   if (!Array.isArray(rows)) {
     if (typeof (req.body && req.body.csv) === 'string') {
-      const parsed = parsePayrollCsv(req.body.csv);
+      const parsed = parsePayrollCsv(req.body.csv, [zone, title, branchHint].join(' '));
       if (!parsed.rows.length) return res.status(400).json({ error: parsed.error || 'الملف مفيهوش صفوف صالحة' });
       rows = parsed.rows;
+      if (parsed.branch) detectedBranch = parsed.branch;
     }
   }
   if (!rows || !Array.isArray(rows) || !rows.length) return res.status(400).json({ error: 'مفيش صفوف لرفعها' });
   if (rows.length > 500) return res.status(400).json({ error: 'الملف كبير جدًا (أكتر من 500 صف)' });
+  // صفوف JSON جاية من عميل قديم: نستنتج الفرع من SP/Zone
+  if (!detectedBranch) {
+    for (const r of rows.slice(0, 20)) {
+      detectedBranch = payrollBranchFromText((r || {}).Branch, (r || {}).SP, (r || {}).Zone);
+      if (detectedBranch) break;
+    }
+  }
 
   const norm = (row) => ({
+    branch: detectedBranch,
     period: String(period || row.Zone || '').trim() || String(row.Zone || '').trim(),
     zone: String(row.Zone || '').trim(), sp: String(row.SP || '').trim(),
     rider_id: String(row['Rider ID'] || '').trim().toUpperCase(),
@@ -1171,40 +1295,44 @@ app.post('/api/admin/payroll/upload', express.json({ limit: '6mb' }), (req, res)
     order_price: NUM(row['سعر الاوردر']), orders_value: NUM(row['القيمة_اوردرات']),
     amazon_n: NUM(row['عدد اوردرات امازون']), guarantee_price: NUM(row['سعر اوردر الضمان']),
     guarantee_value: NUM(row['القيمة_ضمان']), salary: NUM(row['مرتب الطيار']),
-    bonus: NUM(row['بونص الطيار']), distance_bonus: NUM(row['بونص مسافة']), tibas: NUM(row['تبس']),
+    bonus: NUM(row['بونص الطيار']), distance_bonus: NUM(row['بونص مسافة']),
+    holiday_bonus: NUM(row['بونص عمل في الاجازات']), tibas: NUM(row['تبس']),
     total_pilot: NUM(row['اجمالى مرتب الطيار']), prev_taken: NUM(row['قبض سابق']),
     office_bonus: NUM(row['بونص مكتب']), advance_deduct: NUM(row['سلفة الطيار']),
-    fine: NUM(row['غرامة']), equipment: NUM(row['معدات']), fund: NUM(row['صندوق زمالة']),
+    fine: NUM(row['غرامة']), prior_debt: NUM(row['ديون سابقة']), license: NUM(row['رخصة اعلان']),
+    equipment: NUM(row['معدات']), fund: NUM(row['صندوق زمالة']),
     remaining: NUM(row['الباقى']), remaining_net: NUM(row['الباقي بعد خصم الرسوم']),
     wallet: String(row['رقم المحفظة'] || '').trim(), wallet_type: String(row['نوع المحفظة'] || '').trim(),
-    status: String(row.Status || '').trim()
+    status: String(row.Status || row.CHECK || '').trim()
   });
   const parsed = rows.map(norm).filter(r => r.rider_id || r.rider_name);
   if (!parsed.length) return res.status(400).json({ error: 'الملف مفيهوش صفوف صالحة (Rider ID فاضي في كل الصفوف؟)' });
 
   db.serialize(() => {
-    db.run("INSERT INTO payroll_files (title, period, zone, rows_n, uploaded_by) VALUES (?, ?, ?, ?, 'admin')",
-      [String(title).trim() || 'تفاصيل القبض', String(period).trim(), String(zone).trim(), parsed.length],
+    db.run("INSERT INTO payroll_files (title, period, zone, branch, rows_n, uploaded_by) VALUES (?, ?, ?, ?, ?, 'admin')",
+      [String(title).trim() || 'تفاصيل القبض', String(period).trim(), String(zone).trim(), detectedBranch, parsed.length],
       function (err) {
         if (err) { console.error('[DAS] payroll file insert:', err.message); return res.status(500).json({ error: 'فشل حفظ الملف' }); }
         const fileId = this.lastID;
-        const stmt = db.prepare(`INSERT INTO payroll (file_id, period, zone, sp, rider_id, rider_name,
+        const stmt = db.prepare(`INSERT INTO payroll (file_id, branch, period, zone, sp, rider_id, rider_name,
           days, orders_n, order_price, orders_value, amazon_n, guarantee_price, guarantee_value,
-          salary, bonus, distance_bonus, tibas, total_pilot, prev_taken, office_bonus,
-          advance_deduct, fine, equipment, fund, remaining, remaining_net, wallet, wallet_type, status)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+          salary, bonus, distance_bonus, holiday_bonus, tibas, total_pilot, prev_taken, office_bonus,
+          advance_deduct, fine, prior_debt, license, equipment, fund, remaining, remaining_net,
+          wallet, wallet_type, status)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
         let failed = null;
         parsed.forEach((r) => {
           if (failed) return;
-          stmt.run([fileId, r.period, r.zone, r.sp, r.rider_id, r.rider_name,
+          stmt.run([fileId, r.branch, r.period, r.zone, r.sp, r.rider_id, r.rider_name,
             r.days, r.orders_n, r.order_price, r.orders_value, r.amazon_n, r.guarantee_price, r.guarantee_value,
-            r.salary, r.bonus, r.distance_bonus, r.tibas, r.total_pilot, r.prev_taken, r.office_bonus,
-            r.advance_deduct, r.fine, r.equipment, r.fund, r.remaining, r.remaining_net, r.wallet, r.wallet_type, r.status],
+            r.salary, r.bonus, r.distance_bonus, r.holiday_bonus, r.tibas, r.total_pilot, r.prev_taken, r.office_bonus,
+            r.advance_deduct, r.fine, r.prior_debt, r.license, r.equipment, r.fund, r.remaining, r.remaining_net,
+            r.wallet, r.wallet_type, r.status],
             (e2) => { if (e2 && !failed) failed = e2; });
         });
         stmt.finalize(() => {
           if (failed) { console.error('[DAS] payroll rows insert:', failed.message); return res.status(500).json({ error: 'فشل حفظ صفوف القبض: ' + failed.message }); }
-          res.json({ ok: true, file_id: fileId, rows: parsed.length });
+          res.json({ ok: true, file_id: fileId, rows: parsed.length, branch: detectedBranch });
           BUS.publish('payroll', { file_id: fileId, reason: 'upload' });
           notifyPayrollTargets(parsed, fileId, String(title).trim() || 'تفاصيل القبض');
         });

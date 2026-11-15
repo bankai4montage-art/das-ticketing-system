@@ -841,6 +841,14 @@
 
     function payrollMoney(v) { const n = Number(v || 0); return n ? n.toFixed(0) : '0'; }
 
+    // الخصومات متخزنة بالسالب — إشارة واحدة بس في العرض
+    function payrollSigned(v, sign) {
+      const n = Number(v) || 0;
+      if (sign === '-') return n ? '-' + Math.abs(n).toFixed(0) : '0';
+      if (sign === '+') return n ? '+' + n.toFixed(0) : '0';
+      return n.toFixed(0);
+    }
+
     function renderPayroll(rows) {
       const container = $('payrollList');
       if (!rows || !rows.length) {
@@ -855,29 +863,29 @@
       // أحدث أسبوع أولا + تفديد نظيف لكل صف
       container.innerHTML = rows.map((r, i) => {
         const net = payrollMoney(r.remaining_net);
-        const grid = [
-          ['أيام العمل', r.days, ''], ['أوردرات', r.orders_n, ''],
-          ['مرتب', r.salary, ''], ['بونص', r.bonus, '+'], ['بونص مسافة', r.distance_bonus, '+'],
-          ['تبس', r.tibas, '+'], ['قبض سابق', r.prev_taken, ''], ['بونص مكتب', r.office_bonus, '+'],
-          ['سلفة', r.advance_deduct, '-'], ['غرامة', r.fine, '-'], ['معدات', r.equipment, '-'], ['صندوق زمالة', r.fund, '-']
-        ];
+        // كل فرع له أعمدته: QCD 2 عنده «رخصة إعلان» زيادة، والاتنين فيهم بونص أجازات وديون سابقة
+        const grid = DAS.payrollDetailFields(r.branch);
         return `
         <article class="ticket s-ok" style="--i:${i};animation:none">
           <div class="ticket-top">
             <div class="l">
               <span class="tag adv">${DAS.esc(r.period || r.file_title || 'أسبوع')}</span>
               ${r.zone ? `<span class="tag">${DAS.esc(r.zone)}</span>` : ''}
+              ${r.branch ? DAS.payrollBranchTag(r.branch) : ''}
             </div>
             <span class="amt" style="color:var(--ok)">${net} ج</span>
           </div>
-          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px 10px;margin:10px 0; padding:10px 12px; background:color-mix(in srgb, var(--text) 4%, transparent); border-radius:12px">
-            ${grid.map(([label, val, sign]) => `
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(82px,1fr));gap:8px 10px;margin:10px 0; padding:10px 12px; background:color-mix(in srgb, var(--text) 4%, transparent); border-radius:12px">
+            ${grid.map(([key, label, sign]) => {
+              const n = Number(r[key]) || 0;
+              return `
               <div style="text-align:center">
-                <div style="font-size:10.5px;color:var(--text-2);font-weight:600">${label}</div>
-                <div style="font-size:14px;font-weight:800;${sign === '-' && Number(val) ? 'color:var(--bad)' : sign === '+' && Number(val) ? 'color:var(--ok)' : ''}">
-                  ${sign === '-' && Number(val) ? '-' : ''}${payrollMoney(val)}
+                <div style="font-size:10.5px;color:var(--text-2);font-weight:600">${DAS.esc(label)}</div>
+                <div style="font-size:14px;font-weight:800;${sign === '-' && n ? 'color:var(--bad)' : sign === '+' && n ? 'color:var(--ok)' : ''}">
+                  ${payrollSigned(n, sign)}
                 </div>
-              </div>`).join('')}
+              </div>`;
+            }).join('')}
           </div>
           <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;padding:0 4px">
             <div class="meta" style="margin:0">

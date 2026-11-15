@@ -1061,7 +1061,20 @@ input[type="file"].visually-hidden { position: absolute; width: 1px; height: 1px
   border-radius: 6px; font-size: 10.5px; font-weight: 700; letter-spacing: .02em;
   color: var(--text-3); background: var(--surface-2);
   border: 1px solid var(--border);
+  white-space: nowrap;
 }
+/* فروع القبض — لون هادي لكل فرع بدل ما يكونوا متطابقين */
+.branch-tag.qcd1 {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 32%, transparent);
+}
+.branch-tag.qcd2 {
+  color: #0d9488;
+  background: rgba(13, 148, 136, .12);
+  border-color: rgba(13, 148, 136, .32);
+}
+:root[data-theme="dark"] .branch-tag.qcd2 { color: #5eead4; background: rgba(45, 212, 191, .14); border-color: rgba(45, 212, 191, .3); }
 
 /* عدّاد شيب الفرع */
 .chip-count {

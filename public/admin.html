@@ -364,13 +364,19 @@
 
         <div class="hint" style="margin-bottom:12px;display:flex;align-items:center;gap:8px">
           <i data-ico="alert"></i>
-          ارفع ملف الأسبوع (CSV من Accounting Amazon) — الأسبوع والمنطقة يتحددوا من اسم الملف تلقائي، والتفاصيل بتظهر لكل مندوب في صفحته على طول.
+          ارفع شيت الأسبوع (CSV من Accounting Amazon). النظام بيتعرّف على الفرع من الشيت نفسه: المندرة = QCD 1، سموحة = QCD 2، ويظبط الأعمدة والتفاصيل على حسب كل فرع.
+        </div>
+
+        <div class="chips" id="payrollBranchChips" style="margin-bottom:12px">
+          <button class="chip active" data-pay-branch="all">كل الفروع</button>
+          <button class="chip" data-pay-branch="QCD 1">QCD 1 · المندرة</button>
+          <button class="chip" data-pay-branch="QCD 2">QCD 2 · سموحة</button>
         </div>
 
         <section class="glass table-wrap rise">
           <table class="tbl">
             <thead>
-              <tr><th>الملف</th><th>الأسبوع / الفترة</th><th>المنطقة</th><th>الصفوف</th><th>إجمالي الباقى</th><th>التاريخ</th><th></th></tr>
+              <tr><th>الملف</th><th>الأسبوع / الفترة</th><th>الفرع</th><th>المنطقة</th><th>الصفوف</th><th>إجمالي الباقى</th><th>التاريخ</th><th></th></tr>
             </thead>
             <tbody id="payrollFilesBody"></tbody>
           </table>
@@ -387,9 +393,7 @@
           </div>
           <div style="overflow-x:auto">
             <table class="tbl" style="min-width:900px">
-              <thead><tr>
-                <th>الكود</th><th>المندوب</th><th>أيام</th><th>أوردرات</th><th>اجمالي مرتب</th><th>سلفة</th><th>غرامة</th><th>معدات</th><th>صندوق</th><th>الباقى</th><th>بعد الرسوم</th><th>المحفظة</th><th>Status</th>
-              </tr></thead>
+              <thead id="payrollRowsHead"></thead>
               <tbody id="payrollRowsBody"></tbody>
             </table>
           </div>
@@ -2732,7 +2736,11 @@
       const period = m ? m[0].replace(/\s+/g, ' ').trim() : name;
       const after = name.includes(')') ? name.slice(name.lastIndexOf(')') + 1) : '';
       const zone = after.replace(/^[-–—:\s]+/, '').replace(/\s+/g, ' ').trim();
-      return { title: period + (zone ? ' — ' + zone : ''), period, zone };
+      // تلميح للفرع من اسم الملف — السيرفر بيأكده من SP/Zone اللي جوه الشيت
+      const hint = (name + ' ' + zone).toLowerCase();
+      const branch = /mandra|almandra|mandara|المندره|مندره/.test(hint) ? 'QCD 1'
+        : /semouha|semooha|smouha|سموحه/.test(hint) ? 'QCD 2' : '';
+      return { title: period + (zone ? ' — ' + zone : ''), period, zone, branch };
     }
 
 
@@ -2746,15 +2754,16 @@
           // وحتى لو العناوين بقت "???" بيرجع لترتيب أعمدة الفورمات (Accounting Amazon).
           let text;
           try { text = await readCsvText(file); } catch (e) { text = await file.text(); }
-          const body = { csv: text.replace(/^\uFEFF/, ''), title: meta.title, period: meta.period, zone: meta.zone };
+          const body = { csv: text.replace(/^\uFEFF/, ''), title: meta.title, period: meta.period, zone: meta.zone, branch: meta.branch };
           if (!body.csv || !body.csv.trim()) { DAS.toast(`الملف فاضي: ${file.name}`, 'err'); continue; }
           const res = await adminFetch('/api/admin/payroll/upload', {
             method: 'POST',
             body: JSON.stringify(body)
           });
           const out = await res.json().catch(() => ({}));
+          const branchLabel = out.branch ? DAS.payrollBranchLabel(out.branch) : (meta.branch ? DAS.payrollBranchLabel(meta.branch) : '');
           if (!res.ok) DAS.toast(`${meta.title}: ${out.error || 'فشل الرفع'}`, 'err');
-          else DAS.toast(`✔ ${meta.title}: ${out.rows} مندوب`);
+          else DAS.toast(`✔ ${branchLabel ? branchLabel + ' — ' : ''}${meta.title}: ${out.rows} مندوب`);
         }
         loadPayrollFiles(true);
       } finally {
@@ -2766,6 +2775,7 @@
     $('payrollFiles').addEventListener('change', (e) => uploadPayrollFiles([...(e.target.files || [])]));
 
     let payrollFilesCache = [], payrollRowsCache = [], currentFileId = null;
+    let payrollBranchFilter = 'all';
     async function loadPayrollFiles(force) {
       let authed = '';
       try { authed = sessionStorage.getItem('das_admin_token') || ''; } catch (e) {}
@@ -2779,34 +2789,70 @@
       } catch (e) { /* skip */ }
     }
 
+    document.querySelectorAll('#payrollBranchChips .chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        payrollBranchFilter = chip.dataset.payBranch || 'all';
+        document.querySelectorAll('#payrollBranchChips .chip').forEach(c => c.classList.toggle('active', c === chip));
+        renderPayrollFiles();
+      });
+    });
+
+    function payrollBranchCounts() {
+      const counts = { all: payrollFilesCache.length, 'QCD 1': 0, 'QCD 2': 0, none: 0 };
+      payrollFilesCache.forEach(f => {
+        const b = DAS.payrollBranchInfo(f.branch).key;
+        if (b === 'QCD 1' || b === 'QCD 2') counts[b]++; else counts.none++;
+      });
+      return counts;
+    }
+
     function renderPayrollFiles() {
       const tbody = $('payrollFilesBody');
+      const counts = payrollBranchCounts();
+      document.querySelectorAll('#payrollBranchChips .chip').forEach(chip => {
+        const b = chip.dataset.payBranch;
+        const n = counts[b] == null ? 0 : counts[b];
+        let badge = chip.querySelector('.chip-count');
+        if (!badge) { badge = document.createElement('span'); badge.className = 'chip-count'; chip.appendChild(badge); }
+        badge.textContent = n;
+      });
       $('badgePayroll').textContent = payrollFilesCache.length;
       $('payrollSummary').textContent = payrollFilesCache.length
-        ? `${payrollFilesCache.length} ملف أسبوعي مرفوع`
+        ? `${payrollFilesCache.length} ملف أسبوعي مرفوع · QCD 1: ${counts['QCD 1']} · QCD 2: ${counts['QCD 2']}${counts.none ? ' · بدون فرع: ' + counts.none : ''}`
         : 'مفيش ملفات مرفوعة — ارفع ملف CSV من الزر فوق';
       if (!payrollFilesCache.length) {
-        tbody.innerHTML = '<tr><td colspan="7" class="empty">مفيش ملفات — ارفع أول ملف قبض</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" class="empty">مفيش ملفات — ارفع أول ملف قبض</td></tr>';
         return;
       }
-      tbody.innerHTML = payrollFilesCache.map(f => `
+      const files = payrollFilesCache.filter(f => {
+        if (payrollBranchFilter === 'all') return true;
+        return DAS.payrollBranchInfo(f.branch).key === payrollBranchFilter;
+      });
+      if (!files.length) {
+        tbody.innerHTML = '<tr><td colspan="8" class="empty">مفيش ملفات للفرع ده — جرّب «كل الفروع»</td></tr>';
+        return;
+      }
+      tbody.innerHTML = files.map(f => `
         <tr>
           <td><span class="strong">${DAS.esc(f.title)}</span></td>
           <td class="mono">${DAS.esc(f.period || '—')}</td>
+          <td>${DAS.payrollBranchTag(f.branch) || '<span style="color:var(--text-3)">—</span>'}</td>
           <td>${DAS.esc(f.zone || '—')}</td>
           <td class="num">${f.rows_n}</td>
           <td class="num" style="color:${f.total_net >= 0 ? 'var(--ok)' : 'var(--bad)'}"><b>${Number(f.total_net).toFixed(0)} ج</b></td>
           <td class="mono" style="font-size:11px">${DAS.fmtDateTime(f.uploaded_at)}</td>
           <td>
-            <button class="btn btn-ghost btn-sm" onclick="viewPayrollRows(${f.id}, '${String(f.title).replace(/'/g, '')}')"><i data-ico="layers"></i> عرض</button>
+            <button class="btn btn-ghost btn-sm" onclick="viewPayrollRows(${f.id})"><i data-ico="layers"></i> عرض</button>
             <button class="btn btn-ghost btn-sm" onclick="askDeletePayrollFile(${f.id})" style="color:var(--bad)"><i data-ico="close"></i></button>
           </td>
         </tr>`).join('');
     }
 
-    function viewPayrollRows(fileId, title) {
+    function viewPayrollRows(fileId) {
       currentFileId = fileId;
-      $('payrollRowsTitle').textContent = 'صفوف: ' + title;
+      const file = payrollFilesCache.find(f => f.id === fileId);
+      const branchLabel = file && DAS.payrollBranchInfo(file.branch).key ? ' — ' + DAS.payrollBranchLabel(file.branch) : '';
+      $('payrollRowsTitle').textContent = 'صفوف: ' + (file ? file.title : 'ملف قبض') + branchLabel;
       $('payrollRowsSearch').value = '';
       $('payrollRowsBox').style.display = 'block';
       adminFetch(`/api/admin/payroll/rows/${fileId}`)
@@ -2815,26 +2861,38 @@
         .catch(() => {});
     }
 
+    // قيمة خلية قبض: الخصومات متخزنة بالسالب، فبنعرضها إشارة واحدة بس
+    function payrollCell(v, sign) {
+      const n = Number(v) || 0;
+      if (sign === '-') return n ? '-' + Math.abs(n).toFixed(0) : '—';
+      if (sign === '+') return n ? '+' + n.toFixed(0) : '0';
+      return n.toFixed(0);
+    }
+
     function renderPayrollRows() {
       const q = ($('payrollRowsSearch').value || '').toLowerCase();
+      const file = payrollFilesCache.find(f => f.id === currentFileId);
+      const branch = (payrollRowsCache[0] && payrollRowsCache[0].branch) || (file && file.branch) || '';
+      const fields = DAS.payrollTableFields(branch);
       const rows = payrollRowsCache.filter(r =>
         !q || String(r.rider_id).toLowerCase().includes(q) || String(r.rider_name).toLowerCase().includes(q));
+      $('payrollRowsHead').innerHTML = `<tr>
+        <th>الكود</th><th>المندوب</th>
+        ${fields.map(([, label]) => `<th>${DAS.esc(label)}</th>`).join('')}
+        <th>المحفظة</th><th>Status</th>
+      </tr>`;
       $('payrollRowsBody').innerHTML = rows.map(r => `
         <tr>
           <td class="mono" style="font-size:11px">${DAS.esc(r.rider_id)}</td>
           <td><span class="strong">${DAS.esc(r.rider_name)}</span></td>
-          <td class="num">${r.days}</td>
-          <td class="num">${r.orders_n}</td>
-          <td class="num">${Number(r.total_pilot).toFixed(0)}</td>
-          <td class="num" style="color:var(--bad)">${r.advance_deduct ? '-' + Number(r.advance_deduct).toFixed(0) : '—'}</td>
-          <td class="num" style="color:var(--bad)">${r.fine ? '-' + Number(r.fine).toFixed(0) : '—'}</td>
-          <td class="num" style="color:var(--bad)">${r.equipment ? '-' + Number(r.equipment).toFixed(0) : '—'}</td>
-          <td class="num" style="color:var(--bad)">${r.fund ? '-' + Number(r.fund).toFixed(0) : '—'}</td>
-          <td class="num"><b>${Number(r.remaining).toFixed(0)}</b></td>
-          <td class="num" style="color:var(--ok)"><b>${Number(r.remaining_net).toFixed(0)}</b></td>
+          ${fields.map(([key, , sign]) => {
+            const n = Number(r[key]) || 0;
+            const color = sign === '-' && n ? 'color:var(--bad)' : (sign === '+' && n ? 'color:var(--ok)' : '');
+            return `<td class="num"${color ? ` style="${color}"` : ''}>${payrollCell(r[key], sign)}</td>`;
+          }).join('')}
           <td class="mono" style="font-size:11px">${DAS.esc(r.wallet)}${r.wallet_type ? ' · ' + DAS.esc(r.wallet_type) : ''}</td>
           <td>${r.status ? `<span class="badge ${r.status === 'FALSE' ? 'ok' : 'warn'}">${DAS.esc(r.status)}</span>` : '—'}</td>
-        </tr>`).join('') || '<tr><td colspan="13" class="empty">مفيش نتائج للبحث</td></tr>';
+        </tr>`).join('') || `<tr><td colspan="${fields.length + 4}" class="empty">مفيش نتائج للبحث</td></tr>`;
     }
 
     function askDeletePayrollFile(id) {

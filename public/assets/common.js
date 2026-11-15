@@ -295,6 +295,60 @@
       return (this.lang === 'en' ? 'Week ' : 'الأسبوع ') + this.weekNo(ws) + ' · ' + this.weekRangeLabel(ws);
     },
 
+    // ===== فروع القبض: كل فرع له شيت وتفاصيل مختلفة =====
+    // QCD 1 · المندرة / QCD 2 · سموحة — الترتيب ده هو اللي بيحدد أعمدة العرض
+    payrollBranchInfo(branch) {
+      const b = String(branch || '').trim().toUpperCase().replace(/\s+/g, ' ');
+      if (b === 'QCD 2' || b === 'QCD2') return { key: 'QCD 2', code: 'QCD 2', area: 'سموحة', cls: 'qcd2', license: true };
+      if (b === 'QCD 1' || b === 'QCD1') return { key: 'QCD 1', code: 'QCD 1', area: 'المندرة', cls: 'qcd1', license: false };
+      return { key: '', code: '', area: '', cls: '', license: false };
+    },
+
+    payrollBranchLabel(branch) {
+      const b = this.payrollBranchInfo(branch);
+      return b.key ? (b.code + ' · ' + b.area) : (branch ? String(branch) : 'فرع غير محدد');
+    },
+
+    payrollBranchTag(branch) {
+      const b = this.payrollBranchInfo(branch);
+      if (!b.key) return '';
+      return `<span class="branch-tag ${b.cls}">${this.esc(b.code)} · ${this.esc(b.area)}</span>`;
+    },
+
+    // حقول كارت تفاصيل القبض للمندوب (كارت صفحة المندوب)
+    payrollDetailFields(branch) {
+      const info = this.payrollBranchInfo(branch);
+      const list = [
+        ['days', 'أيام العمل', ''], ['orders_n', 'أوردرات', ''],
+        ['salary', 'مرتب', ''], ['bonus', 'بونص', '+'],
+        ['holiday_bonus', 'بونص أجازات', '+'],
+        ['distance_bonus', 'بونص مسافة', '+'], ['tibas', 'تبس', '+'],
+        ['prev_taken', 'قبض سابق', ''], ['office_bonus', 'بونص مكتب', '+'],
+        ['advance_deduct', 'سلفة', '-'], ['fine', 'غرامة', '-'],
+        ['prior_debt', 'ديون سابقة', '-']
+      ];
+      // رخصة الإعلان موجودة في شيت QCD 2 بس
+      if (info.license) list.push(['license', 'رخصة إعلان', '-']);
+      list.push(['equipment', 'معدات', '-'], ['fund', 'صندوق زمالة', '-']);
+      return list;
+    },
+
+    // أعمدة معاينة الشيت في لوحة الإدارة
+    payrollTableFields(branch) {
+      const info = this.payrollBranchInfo(branch);
+      const list = [
+        ['days', 'أيام'], ['orders_n', 'أوردرات'],
+        ['holiday_bonus', 'بونص أجازات', '+'],
+        ['total_pilot', 'اجمالي مرتب'],
+        ['advance_deduct', 'سلفة', '-'], ['fine', 'غرامة', '-'],
+        ['prior_debt', 'ديون سابقة', '-']
+      ];
+      if (info.license) list.push(['license', 'رخصة إعلان', '-']);
+      list.push(['equipment', 'معدات', '-'], ['fund', 'صندوق', '-'],
+        ['remaining', 'الباقى', ''], ['remaining_net', 'بعد الرسوم', '']);
+      return list;
+    },
+
     // CSV بمحارف معلّمة عشان Excel يفتحه عربي صح
     csvCell(v) {
       return '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
