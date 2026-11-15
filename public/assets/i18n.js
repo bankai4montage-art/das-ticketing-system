@@ -223,6 +223,8 @@
     'الغرامات': 'Fines',
     'الغرامات — مين عليه خصم وليه': 'Fines — who has a deduction and why',
     'الغرامات عليك': 'Your fines',
+    'غرامات عليك': 'Your fines',
+    'السبب:': 'Reason:',
     'الغرامة': 'Fine',
     'سبب الغرامة': 'Fine reason',
     'اكتب سبب الغرامة...': 'Write the fine reason…',

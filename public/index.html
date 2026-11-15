@@ -104,6 +104,18 @@
         <div class="mini-stat ok" style="--i:3"><b id="sDone">0</b><span data-i18n="اتحلت">اتحلت</span></div>
       </section>
 
+      <!-- الغرامات: تظهر بس لو فيه غرامة، بشكل واضح وبسيط -->
+      <section class="glass fines-card hidden" id="finesBox" style="animation-delay:.12s">
+        <div class="fines-head">
+          <span class="fines-title">
+            <span class="fines-ic" aria-hidden="true"><i data-ico="alert"></i></span>
+            <span>غرامات عليك</span>
+          </span>
+          <span class="fines-total" id="finesTotal"></span>
+        </div>
+        <div id="finesList" class="fine-list"></div>
+      </section>
+
       <!-- كروت الإدارة المخصصة (بيبان بس لو في كروت مطابقة ليك) -->
       <section id="cardsBox" class="glass cards-box rise hidden" style="animation-delay:.14s">
         <div class="section-title" style="margin:0 0 10px">
@@ -224,17 +236,6 @@
         <div id="myAdvancesList" class="ticket-list">
           <div class="skeleton" style="height:90px"></div>
         </div>
-      </section>
-
-      <!-- الغرامات: تظهر بس لو فيه غرامة، وبتوضح السبب -->
-      <section class="glass fines-card hidden" id="finesBox" style="animation-delay:.45s">
-        <div class="section-title" style="margin:0 0 10px">
-          <span style="font-size:16px;color:var(--text);font-weight:800;display:inline-flex;align-items:center;gap:8px">
-            <i data-ico="alert" style="color:var(--bad)"></i> الغرامات عليك
-          </span>
-          <span class="fine-total" id="finesTotal"></span>
-        </div>
-        <div id="finesList" class="fine-list"></div>
       </section>
 
       <!-- تفاصيل القبض -->
@@ -872,21 +873,22 @@
         return;
       }
       const total = fines.reduce((t, r) => t + Math.abs(Number(r.fine) || 0), 0);
-      $('finesTotal').innerHTML = `إجمالي <b class="num-dir">${total.toFixed(0)}</b> ج`;
+      $('finesTotal').innerHTML = `إجمالي <span class="num-dir">${total.toFixed(0)}</span> ج`;
       $('finesList').innerHTML = fines.map(r => {
         const reason = String(r.fine_reason || '').trim();
+        // اسم الأسبوع من الشيت — من غير أي تفاصيل تقنية زيادة
+        const week = String(r.period || r.file_title || 'أسبوع')
+          .replace(/\s+\)/g, ')').replace(/\s+/g, ' ').trim();
         return `
         <div class="fine-item">
           <div class="fine-item-top">
-            <div class="l">
-              <span class="tag adv">${DAS.esc(r.period || r.file_title || 'أسبوع')}</span>
-              ${r.branch ? DAS.payrollBranchTag(r.branch) : ''}
-            </div>
+            <span class="fine-week">${DAS.esc(week)}</span>
             <span class="fine-amount"><span class="num-dir">-${Math.abs(Number(r.fine)).toFixed(0)}</span> ج</span>
           </div>
-          ${reason
-            ? `<p class="fine-reason">${DAS.icon('msg')}<span data-i18n-raw>${DAS.esc(reason)}</span></p>`
-            : `<p class="fine-reason missing">${DAS.icon('clock')}<span>السبب لسه متسجلش — كلّم الإدارة لو محتاج توضيح.</span></p>`}
+          <div class="fine-reason ${reason ? '' : 'missing'}">
+            <b>السبب:</b>
+            <span ${reason ? 'data-i18n-raw' : ''}>${reason ? DAS.esc(reason) : 'لسه متسجلش — كلّم الإدارة لو محتاج توضيح.'}</span>
+          </div>
         </div>`;
       }).join('');
       box.classList.remove('hidden');
