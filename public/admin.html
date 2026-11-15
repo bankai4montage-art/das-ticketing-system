@@ -357,6 +357,10 @@
             <div class="adv-summary" id="payrollSummary">—</div>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--text-2);font-weight:700;cursor:pointer">
+              <input type="checkbox" id="payrollPublishNow" style="width:16px;height:16px;accent-color:var(--accent)">
+              <span>اعرض على المناديب بعد الرفع</span>
+            </label>
             <button class="btn btn-ok btn-sm" id="payrollPickBtn" onclick="document.getElementById('payrollFiles').click()"><span class="spinner"></span><i data-ico="upload"></i><span class="label">رفع ملفات CSV</span></button>
             <input type="file" id="payrollFiles" accept=".csv,text/csv" multiple style="display:none">
             <button class="btn btn-ghost btn-sm" onclick="loadPayrollFiles(true)"><i data-ico="refresh"></i> تحديث</button>
@@ -365,7 +369,7 @@
 
         <div class="hint" style="margin-bottom:12px;display:flex;align-items:center;gap:8px">
           <i data-ico="alert"></i>
-          ارفع شيت الأسبوع (CSV من Accounting Amazon). النظام بيتعرّف على الفرع من الشيت نفسه: المندرة = QCD 1، سموحة = QCD 2، ويظبط الأعمدة والتفاصيل على حسب كل فرع.
+          ارفع شيت الأسبوع (CSV من Accounting Amazon). النظام بيتعرّف على الفرع من الشيت نفسه: المندرة = QCD 1، سموحة = QCD 2، ويظبط الأعمدة والتفاصيل على حسب كل فرع. الملف بيترفع مخفي — فعّله للمناديب لما تخلص مراجعته.
         </div>
 
         <div class="chips" id="payrollBranchChips" style="margin-bottom:12px">
@@ -377,7 +381,7 @@
         <section class="glass table-wrap rise">
           <table class="tbl">
             <thead>
-              <tr><th>الملف</th><th>الأسبوع / الفترة</th><th>الفرع</th><th>المنطقة</th><th>الصفوف</th><th>إجمالي الباقى</th><th>التاريخ</th><th></th></tr>
+              <tr><th>الملف</th><th>الأسبوع / الفترة</th><th>الفرع</th><th>المنطقة</th><th>الصفوف</th><th>إجمالي الباقى</th><th>الحالة</th><th>التاريخ</th><th></th></tr>
             </thead>
             <tbody id="payrollFilesBody"></tbody>
           </table>
@@ -2810,7 +2814,8 @@
           // وحتى لو العناوين بقت "???" بيرجع لترتيب أعمدة الفورمات (Accounting Amazon).
           let text;
           try { text = await readCsvText(file); } catch (e) { text = await file.text(); }
-          const body = { csv: text.replace(/^\uFEFF/, ''), title: meta.title, period: meta.period, zone: meta.zone, branch: meta.branch };
+          const publishNow = !!($('payrollPublishNow') && $('payrollPublishNow').checked);
+          const body = { csv: text.replace(/^\uFEFF/, ''), title: meta.title, period: meta.period, zone: meta.zone, branch: meta.branch, publish: publishNow };
           if (!body.csv || !body.csv.trim()) { DAS.toast(`الملف فاضي: ${file.name}`, 'err'); continue; }
           const res = await adminFetch('/api/admin/payroll/upload', {
             method: 'POST',
@@ -2819,7 +2824,7 @@
           const out = await res.json().catch(() => ({}));
           const branchLabel = out.branch ? DAS.payrollBranchLabel(out.branch) : (meta.branch ? DAS.payrollBranchLabel(meta.branch) : '');
           if (!res.ok) DAS.toast(`${meta.title}: ${out.error || 'فشل الرفع'}`, 'err');
-          else DAS.toast(`✔ ${branchLabel ? branchLabel + ' — ' : ''}${meta.title}: ${out.rows} مندوب`);
+          else DAS.toast(`✔ ${branchLabel ? branchLabel + ' — ' : ''}${meta.title}: ${out.rows} مندوب — ${out.published ? 'ظاهر للمناديب' : 'مخفي لحد ما تعرضه'}`);
         }
         loadPayrollFiles(true);
       } finally {
@@ -2876,11 +2881,13 @@
         badge.textContent = n;
       });
       $('badgePayroll').textContent = payrollFilesCache.length;
+      const publishedCount = payrollFilesCache.filter(f => Number(f.published) === 1).length;
+      const hiddenCount = payrollFilesCache.length - publishedCount;
       $('payrollSummary').textContent = payrollFilesCache.length
-        ? `${payrollFilesCache.length} ملف أسبوعي مرفوع · QCD 1: ${counts['QCD 1']} · QCD 2: ${counts['QCD 2']}${counts.none ? ' · بدون فرع: ' + counts.none : ''}`
+        ? `${payrollFilesCache.length} ملف أسبوعي مرفوع · ظاهر للمناديب: ${publishedCount} · مخفي: ${hiddenCount} · QCD 1: ${counts['QCD 1']} · QCD 2: ${counts['QCD 2']}${counts.none ? ' · بدون فرع: ' + counts.none : ''}`
         : 'مفيش ملفات مرفوعة — ارفع ملف CSV من الزر فوق';
       if (!payrollFilesCache.length) {
-        tbody.innerHTML = '<tr><td colspan="8" class="empty">مفيش ملفات — ارفع أول ملف قبض</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" class="empty">مفيش ملفات — ارفع أول ملف قبض</td></tr>';
         return;
       }
       const files = payrollFilesCache.filter(f => {
@@ -2888,10 +2895,12 @@
         return DAS.payrollBranchInfo(f.branch).key === payrollBranchFilter;
       });
       if (!files.length) {
-        tbody.innerHTML = '<tr><td colspan="8" class="empty">مفيش ملفات للفرع ده — جرّب «كل الفروع»</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" class="empty">مفيش ملفات للفرع ده — جرّب «كل الفروع»</td></tr>';
         return;
       }
-      tbody.innerHTML = files.map(f => `
+      tbody.innerHTML = files.map(f => {
+        const pub = Number(f.published) === 1;
+        return `
         <tr>
           <td><span class="strong">${DAS.esc(f.title)}</span></td>
           <td class="mono">${DAS.esc(f.period || '—')}</td>
@@ -2899,12 +2908,38 @@
           <td>${DAS.esc(f.zone || '—')}</td>
           <td class="num">${f.rows_n}</td>
           <td class="num" style="color:${f.total_net >= 0 ? 'var(--ok)' : 'var(--bad)'}"><b><span class="num-dir">${Number(f.total_net).toFixed(0)}</span> ج</b></td>
+          <td data-label="الحالة">
+            <div class="file-status">
+              <span class="badge ${pub ? 'ok' : 'warn'}"><span class="dot"></span>${pub ? 'ظاهر للمناديب' : 'مخفي (مسودة)'}</span>
+              <button class="btn btn-ghost btn-sm" onclick="togglePayrollPublished(${f.id})">${pub ? 'إخفاء' : 'إظهار للمناديب'}</button>
+            </div>
+          </td>
           <td class="mono" style="font-size:11px">${DAS.fmtDateTime(f.uploaded_at)}</td>
           <td>
             <button class="btn btn-ghost btn-sm" onclick="viewPayrollRows(${f.id})"><i data-ico="layers"></i> عرض</button>
             <button class="btn btn-ghost btn-sm" onclick="askDeletePayrollFile(${f.id})" style="color:var(--bad)"><i data-ico="close"></i></button>
           </td>
-        </tr>`).join('');
+        </tr>`;
+      }).join('');
+    }
+
+    // إظهار/إخفاء ملف قبض للمناديب
+    async function togglePayrollPublished(id) {
+      const file = payrollFilesCache.find(f => f.id === id);
+      const next = !(file && Number(file.published) === 1);
+      try {
+        const res = await adminFetch(`/api/admin/payroll/files/${id}/publish`, {
+          method: 'PUT',
+          body: JSON.stringify({ published: next })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'فشل تحديث حالة الملف');
+        if (file) file.published = next ? 1 : 0;
+        renderPayrollFiles();
+        DAS.toast(next ? 'الملف ظهر للمناديب واتبعث لهم تنبيه' : 'الملف اتخفي عن المناديب');
+      } catch (e) {
+        DAS.toast(e.message || 'فشل تحديث حالة الملف', 'err');
+      }
     }
 
     function viewPayrollRows(fileId) {

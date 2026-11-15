@@ -134,15 +134,26 @@ try {
   const advNotes = (box.notifications || []).filter((n) => n.kind === 'advance');
   ok('تنبيه السلفة اتسجل مرة واحدة (اتسجلت + اتصرفت دمجوا)', advNotes.length === 1, 'count=' + advNotes.length);
 
-  /* -------- 6) رفع القبض = تنبيه للمندوب المطابق بالكود -------- */
+  /* -------- 6) رفع القبض: ملف مخفي لحد ما الأدمن يعرضه = تنبيه للمندوب -------- */
   const upload = await req('/api/admin/payroll/upload', j('POST', {
     title: 'أسبوع اختبار', period: '2026-W44',
     rows: [{ 'Rider ID': CODE, 'Rider Name': 'مندوب اختبار', Zone: 'QCD 1', 'الباقى': '3000', 'الباقي بعد خصم الرسوم': '2800' }]
   }, AH));
   ok('رفع ملف القبض', upload.status === 200 && upload.data.ok, JSON.stringify(upload.data));
+  ok('الملف بيترفع مخفي افتراضيًا', upload.data.published === false);
+  const hiddenPay = await req(`/api/courier/payroll/${CODE}`);
+  ok('تفاصيل القبض المخفية مش ظاهرة للمندوب', (hiddenPay.data.payroll || []).length === 0);
+  box = (await req(`/api/courier/notifications/${CODE}`)).data;
+  ok('مفيش تنبيه قبض قبل ما الملف يتعرض', (box.notifications || []).filter((n) => n.kind === 'payroll').length === 0);
+
+  const publish = await req(`/api/admin/payroll/files/${upload.data.file_id}/publish`, j('PUT', { published: true }, AH));
+  ok('عرض ملف القبض للمناديب', publish.status === 200 && publish.data.published === true);
+  await sleep(300); // التنبيه بيتبعت بعد رد النشر
   box = (await req(`/api/courier/notifications/${CODE}`)).data;
   const payNotes = (box.notifications || []).filter((n) => n.kind === 'payroll');
-  ok('تنبيه قبض وصل للمندوب', payNotes.length === 1, payNotes[0] && payNotes[0].body);
+  ok('تنبيه قبض وصل للمندوب بعد العرض', payNotes.length === 1, payNotes[0] && payNotes[0].body);
+  const shownPay = await req(`/api/courier/payroll/${CODE}`);
+  ok('تفاصيل القبض ظهرت للمندوب بعد العرض', (shownPay.data.payroll || []).length === 1);
 
   /* -------- 7) الكروت: حدث لايف -------- */
   const sinceCards = (await req('/api/events?wait=0')).data.rev;

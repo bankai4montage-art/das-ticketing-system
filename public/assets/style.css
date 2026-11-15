@@ -552,6 +552,8 @@ html.scrolling .orb, html.scrolling .bg-fx::before { animation-play-state: pause
 .note-input { min-width: 190px; }
 /* الغرامات: الصفوف اللي لسه ملهاش سبب واضحة على طول */
 .fine-save { display: flex; align-items: center; gap: 6px; }
+.file-status { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.file-status .btn { white-space: nowrap; }
 .tbl tbody tr.fine-missing { background: color-mix(in srgb, var(--bad) 5%, transparent); }
 .tbl tbody tr.fine-missing td:first-child { border-inline-start: 3px solid color-mix(in srgb, var(--bad) 55%, transparent); }
 .tbl tbody tr.fine-missing:hover { background: color-mix(in srgb, var(--bad) 9%, transparent); }

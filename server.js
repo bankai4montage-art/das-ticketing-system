@@ -292,6 +292,7 @@ db.serialize(() => {
       period TEXT DEFAULT '',
       zone TEXT DEFAULT '',
       branch TEXT DEFAULT '',
+      published INTEGER DEFAULT 0,
       rows_n INTEGER DEFAULT 0,
       uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       uploaded_by TEXT DEFAULT ''
@@ -410,7 +411,13 @@ db.serialize(() => {
   db.all("PRAGMA table_info(payroll_files)", [], (pfErr, pfCols) => {
     if (pfErr || !pfCols) return;
     db.serialize(() => {
+      const hadPublished = pfCols.some(c => c.name === 'published');
       if (!pfCols.some(c => c.name === 'branch')) db.run("ALTER TABLE payroll_files ADD COLUMN branch TEXT DEFAULT ''");
+      if (!hadPublished) {
+        db.run("ALTER TABLE payroll_files ADD COLUMN published INTEGER DEFAULT 0");
+        // الملفات القديمة كانت ظاهرة للمناديب بالفعل — نحافظ عليها ظاهرة بعد التحديث
+        db.run("UPDATE payroll_files SET published = 1");
+      }
       // تعبئة الفرع للملفات القديمة اللي اترفعت قبل دعم الفروع (من المنطقة/العنوان)
       db.run(`UPDATE payroll_files SET branch = 'QCD 1'
               WHERE (branch IS NULL OR branch = '') AND (LOWER(zone) LIKE '%mandra%' OR LOWER(zone) LIKE '%almandra%' OR LOWER(title) LIKE '%mandra%')`);
@@ -1020,7 +1027,7 @@ app.get('/api/courier/payroll/:das_code', (req, res) => {
   const cleanCode = String(req.params.das_code || '').trim().toUpperCase();
   const name = String(req.query.name || '').trim();
   const sel = `SELECT p.*, f.title AS file_title, f.uploaded_at AS file_uploaded_at
-                 FROM payroll p LEFT JOIN payroll_files f ON f.id = p.file_id`;
+                 FROM payroll p JOIN payroll_files f ON f.id = p.file_id AND f.published = 1`;
   db.all(`${sel} WHERE UPPER(p.rider_id) = ? ORDER BY p.period DESC, p.id DESC`, [cleanCode], (err, rows) => {
     if (err) { console.error('[DAS] payroll read:', err.message); return res.status(500).json({ error: 'خطأ في جلب تفاصيل القبض' }); }
     if (rows.length || !name) return res.json({ payroll: rows, matched_by: 'code' });
@@ -1264,7 +1271,8 @@ app.post('/api/admin/payroll/upload', express.json({ limit: '6mb' }), (req, res)
   if (!safeEq(String(req.headers['x-admin-token'] || ''), ADMIN_TOKEN)) return res.status(401).json({ error: 'غير مصرح' });
   if (rateLimited(req, 'payroll-upload', 30, 60e3)) return res.status(429).json({ error: 'محاولات كتير — استنى دقيقة' });
 
-  const { title = '', period = '', zone = '', branch: branchHint = '' } = req.body || {};
+  const { title = '', period = '', zone = '', branch: branchHint = '', publish = false } = req.body || {};
+  const publishNow = publish === true || publish === 1 || publish === '1' || publish === 'true';
   let rows = req.body && req.body.rows;
   let detectedBranch = payrollBranchFromText(zone, title, branchHint);
   // المتصفح بيبعت الملف خام (csv) والسيرفر بيفسّره — كده العناوين العربية المتلفة
@@ -1320,8 +1328,8 @@ app.post('/api/admin/payroll/upload', express.json({ limit: '6mb' }), (req, res)
     });
 
     db.serialize(() => {
-      db.run("INSERT INTO payroll_files (title, period, zone, branch, rows_n, uploaded_by) VALUES (?, ?, ?, ?, ?, 'admin')",
-        [String(title).trim() || 'تفاصيل القبض', String(period).trim(), String(zone).trim(), detectedBranch, parsed.length],
+      db.run("INSERT INTO payroll_files (title, period, zone, branch, published, rows_n, uploaded_by) VALUES (?, ?, ?, ?, ?, ?, 'admin')",
+        [String(title).trim() || 'تفاصيل القبض', String(period).trim(), String(zone).trim(), detectedBranch, publishNow ? 1 : 0, parsed.length],
         function (err) {
           if (err) { console.error('[DAS] payroll file insert:', err.message); return res.status(500).json({ error: 'فشل حفظ الملف' }); }
           const fileId = this.lastID;
@@ -1344,9 +1352,9 @@ app.post('/api/admin/payroll/upload', express.json({ limit: '6mb' }), (req, res)
           });
           stmt.finalize(() => {
             if (failed) { console.error('[DAS] payroll rows insert:', failed.message); return res.status(500).json({ error: 'فشل حفظ صفوف القبض: ' + failed.message }); }
-            res.json({ ok: true, file_id: fileId, rows: parsed.length, branch: detectedBranch });
+            res.json({ ok: true, file_id: fileId, rows: parsed.length, branch: detectedBranch, published: publishNow });
             BUS.publish('payroll', { file_id: fileId, reason: 'upload' });
-            notifyPayrollTargets(parsed, fileId, String(title).trim() || 'تفاصيل القبض');
+            if (publishNow) notifyPayrollTargets(parsed, fileId, String(title).trim() || 'تفاصيل القبض');
           });
         });
     });
@@ -1418,8 +1426,12 @@ app.put('/api/admin/payroll/rows/:id/fine-reason', (req, res) => {
       const amount = Math.abs(Number(row.fine) || 0);
       payrollCourierCode(row, (code) => {
         if (!code) return;
-        notifyCourier(code, 'غرامة على قبضك — ' + amount.toFixed(0) + ' ج', reason,
-          { kind: 'fine', ref: 'fine:' + row.id });
+        // لو ملف القبض لسه مخفي عن المناديب، السبب يتحفظ بس مفيش تنبيه
+        db.get('SELECT published FROM payroll_files WHERE id = ?', [row.file_id], (fErr, f) => {
+          if (fErr || !f || Number(f.published) !== 1) return;
+          notifyCourier(code, 'غرامة على قبضك — ' + amount.toFixed(0) + ' ج', reason,
+            { kind: 'fine', ref: 'fine:' + row.id });
+        });
       });
     });
   });
@@ -1433,6 +1445,30 @@ app.delete('/api/admin/payroll/files/:id', (req, res) => {
       if (err) return res.status(500).json({ error: 'فشل الحذف' });
       res.json({ ok: true, deleted: this.changes });
       if (this.changes > 0) BUS.publish('payroll', { file_id: Number(req.params.id), reason: 'delete' });
+    });
+  });
+});
+
+// إظهار/إخفاء ملف قبض للمناديب — الملف بيترفع مخفي (مسودة) لحد ما الأدمن يعرضه
+app.put('/api/admin/payroll/files/:id/publish', (req, res) => {
+  if (!safeEq(String(req.headers['x-admin-token'] || ''), ADMIN_TOKEN)) return res.status(401).json({ error: 'غير مصرح' });
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'معرّف الملف غير صحيح' });
+  const publish = !!(req.body || {}).published;
+  db.get('SELECT * FROM payroll_files WHERE id = ?', [id], (err, file) => {
+    if (err) return res.status(500).json({ error: 'خطأ في جلب الملف' });
+    if (!file) return res.status(404).json({ error: 'الملف غير موجود' });
+    const wasPublished = Number(file.published) === 1;
+    db.run('UPDATE payroll_files SET published = ? WHERE id = ?', [publish ? 1 : 0, id], (e2) => {
+      if (e2) return res.status(500).json({ error: 'فشل تحديث حالة الملف' });
+      res.json({ ok: true, published: publish });
+      BUS.publish('payroll', { file_id: id, reason: publish ? 'publish' : 'unpublish' });
+      // أول مرة يظهر للمناديب: ابعتلهم تنبيه تفاصيل القبض
+      if (publish && !wasPublished) {
+        db.all('SELECT * FROM payroll WHERE file_id = ?', [id], (e3, rows) => {
+          if (!e3) notifyPayrollTargets(rows || [], id, file.title || 'تفاصيل القبض');
+        });
+      }
     });
   });
 });
