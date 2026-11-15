@@ -79,6 +79,7 @@
         <button class="chip" id="tabCards" onclick="switchView('cards')"><i data-ico="msg"></i> <span data-i18n="الكروت">الكروت</span><span class="tab-badge info" id="badgeCards">0</span></button>
         <button class="chip" id="tabSync" onclick="switchView('sync')"><i data-ico="refresh"></i> <span data-i18n="مزامنة الروستر">مزامنة الروستر</span></button>
         <button class="chip" id="tabPayroll" onclick="switchView('payroll')"><i data-ico="wallet"></i> <span data-i18n="القبض">القبض</span><span class="tab-badge ok" id="badgePayroll">0</span></button>
+        <button class="chip" id="tabFines" onclick="switchView('fines')"><i data-ico="alert"></i> <span data-i18n="الغرامات">الغرامات</span><span class="tab-badge bad" id="badgeFines">0</span></button>
         <button class="chip" id="tabApp" onclick="switchView('app')"><i data-ico="download"></i> <span>التطبيق</span></button>
       </section>
 
@@ -397,6 +398,45 @@
               <tbody id="payrollRowsBody"></tbody>
             </table>
           </div>
+        </section>
+
+      </div>
+
+      <!-- ============ الغرامات: مين عليه خصم وليه ============ -->
+      <div id="finesView" class="view-panel hidden">
+
+        <section class="glass adv-head rise">
+          <div>
+            <b>الغرامات — مين عليه خصم وليه</b>
+            <div class="adv-summary" id="finesSummary">—</div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <div class="chips" id="finesBranchChips">
+              <button class="chip active" data-fine-branch="all">كل الفروع</button>
+              <button class="chip" data-fine-branch="QCD 1">QCD 1 · المندرة</button>
+              <button class="chip" data-fine-branch="QCD 2">QCD 2 · سموحة</button>
+              <button class="chip" data-fine-branch="missing">بدون سبب</button>
+            </div>
+            <div class="search">
+              <input type="text" id="finesSearchInput" class="input" placeholder="ابحث باسم/كود/سبب..." aria-label="بحث في الغرامات">
+              <i data-ico="search"></i>
+            </div>
+            <button class="btn btn-ghost btn-sm" onclick="fetchFines(true)"><i data-ico="refresh"></i> تحديث</button>
+          </div>
+        </section>
+
+        <div class="hint" style="margin-bottom:12px;display:flex;align-items:flex-start;gap:8px">
+          <i data-ico="alert"></i>
+          كل غرامة بتنزل من شيت القبض تلقائي. اكتب السبب هنا واضغط «حفظ» — هيظهر للمندوب في صفحته فورًا، وهيوصله تنبيه في الجرس.
+        </div>
+
+        <section class="glass table-wrap rise">
+          <table class="tbl">
+            <thead>
+              <tr><th>المندوب</th><th>الفرع</th><th>الأسبوع</th><th>الغرامة</th><th>سبب الغرامة</th><th>الحفظ</th></tr>
+            </thead>
+            <tbody id="finesTableBody"></tbody>
+          </table>
         </section>
 
       </div>
@@ -739,6 +779,7 @@
         safe(() => fetchTickets());
         safe(() => { if (archiveMode) fetchArchiveTickets(); });
         safe(() => fetchAdvances());
+        safe(() => fetchFines());
         safe(() => refreshProfileAttendanceIfChanged());
         // الكروت: بنجيبها كل جولة عشان رقم "كروت اتجاوب عليها" في التبويب يفضل مظبوط
         safe(() => fetchCards());
@@ -748,6 +789,7 @@
       const safe = (fn) => { try { fn(); } catch (e) { console.warn('[DAS] load:', e); } };
       safe(() => fetchTickets(true));
       safe(() => fetchAdvances(true));
+      safe(() => fetchFines(true));
       safe(() => fetchCards(true));
       // خريطة الأفرع (QCD 1 / QCD 2) من الروستر — للفلتر في الشكاوى والسلف
       safe(() => ensureBranchMap());
@@ -2703,10 +2745,17 @@
     }
 
     function switchView(v) {
-      const adv = v === 'advances', cards = v === 'cards', sync = v === 'sync', pay = v === 'payroll', app = v === 'app';
-      const show = app ? $('appView') : (pay ? $('payrollView') : (sync ? $('syncView') : (cards ? $('cardsView') : (adv ? $('advancesView') : $('ticketsView')))));
+      const adv = v === 'advances', cards = v === 'cards', sync = v === 'sync',
+        pay = v === 'payroll', fines = v === 'fines', app = v === 'app';
+      const show = app ? $('appView')
+        : fines ? $('finesView')
+        : pay ? $('payrollView')
+        : sync ? $('syncView')
+        : cards ? $('cardsView')
+        : adv ? $('advancesView')
+        : $('ticketsView');
       show.classList.remove('hidden');
-      [ 'ticketsView', 'advancesView', 'cardsView', 'syncView', 'payrollView', 'appView' ].forEach(id => {
+      [ 'ticketsView', 'advancesView', 'cardsView', 'syncView', 'payrollView', 'finesView', 'appView' ].forEach(id => {
         if (id !== show.id) $(id).classList.add('hidden');
       });
       // إعادة تشغيل أنيميشن الدخول مع كل تبديل
@@ -2718,12 +2767,14 @@
       $('tabCards').classList.toggle('active', cards);
       $('tabSync').classList.toggle('active', sync);
       $('tabPayroll').classList.toggle('active', pay);
+      $('tabFines').classList.toggle('active', fines);
       $('tabApp').classList.toggle('active', app);
       if (app) loadAppRelease(true);
       else if (adv) fetchAdvances(true);
       else if (cards) fetchCards(true);
       else if (sync) loadSync();
       else if (pay) loadPayrollFiles(true);
+      else if (fines) fetchFines(true);
       else fetchTickets(true);
     }
 
@@ -2776,6 +2827,8 @@
 
     let payrollFilesCache = [], payrollRowsCache = [], currentFileId = null;
     let payrollBranchFilter = 'all';
+    let allFines = [], finesSig = null, filterFineBranch = 'all';
+
     async function loadPayrollFiles(force) {
       let authed = '';
       try { authed = sessionStorage.getItem('das_admin_token') || ''; } catch (e) {}
@@ -2896,6 +2949,136 @@
           <td class="mono" style="font-size:11px">${DAS.esc(r.wallet)}${r.wallet_type ? ' · ' + DAS.esc(r.wallet_type) : ''}</td>
           <td>${r.status ? `<span class="badge ${r.status === 'FALSE' ? 'ok' : 'warn'}">${DAS.esc(r.status)}</span>` : '—'}</td>
         </tr>`).join('') || `<tr><td colspan="${fields.length + 4}" class="empty">مفيش نتائج للبحث</td></tr>`;
+    }
+
+    // ================= الغرامات =================
+    function fineAmount(v) { return Math.abs(Number(v) || 0); }
+
+    function updateFineBadge() {
+      const missing = allFines.filter(f => !String(f.fine_reason || '').trim()).length;
+      setTabBadge('badgeFines', missing, 'غرامات من غير سبب');
+    }
+
+    async function fetchFines(force) {
+      let authed = '';
+      try { authed = sessionStorage.getItem('das_admin_token') || ''; } catch (e) {}
+      if (!authed) return;
+      try {
+        const res = await adminFetch('/api/admin/payroll/fines');
+        if (!res.ok) return;
+        const body = await res.json();
+        const fines = body.fines || [];
+        const sig = JSON.stringify(fines.map(f => [f.id, f.fine, f.fine_reason]));
+        if (!force && sig === finesSig) return;
+        finesSig = sig;
+        allFines = fines;
+        renderFines();
+      } catch (e) { /* skip */ }
+    }
+
+    document.querySelectorAll('#finesBranchChips .chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        filterFineBranch = chip.dataset.fineBranch || 'all';
+        document.querySelectorAll('#finesBranchChips .chip').forEach(c => c.classList.toggle('active', c === chip));
+        renderFines();
+      });
+    });
+    const fineSearchEl = $('finesSearchInput');
+    if (fineSearchEl) fineSearchEl.addEventListener('input', renderFines);
+
+    function fineBranchOf(f) { return DAS.payrollBranchInfo(f.branch).key || ''; }
+
+    function finesSummaryText() {
+      const total = allFines.reduce((t, f) => t + fineAmount(f.fine), 0);
+      const couriers = new Set(allFines.map(f => String(f.rider_id || f.rider_name || '').toUpperCase())).size;
+      const missing = allFines.filter(f => !String(f.fine_reason || '').trim()).length;
+      return `${allFines.length} غرامة على ${couriers} مندوب — إجمالي ${total.toFixed(0)} ج` +
+        (missing ? ` — ${missing} بدون سبب` : ' — كل الأسباب متسجلة');
+    }
+
+    function renderFines() {
+      if (!$('finesTableBody')) return;
+      const q = ($('finesSearchInput') && $('finesSearchInput').value || '').trim().toLowerCase();
+      const counts = { all: allFines.length, 'QCD 1': 0, 'QCD 2': 0, missing: 0, none: 0 };
+      allFines.forEach(f => { const b = fineBranchOf(f); if (b) counts[b]++; else counts.none++; if (!String(f.fine_reason || '').trim()) counts.missing++; });
+      document.querySelectorAll('#finesBranchChips .chip').forEach(chip => {
+        const b = chip.dataset.fineBranch;
+        let badge = chip.querySelector('.chip-count');
+        if (!badge) { badge = document.createElement('span'); badge.className = 'chip-count'; chip.appendChild(badge); }
+        badge.textContent = counts[b] == null ? 0 : counts[b];
+      });
+      $('finesSummary').textContent = allFines.length ? finesSummaryText() : 'مفيش غرامات في الشيتات المرفوعة';
+
+      const rows = allFines.filter(f => {
+        if (filterFineBranch === 'missing') {
+          if (String(f.fine_reason || '').trim()) return false;
+        } else if (filterFineBranch !== 'all' && fineBranchOf(f) !== filterFineBranch) return false;
+        if (!q) return true;
+        return [f.rider_name, f.rider_id, f.period, f.zone, f.fine_reason].some(v => String(v || '').toLowerCase().includes(q));
+      });
+      const tbody = $('finesTableBody');
+      if (!rows.length) {
+        tbody.innerHTML = `<tr><td colspan="6"><div class="empty fade"><div class="eic">${DAS.icon('alert', 'ico-lg')}</div><b>${allFines.length ? 'مفيش نتائج مطابقة' : 'مفيش غرامات لسه'}</b>${allFines.length ? 'جرّب فلتر أو بحث مختلف' : 'أي غرامة في شيت القبض هتظهر هنا تلقائي'}</div></td></tr>`;
+        updateFineBadge();
+        return;
+      }
+      tbody.innerHTML = rows.map(f => {
+        const reason = String(f.fine_reason || '');
+        const filled = !!reason.trim();
+        return `
+        <tr id="fine-row-${f.id}" class="${filled ? '' : 'fine-missing'}">
+          <td data-label="المندوب">
+            <div class="cell-courier">
+              <div class="av" style="background:${DAS.gradient(f.rider_id || f.rider_name)}" data-i18n-raw>${DAS.esc(DAS.initials(f.rider_name))}</div>
+              <div><b data-i18n-raw>${DAS.esc(f.rider_name)}</b><small class="mono">${DAS.esc(f.rider_id)}</small></div>
+            </div>
+          </td>
+          <td data-label="الفرع">${DAS.payrollBranchTag(f.branch) || '<span style="color:var(--text-3)">—</span>'}</td>
+          <td data-label="الأسبوع"><span class="week-tag">${DAS.esc(f.period || '—')}</span>${f.zone ? `<div class="meta">${DAS.esc(f.zone)}</div>` : ''}</td>
+          <td data-label="الغرامة"><span class="amt" style="color:var(--bad);white-space:nowrap"><span class="num-dir">-${fineAmount(f.fine).toFixed(0)}</span> ج</span></td>
+          <td data-label="سبب الغرامة">
+            <input type="text" id="fine-reason-${f.id}" class="input note-input" value="${DAS.esc(reason)}"
+              maxlength="300" placeholder="اكتب سبب الغرامة..." onkeydown="if(event.key==='Enter')this.blur()">
+          </td>
+          <td data-label="الحفظ">
+            <div class="fine-save">
+              <button class="btn btn-ghost btn-sm" onclick="saveFineReason(${f.id})">${DAS.icon('check')} حفظ</button>
+              <span class="saved-tick" id="fine-tick-${f.id}">${DAS.icon('check')}</span>
+            </div>
+          </td>
+        </tr>`;
+      }).join('');
+      updateFineBadge();
+    }
+
+    async function saveFineReason(id) {
+      const input = $(`fine-reason-${id}`);
+      if (!input) return;
+      const reason = input.value.trim();
+      try {
+        const res = await adminFetch(`/api/admin/payroll/rows/${id}/fine-reason`, {
+          method: 'PUT',
+          body: JSON.stringify({ reason })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'فشل الحفظ');
+        const row = allFines.find(f => f.id === id);
+        if (row) row.fine_reason = reason;
+        const tick = $(`fine-tick-${id}`);
+        if (tick) {
+          tick.classList.add('show');
+          setTimeout(() => tick.classList.remove('show'), 1800);
+        }
+        const tr = $(`fine-row-${id}`);
+        if (tr) tr.classList.toggle('fine-missing', !reason);
+        if (filterFineBranch === 'missing' && reason) renderFines();
+        updateFineBadge();
+        $('finesSummary').textContent = finesSummaryText();
+        finesSig = JSON.stringify(allFines.map(f => [f.id, f.fine, f.fine_reason]));
+        DAS.toast(reason ? 'سبب الغرامة اتسجل — المندوب هيشوفه فورًا' : 'تم مسح سبب الغرامة');
+      } catch (e) {
+        DAS.toast(e.message || 'فشل حفظ سبب الغرامة', 'err');
+      }
     }
 
     function askDeletePayrollFile(id) {
@@ -3644,6 +3827,7 @@
     document.addEventListener('das:lang', () => {
       renderTickets();
       renderAdvances();
+      renderFines();
       loadCouriers();
       buildReportWeeks();
       if ($('reportModal').classList.contains('open')) renderReport();

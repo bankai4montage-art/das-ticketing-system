@@ -314,6 +314,7 @@ db.serialize(() => {
       holiday_bonus REAL DEFAULT 0, prior_debt REAL DEFAULT 0, license REAL DEFAULT 0,
       total_pilot REAL DEFAULT 0, prev_taken REAL DEFAULT 0, office_bonus REAL DEFAULT 0,
       advance_deduct REAL DEFAULT 0, fine REAL DEFAULT 0, equipment REAL DEFAULT 0, fund REAL DEFAULT 0,
+      fine_reason TEXT DEFAULT '',
       remaining REAL DEFAULT 0, remaining_net REAL DEFAULT 0,
       wallet TEXT DEFAULT '', wallet_type TEXT DEFAULT '',
       status TEXT DEFAULT '', uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -398,6 +399,7 @@ db.serialize(() => {
       if (!names.includes('prior_debt')) db.run("ALTER TABLE payroll ADD COLUMN prior_debt REAL DEFAULT 0");
       if (!names.includes('license')) db.run("ALTER TABLE payroll ADD COLUMN license REAL DEFAULT 0");
       if (!names.includes('branch')) db.run("ALTER TABLE payroll ADD COLUMN branch TEXT DEFAULT ''");
+      if (!names.includes('fine_reason')) db.run("ALTER TABLE payroll ADD COLUMN fine_reason TEXT DEFAULT ''");
       // تعبئة فرع الصفوف القديمة من المنطقة (الترتيب مضمون جوه serialize)
       db.run(`UPDATE payroll SET branch = 'QCD 1'
               WHERE (branch IS NULL OR branch = '') AND (LOWER(zone) LIKE '%mandra%' OR LOWER(zone) LIKE '%almandra%')`);
@@ -1303,40 +1305,51 @@ app.post('/api/admin/payroll/upload', express.json({ limit: '6mb' }), (req, res)
     equipment: NUM(row['معدات']), fund: NUM(row['صندوق زمالة']),
     remaining: NUM(row['الباقى']), remaining_net: NUM(row['الباقي بعد خصم الرسوم']),
     wallet: String(row['رقم المحفظة'] || '').trim(), wallet_type: String(row['نوع المحفظة'] || '').trim(),
-    status: String(row.Status || row.CHECK || '').trim()
+    status: String(row.Status || row.CHECK || '').trim(),
+    fine_reason: ''
   });
   const parsed = rows.map(norm).filter(r => r.rider_id || r.rider_name);
   if (!parsed.length) return res.status(400).json({ error: 'الملف مفيهوش صفوف صالحة (Rider ID فاضي في كل الصفوف؟)' });
 
-  db.serialize(() => {
-    db.run("INSERT INTO payroll_files (title, period, zone, branch, rows_n, uploaded_by) VALUES (?, ?, ?, ?, ?, 'admin')",
-      [String(title).trim() || 'تفاصيل القبض', String(period).trim(), String(zone).trim(), detectedBranch, parsed.length],
-      function (err) {
-        if (err) { console.error('[DAS] payroll file insert:', err.message); return res.status(500).json({ error: 'فشل حفظ الملف' }); }
-        const fileId = this.lastID;
-        const stmt = db.prepare(`INSERT INTO payroll (file_id, branch, period, zone, sp, rider_id, rider_name,
-          days, orders_n, order_price, orders_value, amazon_n, guarantee_price, guarantee_value,
-          salary, bonus, distance_bonus, holiday_bonus, tibas, total_pilot, prev_taken, office_bonus,
-          advance_deduct, fine, prior_debt, license, equipment, fund, remaining, remaining_net,
-          wallet, wallet_type, status)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-        let failed = null;
-        parsed.forEach((r) => {
-          if (failed) return;
-          stmt.run([fileId, r.branch, r.period, r.zone, r.sp, r.rider_id, r.rider_name,
-            r.days, r.orders_n, r.order_price, r.orders_value, r.amazon_n, r.guarantee_price, r.guarantee_value,
-            r.salary, r.bonus, r.distance_bonus, r.holiday_bonus, r.tibas, r.total_pilot, r.prev_taken, r.office_bonus,
-            r.advance_deduct, r.fine, r.prior_debt, r.license, r.equipment, r.fund, r.remaining, r.remaining_net,
-            r.wallet, r.wallet_type, r.status],
-            (e2) => { if (e2 && !failed) failed = e2; });
+  // لو نفس الشيت اترفع تاني، بنحافظ على أسباب الغرامات اللي اتكتبت قبل كده
+  db.all("SELECT rider_id, period, fine_reason FROM payroll WHERE COALESCE(fine_reason, '') != ''", [], (rErr, reasonRows) => {
+    const prevReasons = new Map();
+    (rErr ? [] : (reasonRows || [])).forEach((x) => {
+      const k = String(x.rider_id || '').trim().toUpperCase() + '|' + String(x.period || '').trim();
+      prevReasons.set(k, x.fine_reason);
+    });
+
+    db.serialize(() => {
+      db.run("INSERT INTO payroll_files (title, period, zone, branch, rows_n, uploaded_by) VALUES (?, ?, ?, ?, ?, 'admin')",
+        [String(title).trim() || 'تفاصيل القبض', String(period).trim(), String(zone).trim(), detectedBranch, parsed.length],
+        function (err) {
+          if (err) { console.error('[DAS] payroll file insert:', err.message); return res.status(500).json({ error: 'فشل حفظ الملف' }); }
+          const fileId = this.lastID;
+          const stmt = db.prepare(`INSERT INTO payroll (file_id, branch, period, zone, sp, rider_id, rider_name,
+            days, orders_n, order_price, orders_value, amazon_n, guarantee_price, guarantee_value,
+            salary, bonus, distance_bonus, holiday_bonus, tibas, total_pilot, prev_taken, office_bonus,
+            advance_deduct, fine, fine_reason, prior_debt, license, equipment, fund, remaining, remaining_net,
+            wallet, wallet_type, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+          let failed = null;
+          parsed.forEach((r) => {
+            if (failed) return;
+            const prevReason = prevReasons.get(r.rider_id + '|' + r.period) || '';
+            stmt.run([fileId, r.branch, r.period, r.zone, r.sp, r.rider_id, r.rider_name,
+              r.days, r.orders_n, r.order_price, r.orders_value, r.amazon_n, r.guarantee_price, r.guarantee_value,
+              r.salary, r.bonus, r.distance_bonus, r.holiday_bonus, r.tibas, r.total_pilot, r.prev_taken, r.office_bonus,
+              r.advance_deduct, r.fine, prevReason, r.prior_debt, r.license, r.equipment, r.fund, r.remaining, r.remaining_net,
+              r.wallet, r.wallet_type, r.status],
+              (e2) => { if (e2 && !failed) failed = e2; });
+          });
+          stmt.finalize(() => {
+            if (failed) { console.error('[DAS] payroll rows insert:', failed.message); return res.status(500).json({ error: 'فشل حفظ صفوف القبض: ' + failed.message }); }
+            res.json({ ok: true, file_id: fileId, rows: parsed.length, branch: detectedBranch });
+            BUS.publish('payroll', { file_id: fileId, reason: 'upload' });
+            notifyPayrollTargets(parsed, fileId, String(title).trim() || 'تفاصيل القبض');
+          });
         });
-        stmt.finalize(() => {
-          if (failed) { console.error('[DAS] payroll rows insert:', failed.message); return res.status(500).json({ error: 'فشل حفظ صفوف القبض: ' + failed.message }); }
-          res.json({ ok: true, file_id: fileId, rows: parsed.length, branch: detectedBranch });
-          BUS.publish('payroll', { file_id: fileId, reason: 'upload' });
-          notifyPayrollTargets(parsed, fileId, String(title).trim() || 'تفاصيل القبض');
-        });
-      });
+    });
   });
 });
 
@@ -1355,6 +1368,60 @@ app.get('/api/admin/payroll/rows/:fileId', (req, res) => {
   db.all('SELECT * FROM payroll WHERE file_id = ? ORDER BY remaining_net DESC', [Number(req.params.fileId)], (err, rows) => {
     if (err) return res.status(500).json({ error: 'خطأ في جلب الصفوف' });
     res.json({ rows });
+  });
+});
+
+// 5-ج-2. كل الغرامات اللي في شيتات القبض + سببها — تاب «الغرامات» في الأدمن
+app.get('/api/admin/payroll/fines', (req, res) => {
+  if (!safeEq(String(req.headers['x-admin-token'] || ''), ADMIN_TOKEN)) return res.status(401).json({ error: 'غير مصرح' });
+  db.all(`SELECT p.id, p.file_id, p.branch, p.period, p.zone, p.rider_id, p.rider_name,
+                 p.fine, p.fine_reason, p.wallet, p.wallet_type,
+                 f.title AS file_title, f.uploaded_at AS file_uploaded_at
+            FROM payroll p LEFT JOIN payroll_files f ON f.id = p.file_id
+           WHERE ABS(COALESCE(p.fine, 0)) > 0
+           ORDER BY p.period DESC, ABS(p.fine) DESC, p.id DESC`, [], (err, rows) => {
+    if (err) return res.status(500).json({ error: 'خطأ في جلب الغرامات' });
+    res.json({ fines: rows || [] });
+  });
+});
+
+// ربط صف قبض بمندوب مسجّل: بكود الـ DAS الأول، وإلا بالاسم (نفس منطق شاشة القبض)
+function payrollCourierCode(row, cb) {
+  const code = String((row && row.rider_id) || '').trim().toUpperCase();
+  db.get("SELECT das_code FROM couriers WHERE UPPER(das_code) = ?", [code], (err, c) => {
+    if (!err && c && c.das_code) return cb(String(c.das_code).toUpperCase());
+    const name = String((row && row.rider_name) || '').trim();
+    if (!name) return cb('');
+    db.get("SELECT das_code FROM couriers WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))", [name], (e2, c2) => {
+      cb(e2 || !c2 ? '' : String(c2.das_code).toUpperCase());
+    });
+  });
+}
+
+// حفظ/تعديل سبب غرامة — بيظهر فورًا للمندوب في صفحته + تنبيه في جرسه
+app.put('/api/admin/payroll/rows/:id/fine-reason', (req, res) => {
+  if (!safeEq(String(req.headers['x-admin-token'] || ''), ADMIN_TOKEN)) return res.status(401).json({ error: 'غير مصرح' });
+  if (rateLimited(req, 'fine-reason', 120, 60e3)) return res.status(429).json({ error: 'محاولات كتير — استنى شوية' });
+  const id = Number(req.params.id);
+  const reason = String((req.body || {}).reason || '').trim().slice(0, 300);
+  if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'معرّف الغرامة غير صحيح' });
+  db.get('SELECT * FROM payroll WHERE id = ?', [id], (err, row) => {
+    if (err) return res.status(500).json({ error: 'خطأ في جلب الغرامة' });
+    if (!row) return res.status(404).json({ error: 'الغرامة غير موجودة' });
+    // مفيش تغيير؟ بلاش تحديث/تنبيه مكرر
+    if (reason === String(row.fine_reason || '').trim()) return res.json({ ok: true, reason, unchanged: true });
+    db.run('UPDATE payroll SET fine_reason = ? WHERE id = ?', [reason, id], (e2) => {
+      if (e2) return res.status(500).json({ error: 'فشل حفظ سبب الغرامة' });
+      res.json({ ok: true, reason });
+      BUS.publish('payroll', { rider_id: row.rider_id, file_id: row.file_id, reason: 'fine-reason' });
+      if (!reason) return;
+      const amount = Math.abs(Number(row.fine) || 0);
+      payrollCourierCode(row, (code) => {
+        if (!code) return;
+        notifyCourier(code, 'غرامة على قبضك — ' + amount.toFixed(0) + ' ج', reason,
+          { kind: 'fine', ref: 'fine:' + row.id });
+      });
+    });
   });
 });
 

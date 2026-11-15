@@ -226,6 +226,17 @@
         </div>
       </section>
 
+      <!-- الغرامات: تظهر بس لو فيه غرامة، وبتوضح السبب -->
+      <section class="glass fines-card hidden" id="finesBox" style="animation-delay:.45s">
+        <div class="section-title" style="margin:0 0 10px">
+          <span style="font-size:16px;color:var(--text);font-weight:800;display:inline-flex;align-items:center;gap:8px">
+            <i data-ico="alert" style="color:var(--bad)"></i> الغرامات عليك
+          </span>
+          <span class="fine-total" id="finesTotal"></span>
+        </div>
+        <div id="finesList" class="fine-list"></div>
+      </section>
+
       <!-- تفاصيل القبض -->
       <section class="glass tickets-card rise" id="payrollBox" style="animation-delay:.48s">
         <div class="section-title" style="margin:0 0 12px">
@@ -849,7 +860,40 @@
       return n.toFixed(0);
     }
 
+    // كارت الغرامات: يظهر بس لو فيه غرامة، وفيه السبب اللي كتبه الأدمن
+    function renderMyFines(rows) {
+      const box = $('finesBox');
+      if (!box) return;
+      const fines = (rows || []).filter(r => Math.abs(Number(r.fine) || 0) > 0);
+      if (!fines.length) {
+        box.classList.add('hidden');
+        $('finesList').innerHTML = '';
+        $('finesTotal').textContent = '';
+        return;
+      }
+      const total = fines.reduce((t, r) => t + Math.abs(Number(r.fine) || 0), 0);
+      $('finesTotal').innerHTML = `إجمالي <b class="num-dir">${total.toFixed(0)}</b> ج`;
+      $('finesList').innerHTML = fines.map(r => {
+        const reason = String(r.fine_reason || '').trim();
+        return `
+        <div class="fine-item">
+          <div class="fine-item-top">
+            <div class="l">
+              <span class="tag adv">${DAS.esc(r.period || r.file_title || 'أسبوع')}</span>
+              ${r.branch ? DAS.payrollBranchTag(r.branch) : ''}
+            </div>
+            <span class="fine-amount"><span class="num-dir">-${Math.abs(Number(r.fine)).toFixed(0)}</span> ج</span>
+          </div>
+          ${reason
+            ? `<p class="fine-reason">${DAS.icon('msg')}<span data-i18n-raw>${DAS.esc(reason)}</span></p>`
+            : `<p class="fine-reason missing">${DAS.icon('clock')}<span>السبب لسه متسجلش — كلّم الإدارة لو محتاج توضيح.</span></p>`}
+        </div>`;
+      }).join('');
+      box.classList.remove('hidden');
+    }
+
     function renderPayroll(rows) {
+      renderMyFines(rows);
       const container = $('payrollList');
       if (!rows || !rows.length) {
         container.innerHTML = `
@@ -887,6 +931,13 @@
               </div>`;
             }).join('')}
           </div>
+          ${Math.abs(Number(r.fine) || 0) > 0 ? `
+            <div class="fine-note">
+              ${DAS.icon('alert')}
+              <span>${String(r.fine_reason || '').trim()
+                ? 'سبب الغرامة: <b data-i18n-raw>' + DAS.esc(r.fine_reason) + '</b>'
+                : 'الغرامة متسجلة من غير سبب لسه — كلّم الإدارة لو محتاج توضيح.'}</span>
+            </div>` : ''}
           <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;padding:0 4px">
             <div class="meta" style="margin:0">
               ${r.remaining_net >= 1000000 ? '' : 'الباقى قبل الرسوم: <span class="mono num-dir">' + payrollMoney(r.remaining) + ' ج</span>'}
@@ -1369,6 +1420,7 @@
       if (kind === 'ticket') return 'msg';
       if (kind === 'advance') return 'banknote';
       if (kind === 'payroll') return 'wallet';
+      if (kind === 'fine') return 'alert';
       if (kind === 'attendance') return 'clock';
       return 'bell';
     }

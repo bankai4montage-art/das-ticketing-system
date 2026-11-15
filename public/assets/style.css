@@ -411,6 +411,25 @@ html.scrolling .orb, html.scrolling .bg-fx::before { animation-play-state: pause
 .counter { text-align: left; font-size: 11px; color: var(--text-3); margin-top: 4px; }
 
 .tickets-card { padding: 20px; }
+
+/* بطاقة الغرامات في صفحة المندوب — تظهر بس لو فيه غرامة */
+.fines-card {
+  border-color: color-mix(in srgb, var(--bad) 28%, var(--border));
+  background: color-mix(in srgb, var(--bad) 3.5%, var(--surface));
+}
+.fines-card .fine-total { font-size: 12.5px; color: var(--bad); font-weight: 800; }
+.fine-list { display: flex; flex-direction: column; gap: 8px; }
+.fine-item { padding: 10px 12px; border-radius: 14px; background: color-mix(in srgb, var(--bad) 5%, var(--surface)); border: 1px solid color-mix(in srgb, var(--bad) 18%, var(--border)); }
+.fine-item-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.fine-item-top .l { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.fine-amount { color: var(--bad); font-weight: 800; font-size: 15px; white-space: nowrap; }
+.fine-reason { display: flex; align-items: flex-start; gap: 7px; margin-top: 8px; font-size: 12.5px; color: var(--text-2); line-height: 1.65; }
+.fine-reason .ico { width: 14px; height: 14px; flex-shrink: 0; margin-top: 2px; color: var(--bad); }
+.fine-reason.missing { color: var(--text-3); font-style: italic; }
+.fine-reason.missing .ico { color: var(--text-3); }
+.fine-note { display: flex; align-items: flex-start; gap: 7px; margin: 0 0 10px; padding: 8px 10px; border-radius: 10px; background: var(--bad-soft); border: 1px solid color-mix(in srgb, var(--bad) 16%, transparent); color: var(--bad); font-size: 12px; line-height: 1.6; }
+.fine-note .ico { width: 14px; height: 14px; flex-shrink: 0; margin-top: 2px; }
+.fine-note b { font-weight: 800; }
 .ticket-list { display: flex; flex-direction: column; gap: 14px; }
 .ticket {
   position: relative; padding: 16px 18px; border-radius: 18px; background: var(--surface); border: 1px solid var(--border);
@@ -531,6 +550,11 @@ html.scrolling .orb, html.scrolling .bg-fx::before { animation-play-state: pause
 .desc-cell { max-width: 340px; line-height: 1.75; word-break: break-word; }
 .meta { font-size: 11.5px; color: var(--text-3); margin-top: 6px; }
 .note-input { min-width: 190px; }
+/* الغرامات: الصفوف اللي لسه ملهاش سبب واضحة على طول */
+.fine-save { display: flex; align-items: center; gap: 6px; }
+.tbl tbody tr.fine-missing { background: color-mix(in srgb, var(--bad) 5%, transparent); }
+.tbl tbody tr.fine-missing td:first-child { border-inline-start: 3px solid color-mix(in srgb, var(--bad) 55%, transparent); }
+.tbl tbody tr.fine-missing:hover { background: color-mix(in srgb, var(--bad) 9%, transparent); }
 /* ===== Dropdown مخصوص بديل select الوندوز ===== */
 .dd { position: relative; display: inline-block; }
 .dd-btn {
