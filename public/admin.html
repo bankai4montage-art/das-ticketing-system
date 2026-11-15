@@ -411,12 +411,13 @@
             <div class="adv-summary" id="finesSummary">—</div>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <span id="finesWeekWrap"></span>
             <div class="chips" id="finesBranchChips">
               <button class="chip active" data-fine-branch="all">كل الفروع</button>
               <button class="chip" data-fine-branch="QCD 1">QCD 1 · المندرة</button>
               <button class="chip" data-fine-branch="QCD 2">QCD 2 · سموحة</button>
-              <button class="chip" data-fine-branch="missing">بدون سبب</button>
             </div>
+            <button class="chip" id="finesMissingToggle">بدون سبب</button>
             <div class="search">
               <input type="text" id="finesSearchInput" class="input" placeholder="ابحث باسم/كود/سبب..." aria-label="بحث في الغرامات">
               <i data-ico="search"></i>
@@ -1315,6 +1316,10 @@
       else if (id === 'dd-advWeek') {
         filterAdvWeek = $('dd-advWeek').dataset.value || 'all';
         renderAdvances();
+      }
+      else if (id === 'dd-fineWeek') {
+        filterFineWeek = $('dd-fineWeek').dataset.value || 'all';
+        renderFines();
       }
     };
 
@@ -2828,6 +2833,7 @@
     let payrollFilesCache = [], payrollRowsCache = [], currentFileId = null;
     let payrollBranchFilter = 'all';
     let allFines = [], finesSig = null, filterFineBranch = 'all';
+    let filterFineWeek = 'all', finesWeekSig = '', fineMissingOnly = false;
 
     async function loadPayrollFiles(force) {
       let authed = '';
@@ -2985,37 +2991,120 @@
     });
     const fineSearchEl = $('finesSearchInput');
     if (fineSearchEl) fineSearchEl.addEventListener('input', renderFines);
+    const finesMissingToggle = $('finesMissingToggle');
+    if (finesMissingToggle) finesMissingToggle.addEventListener('click', () => {
+      fineMissingOnly = !fineMissingOnly;
+      finesMissingToggle.classList.toggle('active', fineMissingOnly);
+      renderFines();
+    });
 
     function fineBranchOf(f) { return DAS.payrollBranchInfo(f.branch).key || ''; }
 
-    function finesSummaryText() {
+    // أسبوع الغرامة = أسبوع شيت القبض نفسه (مش تاريخ الرفع)
+    // توحيد المسافات/المسافة قبل القوس عشان صيغ الملفين (QCD 1 و QCD 2) يتجمعوا في أسبوع واحد
+    function fineWeekOf(f) {
+      const p = String(f.period || '').replace(/\s+\)/g, ')').replace(/\s+/g, ' ').trim();
+      return p || 'بدون أسبوع';
+    }
+
+    function fineWeeks() {
+      const latest = new Map();
+      allFines.forEach(f => {
+        const k = fineWeekOf(f);
+        const fid = Number(f.file_id) || 0;
+        if (!latest.has(k) || fid > latest.get(k)) latest.set(k, fid);
+      });
+      // الأحدث رفعًا الأول
+      return [...latest.entries()].sort((a, b) => b[1] - a[1]).map(([k]) => k);
+    }
+
+    function buildFinesWeekFilter() {
+      const wrap = $('finesWeekWrap');
+      if (!wrap) return;
+      if (!allFines.length) { wrap.innerHTML = ''; finesWeekSig = ''; return; }
+      const weeks = fineWeeks();
+      if (filterFineWeek !== 'all' && !weeks.includes(filterFineWeek)) filterFineWeek = 'all';
+      const values = ['all', ...weeks];
+      const sig = DAS.lang + '|' + values.join('|') + '#' + filterFineWeek;
+      if (sig === finesWeekSig) return;
+      finesWeekSig = sig;
+      if (DAS.ddOpen()) DAS.closeDd();
+      wrap.innerHTML = '<span class="week-filter-label">الأسبوع:</span>' +
+        DAS.ddHtml('dd-fineWeek', filterFineWeek, values, null, (k) => (k === 'all' ? DAS.t('كل الأسابيع') : k));
+    }
+
+    function finesSummaryText(visible) {
       const total = allFines.reduce((t, f) => t + fineAmount(f.fine), 0);
       const couriers = new Set(allFines.map(f => String(f.rider_id || f.rider_name || '').toUpperCase())).size;
       const missing = allFines.filter(f => !String(f.fine_reason || '').trim()).length;
-      return `${allFines.length} غرامة على ${couriers} مندوب — إجمالي ${total.toFixed(0)} ج` +
+      let text = `${allFines.length} غرامة على ${couriers} مندوب — إجمالي ${total.toFixed(0)} ج` +
         (missing ? ` — ${missing} بدون سبب` : ' — كل الأسباب متسجلة');
+      if (filterFineWeek !== 'all') {
+        const wk = allFines.filter(f => fineWeekOf(f) === filterFineWeek);
+        const wkTotal = wk.reduce((t, f) => t + fineAmount(f.fine), 0);
+        const wkMissing = wk.filter(f => !String(f.fine_reason || '').trim()).length;
+        text += ` · الأسبوع المختار: ${wk.length} غرامة (${wkTotal.toFixed(0)} ج` +
+          (wkMissing ? ` — ${wkMissing} بدون سبب` : '') + ')';
+      }
+      if (Array.isArray(visible) && (filterFineWeek !== 'all' || filterFineBranch !== 'all' || fineMissingOnly)) {
+        const vTotal = visible.reduce((t, f) => t + fineAmount(f.fine), 0);
+        const vMissing = visible.filter(f => !String(f.fine_reason || '').trim()).length;
+        text += ` · المعروض الآن: ${visible.length} غرامة (${vTotal.toFixed(0)} ج` +
+          (vMissing ? ` — ${vMissing} بدون سبب` : '') + ')';
+      }
+      return text;
+    }
+
+    // الغرامات المعروضة حاليًا بعد كل الفلاتر (أسبوع + فرع + بدون سبب + بحث)
+    function filteredFines() {
+      const q = ($('finesSearchInput') && $('finesSearchInput').value || '').trim().toLowerCase();
+      return allFines.filter(f => {
+        if (filterFineWeek !== 'all' && fineWeekOf(f) !== filterFineWeek) return false;
+        if (filterFineBranch !== 'all' && fineBranchOf(f) !== filterFineBranch) return false;
+        if (fineMissingOnly && String(f.fine_reason || '').trim()) return false;
+        if (!q) return true;
+        return [f.rider_name, f.rider_id, f.period, f.zone, f.fine_reason]
+          .some(v => String(v || '').toLowerCase().includes(q));
+      });
     }
 
     function renderFines() {
       if (!$('finesTableBody')) return;
+      buildFinesWeekFilter();
       const q = ($('finesSearchInput') && $('finesSearchInput').value || '').trim().toLowerCase();
-      const counts = { all: allFines.length, 'QCD 1': 0, 'QCD 2': 0, missing: 0, none: 0 };
-      allFines.forEach(f => { const b = fineBranchOf(f); if (b) counts[b]++; else counts.none++; if (!String(f.fine_reason || '').trim()) counts.missing++; });
+      const searchMatch = (f) => !q || [f.rider_name, f.rider_id, f.period, f.zone, f.fine_reason]
+        .some(v => String(v || '').toLowerCase().includes(q));
+      const weekMatch = (f) => filterFineWeek === 'all' || fineWeekOf(f) === filterFineWeek;
+      // العدادات بتاعة الفروع بتتحسب على الأسبوع والبحث وفلتر «بدون سبب» الحالي
+      const scoped = allFines.filter(f => weekMatch(f) && searchMatch(f));
+      const counted = fineMissingOnly
+        ? scoped.filter(f => !String(f.fine_reason || '').trim())
+        : scoped;
+      const counts = { all: counted.length, 'QCD 1': 0, 'QCD 2': 0, none: 0 };
+      counted.forEach(f => {
+        const b = fineBranchOf(f);
+        if (b) counts[b]++; else counts.none++;
+      });
       document.querySelectorAll('#finesBranchChips .chip').forEach(chip => {
         const b = chip.dataset.fineBranch;
         let badge = chip.querySelector('.chip-count');
         if (!badge) { badge = document.createElement('span'); badge.className = 'chip-count'; chip.appendChild(badge); }
         badge.textContent = counts[b] == null ? 0 : counts[b];
       });
-      $('finesSummary').textContent = allFines.length ? finesSummaryText() : 'مفيش غرامات في الشيتات المرفوعة';
+      // عدّاد «بدون سبب» بيتحسب على الأسبوع + الفرع + البحث الحاليين
+      const missingScope = scoped.filter(f =>
+        (filterFineBranch === 'all' || fineBranchOf(f) === filterFineBranch) &&
+        !String(f.fine_reason || '').trim());
+      const missingToggle = $('finesMissingToggle');
+      if (missingToggle) {
+        let badge = missingToggle.querySelector('.chip-count');
+        if (!badge) { badge = document.createElement('span'); badge.className = 'chip-count'; missingToggle.appendChild(badge); }
+        badge.textContent = missingScope.length;
+        missingToggle.title = DAS.t('غرامات من غير سبب') + ': ' + missingScope.length;
+      }
+      $('finesSummary').textContent = allFines.length ? finesSummaryText(filteredFines()) : 'مفيش غرامات في الشيتات المرفوعة';
 
-      const rows = allFines.filter(f => {
-        if (filterFineBranch === 'missing') {
-          if (String(f.fine_reason || '').trim()) return false;
-        } else if (filterFineBranch !== 'all' && fineBranchOf(f) !== filterFineBranch) return false;
-        if (!q) return true;
-        return [f.rider_name, f.rider_id, f.period, f.zone, f.fine_reason].some(v => String(v || '').toLowerCase().includes(q));
-      });
+      const rows = filteredFines();
       const tbody = $('finesTableBody');
       if (!rows.length) {
         tbody.innerHTML = `<tr><td colspan="6"><div class="empty fade"><div class="eic">${DAS.icon('alert', 'ico-lg')}</div><b>${allFines.length ? 'مفيش نتائج مطابقة' : 'مفيش غرامات لسه'}</b>${allFines.length ? 'جرّب فلتر أو بحث مختلف' : 'أي غرامة في شيت القبض هتظهر هنا تلقائي'}</div></td></tr>`;
@@ -3034,7 +3123,7 @@
             </div>
           </td>
           <td data-label="الفرع">${DAS.payrollBranchTag(f.branch) || '<span style="color:var(--text-3)">—</span>'}</td>
-          <td data-label="الأسبوع"><span class="week-tag">${DAS.esc(f.period || '—')}</span>${f.zone ? `<div class="meta">${DAS.esc(f.zone)}</div>` : ''}</td>
+          <td data-label="الأسبوع"><span class="week-tag">${DAS.esc(fineWeekOf(f))}</span>${f.zone ? `<div class="meta">${DAS.esc(f.zone)}</div>` : ''}</td>
           <td data-label="الغرامة"><span class="amt" style="color:var(--bad);white-space:nowrap"><span class="num-dir">-${fineAmount(f.fine).toFixed(0)}</span> ج</span></td>
           <td data-label="سبب الغرامة">
             <input type="text" id="fine-reason-${f.id}" class="input note-input" value="${DAS.esc(reason)}"
@@ -3071,9 +3160,9 @@
         }
         const tr = $(`fine-row-${id}`);
         if (tr) tr.classList.toggle('fine-missing', !reason);
-        if (filterFineBranch === 'missing' && reason) renderFines();
+        if (fineMissingOnly && reason) renderFines();
         updateFineBadge();
-        $('finesSummary').textContent = finesSummaryText();
+        $('finesSummary').textContent = finesSummaryText(filteredFines());
         finesSig = JSON.stringify(allFines.map(f => [f.id, f.fine, f.fine_reason]));
         DAS.toast(reason ? 'سبب الغرامة اتسجل — المندوب هيشوفه فورًا' : 'تم مسح سبب الغرامة');
       } catch (e) {
