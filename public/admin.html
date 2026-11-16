@@ -199,7 +199,7 @@
                 <th>المندوب</th>
                 <th>المبلغ</th>
                 <th>السبب</th>
-                <th>المحفظة</th>
+                <th>التحويل</th>
                 <th>الحالة</th>
                 <th>ملاحظة</th>
               </tr>
@@ -514,8 +514,12 @@
         <input type="text" id="advNewCode" class="input mono" style="text-transform:uppercase" placeholder="كود المندوب (مثال: DAS-105)" required>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
           <input type="number" id="advNewAmount" class="input" placeholder="المبلغ (جنيه)" min="50" max="1000000" step="50" required inputmode="numeric">
-          <input type="text" id="advNewWallet" class="input mono" placeholder="رقم المحفظة" inputmode="numeric">
+          <select id="advNewWalletType" class="input" aria-label="نوع الرقم">
+            <option value="wallet">محفظة إلكترونية</option>
+            <option value="instapay">إنستاباي</option>
+          </select>
         </div>
+        <input type="text" id="advNewWallet" class="input mono" placeholder="رقم المحفظة / إنستاباي" inputmode="numeric">
         <input type="text" id="advNewReason" class="input" placeholder="سبب السلفة" required>
         <p id="addAdvErr" class="err-text" role="alert" style="min-height:0;margin:0"></p>
         <button type="submit" class="btn btn-ok" id="addAdvanceBtn"><span class="spinner"></span><i data-ico="plus"></i><span class="label">حفظ السلفة</span></button>
@@ -3758,7 +3762,8 @@
       const out = [];
       const bCounts = { all: 0, 'QCD 1': 0, 'QCD 2': 0, none: 0 };
       allAdvances.forEach(a => {
-        const mq = !q || [a.das_code, a.courier_name, a.reason, a.wallet].some(v => String(v || '').toLowerCase().includes(q));
+        const mq = !q || [a.das_code, a.courier_name, a.reason, a.wallet,
+          a.wallet_type === 'instapay' ? 'إنستاباي' : 'محفظة'].some(v => String(v || '').toLowerCase().includes(q));
         if (!mq) return;
         // فلتر الأسبوع: كل سلفة بتظهر في الأسبوع بتاعها بس
         if (filterAdvWeek !== 'all' && advWeekKey(a) !== filterAdvWeek) return;
@@ -3892,7 +3897,10 @@
             ${Number(a.edit_count) > 0 ? `<div class="meta">اتعدلت من ${Number(a.original_amount) || Number(a.amount)} ج${Number(a.edit_count) > 1 ? ` · ${Number(a.edit_count)} مرات` : ''}</div>` : ''}
           </td>
             <td data-label="السبب" class="desc-cell"><span data-i18n-raw>${DAS.esc(a.reason)}</span><div class="meta">${DAS.fmtDateTime(a.created_at)}</div></td>
-            <td data-label="المحفظة" class="mono">${DAS.esc(a.wallet || '—')}</td>
+            <td data-label="التحويل">
+              <span class="badge ${a.wallet_type === 'instapay' ? 'info' : ''}"><span class="dot"></span>${a.wallet_type === 'instapay' ? 'إنستاباي' : 'محفظة'}</span>
+              <div class="mono" style="margin-top:4px">${DAS.esc(a.wallet || '—')}</div>
+            </td>
             <td data-label="الحالة">
               ${DAS.ddHtml(`dd-advstatus-${a.id}`, a.status, ADV_OPTS, ADV_CLS)}
               <span class="saved-tick" id="advtick-${a.id}">${DAS.icon('check')}</span>
@@ -4031,7 +4039,8 @@
             das_code: $('advNewCode').value,
             amount: Number($('advNewAmount').value),
             reason: $('advNewReason').value,
-            wallet: $('advNewWallet').value
+            wallet: $('advNewWallet').value,
+            wallet_type: $('advNewWalletType').value
           })
         });
         const data = await res.json();

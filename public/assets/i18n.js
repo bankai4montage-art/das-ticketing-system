@@ -250,6 +250,17 @@
     'فشل تعديل المبلغ': 'Failed to update the amount',
     'اكتب مبلغ صحيح': 'Enter a valid amount',
     'تم تعديل مبلغ سلفتك': 'Your advance amount was updated',
+    // ===== طريقة التحويل وقفل طلب السلفة =====
+    'الرقم على': 'Number on',
+    'محفظة إلكترونية': 'E-wallet',
+    'إنستاباي': 'InstaPay',
+    'رقم المحفظة / إنستاباي': 'Wallet / InstaPay number',
+    'نوع الرقم': 'Number type',
+    'التحويل': 'Payout',
+    'عندك طلب سلفة قيد المراجعة': 'You have an advance request under review',
+    'لازم الإدارة ترد عليه الأول (صرف أو رفض) قبل ما تبعت طلب جديد.': 'The admin must respond to it first (paid or rejected) before you can send a new request.',
+    'عندك طلب سلفة قيد المراجعة — لازم الإدارة ترد عليه الأول قبل ما تبعت طلب جديد.': 'You already have an advance under review — the admin must respond to it before you send a new one.',
+    'عندك طلب سلفة قيد المراجعة — لازم الإدارة ترد عليه الأول': 'You already have an advance under review — the admin must respond first',
     // ===== إظهار/إخفاء شيت القبض =====
     'اعرض على المناديب بعد الرفع': 'Show to couriers after upload',
     'ظاهر للمناديب': 'Visible to couriers',

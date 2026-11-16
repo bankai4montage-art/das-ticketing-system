@@ -221,6 +221,7 @@ db.serialize(() => {
       edited_at DATETIME,
       reason TEXT NOT NULL,
       wallet TEXT NOT NULL,
+      wallet_type TEXT DEFAULT 'wallet',
       status TEXT DEFAULT 'قيد المراجعة',
       admin_note TEXT DEFAULT '',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -437,6 +438,7 @@ db.serialize(() => {
       if (!names.includes('original_amount')) db.run("ALTER TABLE advances ADD COLUMN original_amount REAL DEFAULT 0");
       if (!names.includes('edit_count')) db.run("ALTER TABLE advances ADD COLUMN edit_count INTEGER DEFAULT 0");
       if (!names.includes('edited_at')) db.run("ALTER TABLE advances ADD COLUMN edited_at DATETIME");
+      if (!names.includes('wallet_type')) db.run("ALTER TABLE advances ADD COLUMN wallet_type TEXT DEFAULT 'wallet'");
       // السلف القديمة اللي اتعدلت قبل إضافة الأعمدة: الأصل = المبلغ الحالي
       db.run("UPDATE advances SET original_amount = amount WHERE COALESCE(original_amount, 0) = 0");
     });
@@ -994,9 +996,10 @@ app.put('/api/tickets/:id/rate', (req, res) => {
 });
 
 // 4. طلب سلفة من المندوب — الكود لازم يكون مسجل، والاسم بيتاخد من الداتابيز
+// ممنوع يبعت طلب جديد طول ما عنده طلب سابق لسه "قيد المراجعة" — لازم الإدارة ترد عليه الأول
 app.post('/api/advances', (req, res) => {
   if (rateLimited(req, 'advance-post', 12, 60e3)) return res.status(429).json({ error: 'طلبات كتير — استنى شوية وجرب تاني' });
-  const { das_code, amount, reason, wallet } = req.body || {};
+  const { das_code, amount, reason, wallet, wallet_type } = req.body || {};
   if (!das_code || !reason || !wallet) {
     return res.status(400).json({ error: 'يرجى ملء جميع البيانات المطلوبة' });
   }
@@ -1004,22 +1007,39 @@ app.post('/api/advances', (req, res) => {
   if (!Number.isFinite(amt) || amt <= 0 || amt > 1000000) {
     return res.status(400).json({ error: 'المبلغ غير صحيح' });
   }
+  const payoutType = String(wallet_type || '').trim().toLowerCase() === 'instapay' ? 'instapay' : 'wallet';
 
   const cleanCode = String(das_code).trim().toUpperCase();
   db.get("SELECT name FROM couriers WHERE UPPER(das_code) = ?", [cleanCode], (err, row) => {
     if (err) return res.status(500).json({ error: 'خطأ في السيرفر' });
     if (!row) return res.status(404).json({ error: 'كود المندوب غير مسجل في السيستم' });
 
-    const stmt = db.prepare(`
-      INSERT INTO advances (das_code, courier_name, amount, reason, wallet)
-      VALUES (?, ?, ?, ?, ?)
-    `);
-    stmt.run(
-      [cleanCode, row.name, amt, String(reason), String(wallet).trim()],
-      function (err2) {
-        if (err2) return res.status(500).json({ error: 'فشل تسجيل طلب السلفة' });
-        res.json({ success: true, advance_id: this.lastID });
-        BUS.publish('advances', { das_code: cleanCode, id: this.lastID, reason: 'new' });
+    db.get(
+      "SELECT id, amount, created_at FROM advances WHERE UPPER(das_code) = ? AND status = 'قيد المراجعة' ORDER BY id DESC LIMIT 1",
+      [cleanCode],
+      (pErr, pending) => {
+        if (pErr) return res.status(500).json({ error: 'خطأ في السيرفر' });
+        if (pending) {
+          return res.status(409).json({
+            error: 'عندك طلب سلفة قيد المراجعة — لازم الإدارة ترد عليه الأول قبل ما تبعت طلب جديد.',
+            pending: true,
+            pending_advance_id: pending.id,
+            pending_amount: pending.amount
+          });
+        }
+
+        const stmt = db.prepare(`
+          INSERT INTO advances (das_code, courier_name, amount, reason, wallet, wallet_type)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `);
+        stmt.run(
+          [cleanCode, row.name, amt, String(reason), String(wallet).trim(), payoutType],
+          function (err2) {
+            if (err2) return res.status(500).json({ error: 'فشل تسجيل طلب السلفة' });
+            res.json({ success: true, advance_id: this.lastID });
+            BUS.publish('advances', { das_code: cleanCode, id: this.lastID, reason: 'new' });
+          }
+        );
       }
     );
   });
@@ -1905,12 +1925,13 @@ app.get('/api/admin/advances', (req, res) => {
 
 // 14. تسجيل سلفة صرفها الأدمن بنفسه — بتتحط على "تمت الصرف" تلقائي
 app.post('/api/admin/advances', (req, res) => {
-  const { das_code, amount, reason, wallet, admin_note } = req.body || {};
+  const { das_code, amount, reason, wallet, wallet_type, admin_note } = req.body || {};
   if (!das_code || !reason) return res.status(400).json({ error: 'الكود والسبب مطلوبين' });
   const amt = Number(amount);
   if (!Number.isFinite(amt) || amt <= 0 || amt > 1000000) {
     return res.status(400).json({ error: 'المبلغ غير صحيح' });
   }
+  const payoutType = String(wallet_type || '').trim().toLowerCase() === 'instapay' ? 'instapay' : 'wallet';
 
   const cleanCode = String(das_code).trim().toUpperCase();
   db.get("SELECT name FROM couriers WHERE UPPER(das_code) = ?", [cleanCode], (err, row) => {
@@ -1918,9 +1939,9 @@ app.post('/api/admin/advances', (req, res) => {
     if (!row) return res.status(404).json({ error: 'كود المندوب غير مسجل في السيستم' });
 
     db.run(
-      `INSERT INTO advances (das_code, courier_name, amount, reason, wallet, status, admin_note)
-       VALUES (?, ?, ?, ?, ?, 'تمت الصرف', ?)`,
-      [cleanCode, row.name, amt, String(reason), String(wallet || '').trim(), String(admin_note || '')],
+      `INSERT INTO advances (das_code, courier_name, amount, reason, wallet, wallet_type, status, admin_note)
+       VALUES (?, ?, ?, ?, ?, ?, 'تمت الصرف', ?)`,
+      [cleanCode, row.name, amt, String(reason), String(wallet || '').trim(), payoutType, String(admin_note || '')],
       function (err2) {
         if (err2) return res.status(500).json({ error: 'فشل حفظ السلفة' });
         res.json({ success: true, advance_id: this.lastID });

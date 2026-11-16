@@ -186,7 +186,14 @@
               <input type="number" id="advAmount" class="input" min="50" max="20000" step="50" required placeholder="500">
             </div>
             <div class="field">
-              <label for="advWallet">رقم المحفظة (فودافون كاش / انستاباي)</label>
+              <label for="advMethod">الرقم على</label>
+              <select id="advMethod" class="input">
+                <option value="wallet">محفظة إلكترونية</option>
+                <option value="instapay">إنستاباي</option>
+              </select>
+            </div>
+            <div class="field" style="grid-column:1/-1">
+              <label for="advWallet">رقم المحفظة / إنستاباي</label>
               <input type="tel" id="advWallet" class="input mono" required inputmode="numeric" pattern="[0-9]{10,13}" maxlength="13" placeholder="01xxxxxxxxx">
             </div>
           </div>
@@ -232,6 +239,7 @@
           <span style="font-size:16px;color:var(--text);font-weight:800">سلفك وحالتها</span>
           <span class="live"><i></i> أسبوعي</span>
         </div>
+        <div id="advPendingNote" class="adv-block hidden"></div>
         <div class="adv-summary" id="myAdvSummary" style="margin:-6px 0 12px"></div>
         <div id="myAdvancesList" class="ticket-list">
           <div class="skeleton" style="height:90px"></div>
@@ -265,6 +273,7 @@
     let advSig = null;
     let advPrevMap = {};
     let advFirstLoad = true;
+    let pendingAdvance = null;
     let cardsCache = null;
 
     // حالة جرس التنبيهات (قبل أي استدعاء لـ showMainScreen — الجلسة المحفوظة بتدخل على طول)
@@ -665,7 +674,32 @@
     }
 
     // ---------- السلفة ----------
+    function renderAdvancePendingNote() {
+      const el = $('advPendingNote');
+      if (!el) return;
+      if (!pendingAdvance) {
+        el.classList.add('hidden');
+        el.innerHTML = '';
+        return;
+      }
+      const amt = Number(pendingAdvance.amount) || 0;
+      el.innerHTML = `
+        <span class="ab-ic">${DAS.icon('clock')}</span>
+        <div>
+          <b>عندك طلب سلفة قيد المراجعة${amt ? ' بمبلغ ' + amt.toFixed(0) + ' ج' : ''}</b>
+          <span>لازم الإدارة ترد عليه الأول (صرف أو رفض) قبل ما تبعت طلب جديد.</span>
+        </div>`;
+      el.classList.remove('hidden');
+    }
+
     function openAdvanceForm() {
+      if (pendingAdvance) {
+        DAS.toast('عندك طلب سلفة قيد المراجعة — لازم الإدارة ترد عليه الأول', 'err');
+        renderAdvancePendingNote();
+        const note = $('advPendingNote');
+        if (note) note.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
       $('ticketFormBox').classList.add('hidden');
       $('cardShift').classList.remove('active');
       $('cardPayroll').classList.remove('active');
@@ -701,7 +735,8 @@
             das_code: currentCourier.das_code,
             amount: Number($('advAmount').value),
             reason: $('advReason').value,
-            wallet: $('advWallet').value
+            wallet: $('advWallet').value,
+            wallet_type: $('advMethod').value
           })
         });
         const data = await res.json();
@@ -736,6 +771,8 @@
       const sig = JSON.stringify(advances.map(a => [a.id, a.status, a.admin_note, a.amount, a.original_amount, a.edit_count]));
       if (!force && sig === advSig) return;
       advSig = sig;
+      pendingAdvance = advances.find(a => a.status === 'قيد المراجعة') || null;
+      renderAdvancePendingNote();
 
       const changed = new Set();
       if (!advFirstLoad) {
@@ -826,7 +863,7 @@
                   ${DAS.icon('edit')}
                   <span>تم تعديل المبلغ من <b class="num-dir">${original.toFixed(0)}</b> ج إلى <b class="num-dir">${Number(a.amount).toFixed(0)}</b> ج${Number(a.edit_count) > 1 ? ` · اتعدلت ${Number(a.edit_count)} مرات` : ''}</span>
                 </div>` : ''}
-              <div class="meta">المحفظة: <span class="mono">${DAS.esc(a.wallet)}</span></div>
+              <div class="meta">${a.wallet_type === 'instapay' ? 'إنستاباي' : 'محفظة'}: <span class="mono">${DAS.esc(a.wallet)}</span></div>
               ${a.admin_note ? `
                 <div class="reply">
                   <strong>${DAS.icon('msg')} رد الإدارة</strong>

@@ -134,6 +134,24 @@ try {
   const advNotes = (box.notifications || []).filter((n) => n.kind === 'advance');
   ok('تنبيه السلفة اتسجل مرة واحدة (اتسجلت + اتصرفت دمجوا)', advNotes.length === 1, 'count=' + advNotes.length);
 
+  /* -------- 5-ب) منع طلب سلفة جديد قبل رد الإدارة -------- */
+  const firstReq = await req('/api/advances', j('POST', {
+    das_code: CODE, amount: 250, reason: 'طلب سلفة اختبار', wallet: '01000000000', wallet_type: 'instapay'
+  }));
+  ok('المندوب يقدر يبعت طلب سلفة', firstReq.status === 200);
+  const secondReq = await req('/api/advances', j('POST', {
+    das_code: CODE, amount: 300, reason: 'طلب تاني', wallet: '01000000000', wallet_type: 'wallet'
+  }));
+  ok('طلب جديد مرفوض وطلب السلفة السابق لسه قيد المراجعة', secondReq.status === 409 && secondReq.data.pending === true);
+  const courierAdvances = (await req(`/api/courier/advances/${CODE}`)).data.advances || [];
+  const latestAdv = courierAdvances.find((a) => a.id === firstReq.data.advance_id);
+  ok('طريقة التحويل اتسجلت (إنستاباي)', latestAdv && latestAdv.wallet_type === 'instapay');
+  await req(`/api/admin/advances/${firstReq.data.advance_id}`, j('PUT', { status: 'مرفوضة', admin_note: 'مرفوض' }, AH));
+  const thirdReq = await req('/api/advances', j('POST', {
+    das_code: CODE, amount: 350, reason: 'بعد الرد', wallet: '01000000000', wallet_type: 'wallet'
+  }));
+  ok('بعد رد الإدارة يقدر يبعت طلب جديد', thirdReq.status === 200);
+
   /* -------- 6) رفع القبض: ملف مخفي لحد ما الأدمن يعرضه = تنبيه للمندوب -------- */
   const upload = await req('/api/admin/payroll/upload', j('POST', {
     title: 'أسبوع اختبار', period: '2026-W44',
