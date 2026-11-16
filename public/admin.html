@@ -1745,7 +1745,12 @@
     function profileAdvancesTable(advs) {
       const rows = advs.sort((a, b) => b.id - a.id).map((a, i) => `
         <tr style="--i:${Math.min(i, 12)};${i < 12 ? '' : 'animation:none'}">
-          <td class="mono" style="color:var(--text-3);font-size:12px">#${a.id}</td>
+          <td class="mono" style="color:var(--text-3);font-size:12px">
+            <div class="row-head">
+              #${a.id}
+              <button class="btn btn-ghost btn-icon" title="نسخ بيانات السلفة" aria-label="نسخ بيانات السلفة" onclick="copyAdvance(${a.id})">${DAS.icon('copy')}</button>
+            </div>
+          </td>
           <td data-label="الأسبوع"><span class="week-tag">${DAS.esc(DAS.weekLabel(DAS.weekStart(a.created_at)) || '—')}</span></td>
           <td data-label="المبلغ">
             <div class="amount-cell">
@@ -3917,6 +3922,7 @@
             <td class="mono">
               <div class="row-head">
                 <span style="color:var(--text-3);font-size:12px">#${a.id}</span>
+                <button class="btn btn-ghost btn-icon" title="نسخ بيانات السلفة" aria-label="نسخ بيانات السلفة" onclick="copyAdvance(${a.id})">${DAS.icon('copy')}</button>
                 <button class="btn btn-del btn-icon" title="مسح السلفة" aria-label="مسح السلفة" onclick="deleteAdvance(${a.id})">${DAS.icon('trash')}</button>
               </div>
             </td>
@@ -3963,6 +3969,27 @@
         ...list.map(a => [a.id, DAS.weekLabel(advWeekKey(a)), a.das_code, a.courier_name, a.amount, a.reason, a.wallet || '', DAS.t(a.status), a.admin_note || '', DAS.fmtDateTime(a.created_at)])
       ]);
       DAS.toast('تم تنزيل ملف السلف');
+    }
+
+    // نسخ بيانات السلفة بالشكل اللي بنبعته للمندوب/المحاسب
+    function advanceCopyText(a) {
+      const method = String(a.wallet_type || '').toLowerCase() === 'instapay' ? 'إنستاباي' : 'محفظة';
+      return [
+        'الاسم: ' + String(a.courier_name || ''),
+        'الكود: ' + String(a.das_code || ''),
+        'الرقم: ' + String(a.wallet || '—'),
+        'المبلغ: ' + Number(a.amount || 0).toFixed(0) + ' ج',
+        'السبب: ' + String(a.reason || ''),
+        'الطريقة: ' + method
+      ].join('\n');
+    }
+
+    async function copyAdvance(id) {
+      const a = allAdvances.find(x => Number(x.id) === Number(id));
+      if (!a) return;
+      const ok = await DAS.copy(advanceCopyText(a));
+      if (ok) DAS.toast('تم نسخ بيانات السلفة');
+      else DAS.toast('تعذر النسخ — جرّب تاني', 'err');
     }
 
     async function deleteAdvance(id) {

@@ -249,6 +249,10 @@
     'تم تعديل المبلغ — المندوب هيشوفه فورًا': 'Amount updated — the courier sees it instantly',
     'فشل تعديل المبلغ': 'Failed to update the amount',
     'اكتب مبلغ صحيح': 'Enter a valid amount',
+    'الطريقة': 'Method',
+    'نسخ بيانات السلفة': 'Copy advance details',
+    'تم نسخ بيانات السلفة': 'Advance details copied',
+    'تعذر النسخ — جرّب تاني': 'Could not copy — try again',
     'تم تعديل مبلغ سلفتك': 'Your advance amount was updated',
     // ===== طريقة التحويل وقفل طلب السلفة =====
     'الرقم على': 'Number on',

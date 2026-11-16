@@ -604,6 +604,8 @@ html.scrolling .orb, html.scrolling .bg-fx::before { animation-play-state: pause
 .row-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .row-head .btn-del.btn-icon { width: 30px; height: 30px; border-radius: 9px; flex-shrink: 0; }
 .row-head .btn-del .ico { width: 15px; height: 15px; }
+.row-head .btn-ghost.btn-icon { width: 30px; height: 30px; border-radius: 9px; flex-shrink: 0; }
+.row-head .btn-ghost.btn-icon .ico { width: 15px; height: 15px; }
 
 /* الأرشيف: صفوف باهتة ومقفولة */
 .tbl tr.archived { opacity: .62; }
