@@ -733,7 +733,7 @@
       loadPayroll();
 
       const advances = data.advances || [];
-      const sig = JSON.stringify(advances.map(a => [a.id, a.status, a.admin_note]));
+      const sig = JSON.stringify(advances.map(a => [a.id, a.status, a.admin_note, a.amount, a.original_amount, a.edit_count]));
       if (!force && sig === advSig) return;
       advSig = sig;
 
@@ -741,10 +741,10 @@
       if (!advFirstLoad) {
         advances.forEach(a => {
           const p = advPrevMap[a.id];
-          if (p && (p.status !== a.status || p.admin_note !== a.admin_note)) changed.add(a.id);
+          if (p && (p.status !== a.status || p.admin_note !== a.admin_note || Number(p.amount) !== Number(a.amount))) changed.add(a.id);
         });
       }
-      advPrevMap = Object.fromEntries(advances.map(a => [a.id, { status: a.status, admin_note: a.admin_note }]));
+      advPrevMap = Object.fromEntries(advances.map(a => [a.id, { status: a.status, admin_note: a.admin_note, amount: a.amount }]));
       const animate = advFirstLoad;
       advFirstLoad = false;
 

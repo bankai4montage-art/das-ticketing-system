@@ -3702,7 +3702,7 @@
         data = await res.json();
       } catch (e) { return; }
       const advances = data.advances || [];
-      const newSig = JSON.stringify(advances.map(a => [a.id, a.status, a.admin_note]));
+      const newSig = JSON.stringify(advances.map(a => [a.id, a.status, a.admin_note, a.amount, a.original_amount, a.edit_count]));
       if (newSig === advSig && !force) return;
       advSig = newSig;
 
@@ -3713,11 +3713,11 @@
             ? `${DAS.t('طلب سلفة جديد من')} ${fresh[0].courier_name} ${DAS.t('بمبلغ')} ${fresh[0].amount} ${DAS.lang === 'en' ? 'EGP' : 'ج'}`
             : `${fresh.length} ${DAS.t('طلبات سلف جديدة')}`, 'ok', fresh.length === 1);
         }
-        // فلش للسلف اللي اتغيرت (حالة أو ملاحظة)
-        const prevStatus = new Map(allAdvances.map(a => [a.id, a.status + '|' + (a.admin_note || '')]));
+        // فلش للسلف اللي اتغيرت (حالة/ملاحظة/مبلغ)
+        const prevStatus = new Map(allAdvances.map(a => [a.id, a.status + '|' + (a.admin_note || '') + '|' + a.amount + '|' + a.original_amount + '|' + a.edit_count]));
         advances.forEach(a => {
           const p = prevStatus.get(a.id);
-          if (p && p !== a.status + '|' + (a.admin_note || '')) advFlash.add(a.id);
+          if (p && p !== a.status + '|' + (a.admin_note || '') + '|' + a.amount + '|' + a.original_amount + '|' + a.edit_count) advFlash.add(a.id);
         });
       }
       advPrevIds = new Set(advances.map(a => a.id));
