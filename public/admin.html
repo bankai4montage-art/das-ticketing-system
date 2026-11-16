@@ -506,6 +506,7 @@
         <input type="text" id="editCourierPhone" class="input" placeholder="رقم الموبايل" inputmode="tel">
         <p class="hint" style="margin:0">تغيير الكود بيحدّث كل الشكاوى والسلف والاشعارات المرتبطة بالمندوب.</p>
         <button type="submit" class="btn btn-ok" id="editCourierBtn"><span class="spinner"></span><i data-ico="check"></i><span class="label">حفظ التعديل</span></button>
+        <button type="button" class="btn btn-del" style="width:100%" onclick="deleteCourier(editCourierOldCode)"><i data-ico="trash"></i> مسح المندوب خالص</button>
       </form>
     </div>
   </div>
@@ -1512,6 +1513,7 @@
             <small class="mono">${DAS.esc(c.phone || '')}</small>
             <button type="button" class="btn btn-ghost btn-icon" style="width:32px;height:32px;border-radius:10px" title="إشعار تجريبي على موبايله" aria-label="إشعار تجريبي" onclick="testPush('${DAS.esc(c.das_code)}', event)">${DAS.icon('bell')}</button>
             <button type="button" class="btn btn-ghost btn-icon" style="width:32px;height:32px;border-radius:10px" title="تعديل" aria-label="تعديل" onclick="openCourierEdit('${DAS.esc(c.das_code)}', event)">${DAS.icon('edit')}</button>
+            <button type="button" class="btn btn-del btn-icon" style="width:32px;height:32px;border-radius:10px" title="مسح المندوب" aria-label="مسح المندوب" onclick="deleteCourier('${DAS.esc(c.das_code)}', event)">${DAS.icon('trash')}</button>
           </div>
         </div>`).join('') : `
         <div class="empty fade" style="padding:22px 10px">
@@ -1585,6 +1587,36 @@
     function closeCourierEdit() {
       editCourierOldCode = null;
       closeModal('courierEditModal');
+    }
+
+    // ---------- مسح مندوب خالص (بياناته التاريخية تفضل موجودة) ----------
+    async function deleteCourier(code, ev) {
+      if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+      if (!code) return;
+      const c = (couriersData || []).find(x => x.das_code === code)
+        || (couriersCache || []).find(x => x.das_code === code);
+      const label = c ? `${c.name} (${c.das_code})` : code;
+      if (!confirm(`متأكد من مسح المندوب ${label} خالص؟\nمش هيظهر تاني في القايمة ولا يقدر يدخل — شكاواه وسلفه القديمة هتفضل موجودة في التقارير.`)) return;
+
+      try {
+        const res = await adminFetch('/api/admin/couriers/' + encodeURIComponent(code), { method: 'DELETE' });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { DAS.toast(data.error || 'فشل مسح المندوب', 'err'); return; }
+
+        couriersData = couriersData.filter(x => x.das_code !== code);
+        couriersCache = null;               // كاش البروفايل
+        syncLoadedAt = 0;                   // كاش مزامنة الروستر وخريطة الأفرع
+        closeCourierEdit();
+        DAS.toast('تم مسح المندوب ' + (data.name || code));
+
+        await loadCouriers();
+        if (profileCode && profileCode.toUpperCase() === code.toUpperCase()) {
+          closeModal('profileModal');
+          profileCode = null;
+        }
+      } catch (err) {
+        DAS.toast('فشل مسح المندوب', 'err');
+      }
     }
 
     $('editCourierForm').addEventListener('submit', async (e) => {

@@ -1915,6 +1915,23 @@ app.put('/api/admin/couriers/:das_code', (req, res) => {
   })();
 });
 
+// 12.c مسح مندوب من القايمة خالص — شكاواه وسلفه وتقاريرها تفضل موجودة
+app.delete('/api/admin/couriers/:das_code', (req, res) => {
+  const cleanCode = String(req.params.das_code || '').trim().toUpperCase();
+  if (!cleanCode) return res.status(400).json({ error: 'كود المندوب مطلوب' });
+
+  db.get("SELECT name FROM couriers WHERE UPPER(das_code) = ?", [cleanCode], (err, row) => {
+    if (err) return res.status(500).json({ error: 'خطأ في السيرفر' });
+    if (!row) return res.status(404).json({ error: 'المندوب مش موجود' });
+
+    db.run("DELETE FROM couriers WHERE das_code = ?", [cleanCode], (err2) => {
+      if (err2) return res.status(500).json({ error: 'فشل مسح المندوب' });
+      res.json({ success: true, name: row.name, das_code: cleanCode });
+      BUS.publish('couriers', { das_code: cleanCode, reason: 'delete' });
+    });
+  });
+});
+
 // 13. جلب كل طلبات السلف للإدارة
 app.get('/api/admin/advances', (req, res) => {
   db.all("SELECT * FROM advances ORDER BY id DESC", [], (err, rows) => {

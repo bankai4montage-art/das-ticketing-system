@@ -253,6 +253,9 @@
     'نسخ بيانات السلفة': 'Copy advance details',
     'تم نسخ بيانات السلفة': 'Advance details copied',
     'تعذر النسخ — جرّب تاني': 'Could not copy — try again',
+    'مسح المندوب': 'Delete courier',
+    'مسح المندوب خالص': 'Delete courier permanently',
+    'فشل مسح المندوب': 'Failed to delete the courier',
     'تم تعديل مبلغ سلفتك': 'Your advance amount was updated',
     // ===== طريقة التحويل وقفل طلب السلفة =====
     'الرقم على': 'Number on',

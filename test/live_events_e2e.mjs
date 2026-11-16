@@ -192,6 +192,17 @@ try {
   const idle = await req(`/api/events?since=${now}&wait=0`);
   ok('wait=0 بيرجع فورًا', idle.status === 200 && Date.now() - t0 < 1000 && (idle.data.events || []).length === 0);
 
+  /* -------- 10) مسح مندوب من القايمة (بياناته التاريخية تفضل موجودة) -------- */
+  const delMissing = await req('/api/admin/couriers/NOPE999', { method: 'DELETE', headers: AH });
+  ok('مسح مندوب مش موجود مرفوض', delMissing.status === 404, 'status=' + delMissing.status);
+  const delNoAuth = await req('/api/admin/couriers/' + CODE, { method: 'DELETE' });
+  ok('مسح مندوب بدون توكن مرفوض', delNoAuth.status === 401, 'status=' + delNoAuth.status);
+  const delC = await req('/api/admin/couriers/' + CODE, { method: 'DELETE', headers: AH });
+  const courierList = (await req('/api/admin/couriers', { headers: AH })).data.couriers || [];
+  ok('مسح المندوب من القايمة', delC.status === 200 && !courierList.some((c) => c.das_code === CODE), 'status=' + delC.status);
+  const keptAdvances = (await req('/api/admin/advances', { headers: AH })).data.advances || [];
+  ok('سلف المندوب المحذوف تفضل موجودة في التقارير', keptAdvances.some((a) => a.das_code === CODE));
+
   console.log(`\n[E2E] ${passed} نجح · ${failed} فشل`);
   process.exitCode = failed ? 1 : 0;
 } catch (e) {
