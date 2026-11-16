@@ -191,6 +191,13 @@
           </div>
         </section>
 
+        <div class="chips adv-status-filters rise" id="advStatusChips" aria-label="فلتر حالة السلف">
+          <button class="chip active" data-adv-status="all">الكل</button>
+          <button class="chip" data-adv-status="قيد المراجعة">قيد المراجعة</button>
+          <button class="chip" data-adv-status="تمت الصرف">مصروفة</button>
+          <button class="chip" data-adv-status="مرفوضة">مرفوضة</button>
+        </div>
+
         <section class="glass table-wrap rise">
           <table class="tbl">
             <thead>
@@ -714,6 +721,7 @@
     let filterWeak = false;
     let filterBranchTickets = 'all';
     let filterBranchAdvances = 'all';
+    let filterAdvStatus = 'all';
     let syncBranchMap = {};        // كود DAS → الفرع (QCD 1 / QCD 2) من الروستر
     let branchLoading = false;     // خريطة الأفرع بتتحمّل دلوقتي؟
     let branchRetryAt = 0;         // وقت إعادة المحاولة الجاية
@@ -1333,6 +1341,14 @@
         DAS.busy(btn, false);
         $('csvFile').value = '';
       }
+    });
+
+    document.querySelectorAll('#advStatusChips .chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        filterAdvStatus = chip.dataset.advStatus || 'all';
+        document.querySelectorAll('#advStatusChips .chip').forEach(c => c.classList.toggle('active', c === chip));
+        renderAdvances();
+      });
     });
 
     // ---------- Filters ----------
@@ -3761,6 +3777,7 @@
       const branchReady = Object.keys(syncBranchMap).length > 0;
       const out = [];
       const bCounts = { all: 0, 'QCD 1': 0, 'QCD 2': 0, none: 0 };
+      const sCounts = { all: 0, 'قيد المراجعة': 0, 'تمت الصرف': 0, 'مرفوضة': 0 };
       allAdvances.forEach(a => {
         const mq = !q || [a.das_code, a.courier_name, a.reason, a.wallet,
           a.wallet_type === 'instapay' ? 'إنستاباي' : 'محفظة'].some(v => String(v || '').toLowerCase().includes(q));
@@ -3768,12 +3785,34 @@
         // فلتر الأسبوع: كل سلفة بتظهر في الأسبوع بتاعها بس
         if (filterAdvWeek !== 'all' && advWeekKey(a) !== filterAdvWeek) return;
         const br = syncBranchMap[a.das_code] || '';
-        bCounts.all++;
-        if (br === 'QCD 1' || br === 'QCD 2') bCounts[br]++; else bCounts.none++;
-        if (!branchReady || filterBranchAdvances === 'all' || br === filterBranchAdvances) out.push(a);
+        const inBranch = !branchReady || filterBranchAdvances === 'all' || br === filterBranchAdvances;
+        const inStatus = filterAdvStatus === 'all' || a.status === filterAdvStatus;
+        // عدّاد الفرع بيتأثر بفلتر الحالة
+        if (inStatus) {
+          bCounts.all++;
+          if (br === 'QCD 1' || br === 'QCD 2') bCounts[br]++; else bCounts.none++;
+        }
+        // عدّاد الحالة بيتأثر بفلتر الفرع
+        if (inBranch) {
+          sCounts.all++;
+          if (sCounts[a.status] != null) sCounts[a.status]++;
+        }
+        if (inBranch && inStatus) out.push(a);
       });
       setBranchChipCounts('advances', bCounts, branchReady);
+      setAdvStatusCounts(sCounts);
       return out;
+    }
+
+    // عدّاد شيبات الحالة (الكل / قيد المراجعة / مصروفة / مرفوضة)
+    function setAdvStatusCounts(counts) {
+      document.querySelectorAll('#advStatusChips .chip').forEach(chip => {
+        const s = chip.dataset.advStatus;
+        let badge = chip.querySelector('.chip-count');
+        if (!badge) { badge = document.createElement('span'); badge.className = 'chip-count'; chip.appendChild(badge); }
+        badge.textContent = counts[s] == null ? 0 : counts[s];
+        chip.classList.toggle('active', s === filterAdvStatus);
+      });
     }
 
     // عدّاد كل شيب فرع + تنبيه للمندوبين مالهمش فرع في الروستر
