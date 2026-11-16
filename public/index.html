@@ -750,17 +750,20 @@
 
       const container = $('myAdvancesList');
 
-      // ملخص أسبوعي: الأسبوع الحالي + إجمالي سلفك
+      // ملخص أسبوعي: المصروف بس (المرفوضة/قيد المراجعة مش بتتحسب في الإجمالي)
       const weekKey = (a) => DAS.weekStart(a.created_at);
       const sumAmt = (arr) => arr.reduce((t, a) => t + (Number(a.amount) || 0), 0);
       const curWeek = DAS.weekStart(new Date());
       const curAdv = advances.filter(a => weekKey(a) === curWeek);
       const curPaid = curAdv.filter(a => a.status === 'تمت الصرف');
+      const curPending = curAdv.filter(a => a.status === 'قيد المراجعة');
       const allPaid = advances.filter(a => a.status === 'تمت الصرف');
       const sumEl = $('myAdvSummary');
       if (sumEl) {
         sumEl.textContent = advances.length
-          ? `${DAS.weekLabel(curWeek)}: ${curAdv.length} ${curAdv.length === 1 ? 'سلفة' : 'سلف'} (${sumAmt(curPaid)} ج مصروفة) · إجمالي سلفك: ${advances.length} (${sumAmt(allPaid)} ج مصروفة)`
+          ? `${DAS.weekLabel(curWeek)}: ${curPaid.length} ${curPaid.length === 1 ? 'سلفة' : 'سلف'} مصروفة (${sumAmt(curPaid)} ج)` +
+            (curPending.length ? ` · ${curPending.length} قيد المراجعة` : '') +
+            ` · إجمالي المصروف: ${sumAmt(allPaid)} ج (${allPaid.length} ${allPaid.length === 1 ? 'سلفة' : 'سلف'})`
           : 'مفيش سلف لسه — أول سلفة ليك هتظهر هنا في أسبوعها';
       }
 
@@ -801,12 +804,15 @@
           const s = advSt(a.status);
           const anim = (animate || changed.has(a.id)) ? '' : 'animation:none';
           const isOpen = openAdvances.has(String(a.id));
+          const edited = Number(a.edit_count) > 0;
+          const original = Number(a.original_amount) || Number(a.amount) || 0;
           return `
           <details class="ticket s-${s.cls} ${changed.has(a.id) ? 'flash' : ''}" data-aid="${a.id}" ${isOpen ? 'open' : ''} style="--i:${animate ? i : 0};${anim}">
             <summary class="ticket-top" aria-label="تفاصيل السلفة ${a.id}">
               <div class="l">
                 <span class="tag adv">سلفة</span>
                 <span class="amt">${DAS.esc(a.amount)} ج</span>
+                ${edited ? '<span class="edit-badge">معدلة</span>' : ''}
               </div>
               <div class="t-right">
                 ${advBadge(a.status)}
@@ -815,6 +821,11 @@
             </summary>
             <div class="ticket-body">
               <p class="desc" data-i18n-raw>${DAS.esc(a.reason)}</p>
+              ${edited ? `
+                <div class="edit-note">
+                  ${DAS.icon('edit')}
+                  <span>تم تعديل المبلغ من <b class="num-dir">${original.toFixed(0)}</b> ج إلى <b class="num-dir">${Number(a.amount).toFixed(0)}</b> ج${Number(a.edit_count) > 1 ? ` · اتعدلت ${Number(a.edit_count)} مرات` : ''}</span>
+                </div>` : ''}
               <div class="meta">المحفظة: <span class="mono">${DAS.esc(a.wallet)}</span></div>
               ${a.admin_note ? `
                 <div class="reply">

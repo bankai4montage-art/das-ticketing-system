@@ -216,6 +216,9 @@ db.serialize(() => {
       das_code TEXT NOT NULL,
       courier_name TEXT NOT NULL,
       amount REAL NOT NULL,
+      original_amount REAL DEFAULT 0,
+      edit_count INTEGER DEFAULT 0,
+      edited_at DATETIME,
       reason TEXT NOT NULL,
       wallet TEXT NOT NULL,
       status TEXT DEFAULT 'قيد المراجعة',
@@ -423,6 +426,19 @@ db.serialize(() => {
               WHERE (branch IS NULL OR branch = '') AND (LOWER(zone) LIKE '%mandra%' OR LOWER(zone) LIKE '%almandra%' OR LOWER(title) LIKE '%mandra%')`);
       db.run(`UPDATE payroll_files SET branch = 'QCD 2'
               WHERE (branch IS NULL OR branch = '') AND (LOWER(zone) LIKE '%semouha%' OR LOWER(zone) LIKE '%semooha%' OR LOWER(zone) LIKE '%smouha%' OR LOWER(title) LIKE '%semouha%')`);
+    });
+  });
+
+  // السلف: تعديل المبلغ مع الاحتفاظ بالمبلغ الأصلي وعدد التعديلات
+  db.all("PRAGMA table_info(advances)", [], (aErr, aCols) => {
+    if (aErr || !aCols) return;
+    db.serialize(() => {
+      const names = aCols.map(c => c.name);
+      if (!names.includes('original_amount')) db.run("ALTER TABLE advances ADD COLUMN original_amount REAL DEFAULT 0");
+      if (!names.includes('edit_count')) db.run("ALTER TABLE advances ADD COLUMN edit_count INTEGER DEFAULT 0");
+      if (!names.includes('edited_at')) db.run("ALTER TABLE advances ADD COLUMN edited_at DATETIME");
+      // السلف القديمة اللي اتعدلت قبل إضافة الأعمدة: الأصل = المبلغ الحالي
+      db.run("UPDATE advances SET original_amount = amount WHERE COALESCE(original_amount, 0) = 0");
     });
   });
 
@@ -1944,6 +1960,53 @@ app.put('/api/admin/advances/:id', (req, res) => {
           title = 'الإدارة ردت على سلفتك';
         }
         notifyCourier(before.das_code, title, String(admin_note || '').slice(0, 140), { kind: 'advance', ref: 'advance:' + before.id });
+      }
+    );
+  });
+});
+
+// 15-ب. تعديل مبلغ السلفة — بيحفظ المبلغ الأصلي وعدد التعديلات ويبلّغ المندوب
+app.put('/api/admin/advances/:id/amount', (req, res) => {
+  const id = Number(req.params.id);
+  const amount = Number((req.body || {}).amount);
+  if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'معرّف السلفة غير صحيح' });
+  if (!Number.isFinite(amount) || amount <= 0 || amount > 1000000) {
+    return res.status(400).json({ error: 'المبلغ غير صحيح' });
+  }
+
+  db.get("SELECT * FROM advances WHERE id = ?", [id], (errB, before) => {
+    if (errB) return res.status(500).json({ error: 'خطأ في جلب السلفة' });
+    if (!before) return res.status(404).json({ error: 'السلفة غير موجودة' });
+
+    const oldAmount = Number(before.amount) || 0;
+    const editCount = Number(before.edit_count) || 0;
+    const original = editCount > 0 ? (Number(before.original_amount) || oldAmount) : oldAmount;
+
+    // نفس المبلغ؟ مفيش تعديل ولا تنبيه
+    if (Math.abs(oldAmount - amount) < 0.001) {
+      return res.json({ success: true, unchanged: true, amount: oldAmount, original_amount: original, edit_count: editCount });
+    }
+
+    db.run(
+      `UPDATE advances
+          SET amount = ?, original_amount = ?,
+              edit_count = COALESCE(edit_count, 0) + 1,
+              edited_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?`,
+      [amount, original, id],
+      function (err) {
+        if (err) return res.status(500).json({ error: 'فشل تعديل مبلغ السلفة' });
+        const newCount = editCount + 1;
+        res.json({ success: true, amount, original_amount: original, edit_count: newCount });
+        BUS.publish('advances', { das_code: before.das_code, id, reason: 'amount-edit' });
+        const fmt = (n) => Number(n).toFixed(0);
+        notifyCourier(
+          before.das_code,
+          'تم تعديل مبلغ سلفتك',
+          'من ' + fmt(oldAmount) + ' ج إلى ' + fmt(amount) + ' ج' +
+            (before.reason ? ' — ' + String(before.reason).slice(0, 80) : ''),
+          { kind: 'advance', ref: 'advance:' + id }
+        );
       }
     );
   });

@@ -694,6 +694,13 @@ html.scrolling .orb, html.scrolling .bg-fx::before { animation-play-state: pause
 .adv-head b { font-size: 15px; font-weight: 800; }
 .adv-summary { font-size: 12.5px; color: var(--text-2); font-variant-numeric: tabular-nums; }
 
+/* السلف المعدّلة: المبلغ الأصلي + بادج تعديل */
+.amount-cell { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.edit-badge { display: inline-block; padding: 1px 7px; border-radius: 6px; font-size: 10.5px; font-weight: 800; white-space: nowrap; color: var(--warn); background: var(--warn-soft); border: 1px solid color-mix(in srgb, var(--warn) 30%, transparent); }
+.edit-note { display: flex; align-items: flex-start; gap: 7px; margin: 8px 0; padding: 8px 10px; border-radius: 10px; background: var(--warn-soft); border: 1px solid color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); font-size: 12px; line-height: 1.65; }
+.edit-note .ico { width: 14px; height: 14px; flex-shrink: 0; margin-top: 2px; }
+.edit-note b { font-weight: 800; }
+
 /* ===== السلف بمنطق الأسابيع ===== */
 .week-filter-label { font-size: 12px; color: var(--text-3); font-weight: 700; margin-inline-end: 6px; }
 .adv-head #advWeekWrap { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }

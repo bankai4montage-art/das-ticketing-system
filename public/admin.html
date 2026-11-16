@@ -524,6 +524,26 @@
     </div>
   </div>
 
+  <!-- ============ نافذة تعديل مبلغ سلفة ============ -->
+  <div id="advanceEditModal" class="modal-back" onclick="if(event.target===this)closeAdvanceEdit()">
+    <div class="modal" style="max-width:430px">
+      <div class="form-head">
+        <h3>تعديل مبلغ السلفة</h3>
+        <button class="btn btn-ghost btn-icon" onclick="closeAdvanceEdit()" aria-label="إغلاق"><i data-ico="close"></i></button>
+      </div>
+      <div id="advanceEditInfo" class="hint" style="margin:0 0 12px;padding:10px 12px;background:var(--surface-2);border-radius:12px;line-height:1.8"></div>
+      <form id="advanceEditForm" style="display:grid;gap:12px">
+        <div class="field">
+          <label for="advanceEditAmount">المبلغ الجديد (جنيه)</label>
+          <input type="number" id="advanceEditAmount" class="input" min="1" max="1000000" step="1" required inputmode="numeric">
+        </div>
+        <p id="advanceEditErr" class="err-text" role="alert" style="min-height:0;margin:0"></p>
+        <button type="submit" class="btn btn-ok" id="advanceEditSave"><span class="spinner"></span><i data-ico="check"></i><span class="label">حفظ التعديل</span></button>
+      </form>
+      <div class="hint" style="margin-top:14px">المندوب هيشوف المبلغ الجديد وتنبيه إن السلفة اتعدلت — والمبلغ الأصلي هيفضل محفوظ عندك.</div>
+    </div>
+  </div>
+
   <!-- ============ نافذة كارت صفحة المندوب ============ -->
   <div id="cardModal" class="modal-back" onclick="if(event.target===this)toggleCardModal()">
     <div class="modal" style="max-width:640px">
@@ -1643,7 +1663,11 @@
       const resolved = tickets.filter(t => t.status === 'اتحلت').length;
       const review = tickets.filter(t => t.status === 'يتم المراجعة').length;
       const office = tickets.filter(t => t.status === 'لازم تيجي المكتب').length;
-      const advTotal = advs.reduce((s, a) => s + (Number(a.amount) || 0), 0);
+      const advPaid = advs.filter(a => a.status === 'تمت الصرف');
+      const advPending = advs.filter(a => a.status === 'قيد المراجعة');
+      // المرفوضة (واللي لسه قيد المراجعة) مش بتتحسب في إجمالي اللي المندوب واخده
+      const advTotal = advPaid.reduce((s, a) => s + (Number(a.amount) || 0), 0);
+      const advPendingTotal = advPending.reduce((s, a) => s + (Number(a.amount) || 0), 0);
       const weak = rated.filter(t => t.rating <= 2).length;
 
       $('profileBody').innerHTML = `
@@ -1667,7 +1691,8 @@
           <div class="mini-stat"><b style="color:var(--warn)">${avg ? avg + '★' : '—'}</b><span>متوسط الرضا (${rated.length} ${rated.length === 1 ? 'تقييم' : 'تقييمات'})</span></div>
           <div class="mini-stat bad"><b>${weak}</b><span>تقييمات ضعيفة (★2-)</span></div>
           <div class="mini-stat"><b>${advs.length}</b><span>عدد السلف</span></div>
-          <div class="mini-stat"><b>${advTotal}</b><span>إجمالي السلف (ج)</span></div>
+          <div class="mini-stat ok"><b>${advTotal}</b><span>إجمالي المصروف (ج)</span></div>
+          <div class="mini-stat warn"><b>${advPendingTotal}</b><span>قيد المراجعة (ج)</span></div>
           <div class="mini-stat warn"><b>${advs.filter(a => DAS.weekStart(a.created_at) === DAS.weekStart(new Date())).length}</b><span>سلف هذا الأسبوع</span></div>
         </div>
         <div class="section-title" style="margin:18px 0 10px">الشكاوى</div>
@@ -1702,7 +1727,14 @@
         <tr style="--i:${Math.min(i, 12)};${i < 12 ? '' : 'animation:none'}">
           <td class="mono" style="color:var(--text-3);font-size:12px">#${a.id}</td>
           <td data-label="الأسبوع"><span class="week-tag">${DAS.esc(DAS.weekLabel(DAS.weekStart(a.created_at)) || '—')}</span></td>
-          <td data-label="المبلغ"><span class="amt">${DAS.esc(a.amount)} ج</span></td>
+          <td data-label="المبلغ">
+            <div class="amount-cell">
+              <span class="amt">${DAS.esc(a.amount)} ج</span>
+              ${Number(a.edit_count) > 0 ? '<span class="edit-badge">معدلة</span>' : ''}
+              <button class="btn btn-ghost btn-icon" title="تعديل مبلغ السلفة" aria-label="تعديل مبلغ السلفة" onclick="openAdvanceEdit(${a.id})">${DAS.icon('edit')}</button>
+            </div>
+            ${Number(a.edit_count) > 0 ? `<div class="meta">اتعدلت من ${Number(a.original_amount) || Number(a.amount)} ج</div>` : ''}
+          </td>
           <td data-label="السبب" class="desc-cell"><span data-i18n-raw>${DAS.esc(a.reason)}</span><div class="meta">${DAS.fmtDateTime(a.created_at)}</div></td>
           <td data-label="الحالة"><span class="badge ${ADV_CLS[a.status] || 'warn'}"><span class="dot"></span>${DAS.esc(a.status)}</span></td>
         </tr>`).join('');
@@ -3851,7 +3883,14 @@
                 ${syncBranchMap[a.das_code] ? `<span class="branch-tag">${DAS.esc(syncBranchMap[a.das_code])}</span>` : ''}</div>
               </div>
             </td>
-            <td data-label="المبلغ"><span class="amt">${DAS.esc(a.amount)} ج</span></td>
+          <td data-label="المبلغ">
+            <div class="amount-cell">
+              <span class="amt">${DAS.esc(a.amount)} ج</span>
+              ${Number(a.edit_count) > 0 ? '<span class="edit-badge">معدلة</span>' : ''}
+              <button class="btn btn-ghost btn-icon" title="تعديل مبلغ السلفة" aria-label="تعديل مبلغ السلفة" onclick="openAdvanceEdit(${a.id})">${DAS.icon('edit')}</button>
+            </div>
+            ${Number(a.edit_count) > 0 ? `<div class="meta">اتعدلت من ${Number(a.original_amount) || Number(a.amount)} ج${Number(a.edit_count) > 1 ? ` · ${Number(a.edit_count)} مرات` : ''}</div>` : ''}
+          </td>
             <td data-label="السبب" class="desc-cell"><span data-i18n-raw>${DAS.esc(a.reason)}</span><div class="meta">${DAS.fmtDateTime(a.created_at)}</div></td>
             <td data-label="المحفظة" class="mono">${DAS.esc(a.wallet || '—')}</td>
             <td data-label="الحالة">
@@ -3911,6 +3950,67 @@
         DAS.toast('فشل الحفظ، حاول مرة أخرى', 'err');
       }
     }
+
+    // تعديل مبلغ السلفة — المندوب يشوف المبلغ الجديد + تنبيه إنها اتعدلت
+    let advanceEditId = null;
+
+    function openAdvanceEdit(id) {
+      const a = allAdvances.find(x => Number(x.id) === Number(id));
+      if (!a) return;
+      advanceEditId = Number(id);
+      const edited = Number(a.edit_count) > 0;
+      const original = Number(a.original_amount) || Number(a.amount) || 0;
+      $('advanceEditInfo').innerHTML = `
+        <div><b data-i18n-raw>${DAS.esc(a.courier_name)}</b> · <span class="mono">${DAS.esc(a.das_code)}</span></div>
+        <div data-i18n-raw>${DAS.esc(a.reason)}</div>
+        <div>المبلغ الحالي: <b>${Number(a.amount)} ج</b>${edited ? ` · الأصلي: ${original} ج · اتعدلت ${Number(a.edit_count)} مرة` : ''}</div>`;
+      $('advanceEditErr').textContent = '';
+      $('advanceEditAmount').value = String(Number(a.amount));
+      toggleModal('advanceEditModal');
+      setTimeout(() => {
+        const input = $('advanceEditAmount');
+        if (input) { input.focus(); input.select(); }
+      }, 80);
+    }
+
+    function closeAdvanceEdit() {
+      if ($('advanceEditModal').classList.contains('open')) toggleModal('advanceEditModal');
+      advanceEditId = null;
+    }
+
+    $('advanceEditForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!advanceEditId) return;
+      const errEl = $('advanceEditErr');
+      const btn = $('advanceEditSave');
+      const amount = Number($('advanceEditAmount').value);
+      errEl.textContent = '';
+      if (!Number.isFinite(amount) || amount <= 0) {
+        errEl.textContent = 'اكتب مبلغ صحيح';
+        return;
+      }
+      DAS.busy(btn, true);
+      const id = advanceEditId;
+      try {
+        const res = await adminFetch(`/api/admin/advances/${id}/amount`, {
+          method: 'PUT',
+          body: JSON.stringify({ amount })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          errEl.textContent = data.error || 'فشل تعديل المبلغ';
+          return;
+        }
+        closeAdvanceEdit();
+        DAS.toast(data.unchanged ? 'المبلغ زي ما هو' : 'تم تعديل المبلغ — المندوب هيشوفه فورًا');
+        fetchAdvances(true);
+        if ($('profileModal').classList.contains('open') && profileCode) openProfile(profileCode);
+      } catch (err) {
+        errEl.textContent = 'تعذر الاتصال بالسيرفر';
+      } finally {
+        DAS.busy(btn, false);
+      }
+    });
 
     function toggleAdvanceModal() {
       const opening = !$('advanceModal').classList.contains('open');

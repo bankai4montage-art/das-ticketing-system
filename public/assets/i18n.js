@@ -239,6 +239,17 @@
     'أي غرامة في شيت القبض هتظهر هنا تلقائي': 'Any fine in a payroll sheet will show up here automatically',
     'سبب الغرامة اتسجل — المندوب هيشوفه فورًا': 'Fine reason saved — the courier sees it instantly',
     'تم مسح سبب الغرامة': 'Fine reason cleared',
+    // ===== تعديل مبلغ السلفة =====
+    'تعديل مبلغ السلفة': 'Edit advance amount',
+    'المبلغ الجديد (جنيه)': 'New amount (EGP)',
+    'حفظ التعديل': 'Save change',
+    'المندوب هيشوف المبلغ الجديد وتنبيه إن السلفة اتعدلت — والمبلغ الأصلي هيفضل محفوظ عندك.': 'The courier sees the new amount and a notice that the advance was edited — the original amount stays saved for you.',
+    'معدلة': 'Edited',
+    'المبلغ زي ما هو': 'The amount is unchanged',
+    'تم تعديل المبلغ — المندوب هيشوفه فورًا': 'Amount updated — the courier sees it instantly',
+    'فشل تعديل المبلغ': 'Failed to update the amount',
+    'اكتب مبلغ صحيح': 'Enter a valid amount',
+    'تم تعديل مبلغ سلفتك': 'Your advance amount was updated',
     // ===== إظهار/إخفاء شيت القبض =====
     'اعرض على المناديب بعد الرفع': 'Show to couriers after upload',
     'ظاهر للمناديب': 'Visible to couriers',
