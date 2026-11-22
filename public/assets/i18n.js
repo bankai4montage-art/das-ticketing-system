@@ -256,6 +256,18 @@
     'مسح المندوب': 'Delete courier',
     'مسح المندوب خالص': 'Delete courier permanently',
     'فشل مسح المندوب': 'Failed to delete the courier',
+    // ===== إرجاع الغرامة (القيمة الموجبة في شيت القبض) =====
+    'غرامات وإرجاعات': 'Fines & refunds',
+    'إرجاع غرامة': 'Fine refund',
+    'غرامات': 'Fines',
+    'نوع الحركة': 'Movement type',
+    'سبب الإرجاع:': 'Refund reason:',
+    'سبب إرجاع الغرامة:': 'Fine refund reason:',
+    'اكتب سبب إرجاع الغرامة...': 'Enter the refund reason...',
+    'سبب إرجاع الغرامة اتسجل — المندوب هيشوفه فورًا': 'Refund reason saved — the courier sees it instantly',
+    'تم مسح سبب الحركة': 'Movement reason cleared',
+    'غرامة/إرجاع': 'Fine/refund',
+    'أي حركة في عمود الغرامة هتظهر هنا تلقائي': 'Any movement in the fine column shows here automatically',
     'تم تعديل مبلغ سلفتك': 'Your advance amount was updated',
     // ===== طريقة التحويل وقفل طلب السلفة =====
     'الرقم على': 'Number on',

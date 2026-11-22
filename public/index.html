@@ -104,12 +104,12 @@
         <div class="mini-stat ok" style="--i:3"><b id="sDone">0</b><span data-i18n="اتحلت">اتحلت</span></div>
       </section>
 
-      <!-- الغرامات: تظهر بس لو فيه غرامة، بشكل واضح وبسيط -->
+      <!-- الغرامات والإرجاعات: تظهر بس لو فيه حركة، بشكل واضح وبسيط -->
       <section class="glass fines-card hidden" id="finesBox" style="animation-delay:.12s">
         <div class="fines-head">
           <span class="fines-title">
             <span class="fines-ic" aria-hidden="true"><i data-ico="alert"></i></span>
-            <span>غرامات عليك</span>
+            <span>غرامات وإرجاعات</span>
           </span>
           <span class="fines-total" id="finesTotal"></span>
         </div>
@@ -906,37 +906,48 @@
       const n = Number(v) || 0;
       if (sign === '-') return n ? '-' + Math.abs(n).toFixed(0) : '0';
       if (sign === '+') return n ? '+' + n.toFixed(0) : '0';
+      if (sign === '±') return n ? (n > 0 ? '+' : '-') + Math.abs(n).toFixed(0) : '0';
       return n.toFixed(0);
     }
 
-    // كارت الغرامات: يظهر بس لو فيه غرامة، وفيه السبب اللي كتبه الأدمن
+    // كارت الغرامات والإرجاعات: يظهر بس لو فيه حركة، وفيه السبب اللي كتبه الأدمن
     function renderMyFines(rows) {
       const box = $('finesBox');
       if (!box) return;
-      const fines = (rows || []).filter(r => Math.abs(Number(r.fine) || 0) > 0);
-      if (!fines.length) {
+      const moves = (rows || []).filter(r => Math.abs(Number(r.fine) || 0) > 0);
+      if (!moves.length) {
         box.classList.add('hidden');
         $('finesList').innerHTML = '';
         $('finesTotal').textContent = '';
         return;
       }
-      const total = fines.reduce((t, r) => t + Math.abs(Number(r.fine) || 0), 0);
-      $('finesTotal').innerHTML = `إجمالي <span class="num-dir">${total.toFixed(0)}</span> ج`;
-      $('finesList').innerHTML = fines.map(r => {
+      const sumBy = (refund) => moves.reduce((t, r) =>
+        t + ((Number(r.fine) > 0) === refund ? Math.abs(Number(r.fine) || 0) : 0), 0);
+      const totalFines = sumBy(false), totalRefunds = sumBy(true);
+      const totalEl = $('finesTotal');
+      const parts = [];
+      if (totalFines) parts.push(`غرامات <span class="num-dir">${totalFines.toFixed(0)}</span> ج`);
+      if (totalRefunds) parts.push(`<span class="ft-refund">إرجاع <span class="num-dir">+${totalRefunds.toFixed(0)}</span> ج</span>`);
+      totalEl.innerHTML = parts.join(' · ');
+      totalEl.classList.toggle('ok', !totalFines && totalRefunds > 0);
+      $('finesList').innerHTML = moves.map(r => {
         const reason = String(r.fine_reason || '').trim();
+        const refund = Number(r.fine) > 0;
         // اسم الأسبوع من الشيت — من غير أي تفاصيل تقنية زيادة
         const week = String(r.period || r.file_title || 'أسبوع')
           .replace(/\s+\)/g, ')').replace(/\s+/g, ' ').trim();
         return `
-        <div class="fine-item">
+        <div class="fine-item ${refund ? 'refund' : ''}">
           <div class="fine-item-top">
             <span class="fine-week">${DAS.esc(week)}</span>
-            <span class="fine-amount"><span class="num-dir">-${Math.abs(Number(r.fine)).toFixed(0)}</span> ج</span>
+            <span class="fine-type">${refund ? 'إرجاع غرامة' : 'غرامة'}</span>
+            <span class="fine-amount">${refund ? '+' : '-'}${Math.abs(Number(r.fine)).toFixed(0)} ج</span>
           </div>
+          ${(reason || !refund) ? `
           <div class="fine-reason ${reason ? '' : 'missing'}">
-            <b>السبب:</b>
+            <b>${refund ? 'سبب الإرجاع:' : 'السبب:'}</b>
             <span ${reason ? 'data-i18n-raw' : ''}>${reason ? DAS.esc(reason) : 'لسه متسجلش — كلّم الإدارة لو محتاج توضيح.'}</span>
-          </div>
+          </div>` : ''}
         </div>`;
       }).join('');
       box.classList.remove('hidden');
@@ -972,21 +983,30 @@
           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(82px,1fr));gap:8px 10px;margin:10px 0; padding:10px 12px; background:color-mix(in srgb, var(--text) 4%, transparent); border-radius:12px">
             ${grid.map(([key, label, sign]) => {
               const n = Number(r[key]) || 0;
+              // الغرامة: الموجب إرجاع (أخضر)، السالب غرامة (أحمر)
+              const isFine = key === 'fine';
+              const shownLabel = isFine && n > 0 ? 'إرجاع غرامة' : label;
+              const color = sign === '-' && n ? 'color:var(--bad)'
+                : sign === '+' && n ? 'color:var(--ok)'
+                : sign === '±' && n ? (n > 0 ? 'color:var(--ok)' : 'color:var(--bad)')
+                : '';
               return `
               <div style="text-align:center">
-                <div style="font-size:10.5px;color:var(--text-2);font-weight:600">${DAS.esc(label)}</div>
-                <div class="pay-val" style="${sign === '-' && n ? 'color:var(--bad)' : sign === '+' && n ? 'color:var(--ok)' : ''}">
+                <div style="font-size:10.5px;color:var(--text-2);font-weight:600">${DAS.esc(shownLabel)}</div>
+                <div class="pay-val" style="${color}">
                   ${payrollSigned(n, sign)}
                 </div>
               </div>`;
             }).join('')}
           </div>
           ${Math.abs(Number(r.fine) || 0) > 0 ? `
-            <div class="fine-note">
-              ${DAS.icon('alert')}
+            <div class="fine-note ${Number(r.fine) > 0 ? 'refund' : ''}">
+              ${DAS.icon(Number(r.fine) > 0 ? 'checkCircle' : 'alert')}
               <span>${String(r.fine_reason || '').trim()
-                ? 'سبب الغرامة: <b data-i18n-raw>' + DAS.esc(r.fine_reason) + '</b>'
-                : 'الغرامة متسجلة من غير سبب لسه — كلّم الإدارة لو محتاج توضيح.'}</span>
+                ? (Number(r.fine) > 0 ? 'سبب إرجاع الغرامة: ' : 'سبب الغرامة: ') + '<b data-i18n-raw>' + DAS.esc(r.fine_reason) + '</b>'
+                : (Number(r.fine) > 0
+                  ? 'إرجاع غرامة <b class="num-dir">+' + Math.abs(Number(r.fine)).toFixed(0) + ' ج</b> — السبب لسه متسجلش.'
+                  : 'الغرامة متسجلة من غير سبب لسه — كلّم الإدارة لو محتاج توضيح.')}</span>
             </div>` : ''}
           <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;padding:0 4px">
             <div class="meta" style="margin:0">

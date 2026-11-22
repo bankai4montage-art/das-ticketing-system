@@ -76,7 +76,9 @@ try {
   const AH = { 'x-admin-token': admin.data.token };
 
   const CODE = 'LIVE001';
+  const REF_CODE = 'LIVE002';
   ok('إضافة مندوب', (await req('/api/admin/couriers', j('POST', { das_code: CODE, name: 'مندوب اختبار' }, AH))).status === 200);
+  ok('إضافة مندوب تاني لإرجاع الغرامة', (await req('/api/admin/couriers', j('POST', { das_code: REF_CODE, name: 'مندوب إرجاع' }, AH))).status === 200);
 
   const ticket = await req('/api/tickets', j('POST', {
     das_code: CODE, category: 'الشيفت', sub_type: 'غياب اتسجل غلط', description: 'اختبار لايف'
@@ -155,7 +157,10 @@ try {
   /* -------- 6) رفع القبض: ملف مخفي لحد ما الأدمن يعرضه = تنبيه للمندوب -------- */
   const upload = await req('/api/admin/payroll/upload', j('POST', {
     title: 'أسبوع اختبار', period: '2026-W44',
-    rows: [{ 'Rider ID': CODE, 'Rider Name': 'مندوب اختبار', Zone: 'QCD 1', 'الباقى': '3000', 'الباقي بعد خصم الرسوم': '2800' }]
+    rows: [
+      { 'Rider ID': CODE, 'Rider Name': 'مندوب اختبار', Zone: 'QCD 1', 'غرامة': '-150', 'الباقى': '3000', 'الباقي بعد خصم الرسوم': '2800' },
+      { 'Rider ID': REF_CODE, 'Rider Name': 'مندوب إرجاع', Zone: 'QCD 1', 'غرامة': '200', 'الباقى': '1200', 'الباقي بعد خصم الرسوم': '1150' }
+    ]
   }, AH));
   ok('رفع ملف القبض', upload.status === 200 && upload.data.ok, JSON.stringify(upload.data));
   ok('الملف بيترفع مخفي افتراضيًا', upload.data.published === false);
@@ -172,6 +177,21 @@ try {
   ok('تنبيه قبض وصل للمندوب بعد العرض', payNotes.length === 1, payNotes[0] && payNotes[0].body);
   const shownPay = await req(`/api/courier/payroll/${CODE}`);
   ok('تفاصيل القبض ظهرت للمندوب بعد العرض', (shownPay.data.payroll || []).length === 1);
+
+  /* -------- 6-ب) عمود الغرامة: السالب غرامة والموجب إرجاع غرامة -------- */
+  const finesList = (await req('/api/admin/payroll/fines', { headers: AH })).data.fines || [];
+  const fineMove = finesList.find((f) => f.rider_id === CODE);
+  const refundMove = finesList.find((f) => f.rider_id === REF_CODE);
+  ok('الغرامة السالبة اتحددت كغرامة', fineMove && Number(fineMove.fine) === -150 && fineMove.fine_type === 'fine');
+  ok('القيمة الموجبة اتحددت كإرجاع غرامة', refundMove && Number(refundMove.fine) === 200 && refundMove.fine_type === 'refund');
+  const refBefore = (await req(`/api/courier/notifications/${REF_CODE}`)).data;
+  ok('مفيش تنبيه غرامة للمندوب قبل تسجيل السبب', (refBefore.notifications || []).filter((n) => n.kind === 'fine').length === 0);
+  await req(`/api/admin/payroll/rows/${refundMove.id}/fine-reason`, j('PUT', { reason: 'الغرامة اتخصمت بالغلط ورجعت' }, AH));
+  await sleep(500);
+  const refBox = (await req(`/api/courier/notifications/${REF_CODE}`)).data;
+  const refundNotes = (refBox.notifications || []).filter((n) => n.kind === 'fine');
+  ok('تنبيه إرجاع الغرامة وصل بعنوان واضح', refundNotes.length === 1 && refundNotes[0].title.includes('إرجاع غرامة'),
+    refundNotes[0] && refundNotes[0].title);
 
   /* -------- 7) الكروت: حدث لايف -------- */
   const sinceCards = (await req('/api/events?wait=0')).data.rev;

@@ -423,16 +423,23 @@ html.scrolling .orb, html.scrolling .bg-fx::before { animation-play-state: pause
 .fines-ic { width: 28px; height: 28px; border-radius: 9px; display: inline-flex; align-items: center; justify-content: center; background: var(--bad-soft); color: var(--bad); flex-shrink: 0; }
 .fines-ic .ico { width: 16px; height: 16px; }
 .fines-total { font-size: 12.5px; font-weight: 800; color: var(--bad); background: var(--bad-soft); border: 1px solid color-mix(in srgb, var(--bad) 22%, transparent); padding: 3px 10px; border-radius: 999px; white-space: nowrap; }
+.fines-total.ok { color: var(--ok); background: var(--ok-soft); border-color: color-mix(in srgb, var(--ok) 24%, transparent); }
+.fines-total .ft-refund { color: var(--ok); }
 .fine-list { display: flex; flex-direction: column; gap: 8px; }
 .fine-item { padding: 10px 12px; border-radius: 12px; background: var(--surface); border: 1px solid color-mix(in srgb, var(--bad) 18%, var(--border)); }
+.fine-item.refund { border-color: color-mix(in srgb, var(--ok) 24%, var(--border)); }
 .fine-item-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .fine-week { font-size: 11px; font-weight: 700; color: var(--text-3); }
+.fine-type { font-size: 10.5px; font-weight: 800; color: var(--bad); background: var(--bad-soft); border-radius: 999px; padding: 2px 8px; }
+.fine-item.refund .fine-type { color: var(--ok); background: var(--ok-soft); }
 .fine-amount { color: var(--bad); font-weight: 800; font-size: 16px; white-space: nowrap; }
+.fine-item.refund .fine-amount { color: var(--ok); }
 .fine-reason { margin-top: 6px; font-size: 13px; color: var(--text); line-height: 1.65; }
 .fine-reason b { color: var(--text-2); font-weight: 800; margin-inline-end: 4px; }
 .fine-reason.missing { color: var(--text-3); }
 .fine-reason.missing b { color: var(--text-3); }
 .fine-note { display: flex; align-items: flex-start; gap: 7px; margin: 0 0 10px; padding: 8px 10px; border-radius: 10px; background: var(--bad-soft); border: 1px solid color-mix(in srgb, var(--bad) 16%, transparent); color: var(--bad); font-size: 12px; line-height: 1.6; }
+.fine-note.refund { background: var(--ok-soft); border-color: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--ok); }
 .fine-note .ico { width: 14px; height: 14px; flex-shrink: 0; margin-top: 2px; }
 .fine-note b { font-weight: 800; }
 .ticket-list { display: flex; flex-direction: column; gap: 14px; }

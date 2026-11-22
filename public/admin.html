@@ -418,7 +418,7 @@
 
         <section class="glass adv-head rise">
           <div>
-            <b>الغرامات — مين عليه خصم وليه</b>
+            <b>الغرامات وإرجاعاتها — مين عليه خصم وليه</b>
             <div class="adv-summary" id="finesSummary">—</div>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
@@ -437,9 +437,15 @@
           </div>
         </section>
 
+        <div class="chips adv-status-filters rise" id="finesTypeChips" aria-label="نوع الحركة">
+          <button class="chip active" data-fine-type="all">الكل</button>
+          <button class="chip" data-fine-type="fine">غرامات</button>
+          <button class="chip" data-fine-type="refund">إرجاع غرامة</button>
+        </div>
+
         <div class="hint" style="margin-bottom:12px;display:flex;align-items:flex-start;gap:8px">
           <i data-ico="alert"></i>
-          كل غرامة بتنزل من شيت القبض تلقائي. اكتب السبب هنا واضغط «حفظ» — هيظهر للمندوب في صفحته فورًا، وهيوصله تنبيه في الجرس.
+          كل حركة في عمود الغرامة بتنزل من شيت القبض تلقائي: القيمة السالبة غرامة، والموجبة إرجاع غرامة. اكتب السبب هنا واضغط «حفظ» — هيظهر للمندوب في صفحته فورًا، وهيوصله تنبيه في الجرس.
         </div>
 
         <section class="glass table-wrap rise">
@@ -2928,6 +2934,7 @@
     let payrollBranchFilter = 'all';
     let allFines = [], finesSig = null, filterFineBranch = 'all';
     let filterFineWeek = 'all', finesWeekSig = '', fineMissingOnly = false;
+    let filterFineType = 'all';
 
     async function loadPayrollFiles(force) {
       let authed = '';
@@ -3050,6 +3057,7 @@
       let txt;
       if (sign === '-') txt = n ? '-' + Math.abs(n).toFixed(0) : '—';
       else if (sign === '+') txt = n ? '+' + n.toFixed(0) : '0';
+      else if (sign === '±') txt = n ? (n > 0 ? '+' : '-') + Math.abs(n).toFixed(0) : '—';
       else txt = n.toFixed(0);
       // direction:ltr عشان السالب يظهر قبل الرقم صح في واجهة عربي RTL
       return txt === '—' ? '—' : `<span class="num-dir">${txt}</span>`;
@@ -3073,7 +3081,10 @@
           <td><span class="strong">${DAS.esc(r.rider_name)}</span></td>
           ${fields.map(([key, , sign]) => {
             const n = Number(r[key]) || 0;
-            const color = sign === '-' && n ? 'color:var(--bad)' : (sign === '+' && n ? 'color:var(--ok)' : '');
+            const color = sign === '-' && n ? 'color:var(--bad)'
+              : sign === '+' && n ? 'color:var(--ok)'
+              : sign === '±' && n ? (n > 0 ? 'color:var(--ok)' : 'color:var(--bad)')
+              : '';
             return `<td class="num"${color ? ` style="${color}"` : ''}>${payrollCell(r[key], sign)}</td>`;
           }).join('')}
           <td class="mono" style="font-size:11px">${DAS.esc(r.wallet)}${r.wallet_type ? ' · ' + DAS.esc(r.wallet_type) : ''}</td>
@@ -3082,10 +3093,14 @@
     }
 
     // ================= الغرامات =================
+    // إشارة عمود الغرامة في الشيت: السالب غرامة (خصم)، والموجب إرجاع غرامة
+    function fineIsRefund(f) { return Number(f && f.fine) > 0; }
     function fineAmount(v) { return Math.abs(Number(v) || 0); }
+    function fineTypeLabel(f) { return fineIsRefund(f) ? 'إرجاع غرامة' : 'غرامة'; }
 
     function updateFineBadge() {
-      const missing = allFines.filter(f => !String(f.fine_reason || '').trim()).length;
+      // الإرجاعات مش محتاجة سبب — العدّاد للغرامات الفعلية بس
+      const missing = allFines.filter(f => !fineIsRefund(f) && !String(f.fine_reason || '').trim()).length;
       setTabBadge('badgeFines', missing, 'غرامات من غير سبب');
     }
 
@@ -3120,6 +3135,13 @@
       fineMissingOnly = !fineMissingOnly;
       finesMissingToggle.classList.toggle('active', fineMissingOnly);
       renderFines();
+    });
+    document.querySelectorAll('#finesTypeChips .chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        filterFineType = chip.dataset.fineType || 'all';
+        document.querySelectorAll('#finesTypeChips .chip').forEach(c => c.classList.toggle('active', c === chip));
+        renderFines();
+      });
     });
 
     function fineBranchOf(f) { return DAS.payrollBranchInfo(f.branch).key || ''; }
@@ -3158,36 +3180,42 @@
     }
 
     function finesSummaryText(visible) {
-      const total = allFines.reduce((t, f) => t + fineAmount(f.fine), 0);
+      const sum = (list, refund) => list.reduce((t, f) =>
+        t + (fineIsRefund(f) === refund ? fineAmount(f.fine) : 0), 0);
+      const totalFines = sum(allFines, false);
+      const totalRefunds = sum(allFines, true);
+      const net = totalFines - totalRefunds;
       const couriers = new Set(allFines.map(f => String(f.rider_id || f.rider_name || '').toUpperCase())).size;
-      const missing = allFines.filter(f => !String(f.fine_reason || '').trim()).length;
-      let text = `${allFines.length} غرامة على ${couriers} مندوب — إجمالي ${total.toFixed(0)} ج` +
-        (missing ? ` — ${missing} بدون سبب` : ' — كل الأسباب متسجلة');
+      const missing = allFines.filter(f => !fineIsRefund(f) && !String(f.fine_reason || '').trim()).length;
+      const refundsCount = allFines.filter(fineIsRefund).length;
+      let text = `${totalFines.toFixed(0)} ج غرامات — ${totalRefunds.toFixed(0)} ج إرجاع غرامة (${refundsCount})` +
+        ` · الصافي ${net.toFixed(0)} ج على ${couriers} مندوب` +
+        (missing ? ` — ${missing} غرامة بدون سبب` : ' — كل الأسباب متسجلة');
       if (filterFineWeek !== 'all') {
         const wk = allFines.filter(f => fineWeekOf(f) === filterFineWeek);
-        const wkTotal = wk.reduce((t, f) => t + fineAmount(f.fine), 0);
-        const wkMissing = wk.filter(f => !String(f.fine_reason || '').trim()).length;
-        text += ` · الأسبوع المختار: ${wk.length} غرامة (${wkTotal.toFixed(0)} ج` +
-          (wkMissing ? ` — ${wkMissing} بدون سبب` : '') + ')';
+        const wkMissing = wk.filter(f => !fineIsRefund(f) && !String(f.fine_reason || '').trim()).length;
+        text += ` · الأسبوع المختار: ${sum(wk, false).toFixed(0)} ج غرامات، ${sum(wk, true).toFixed(0)} ج إرجاع` +
+          (wkMissing ? ` — ${wkMissing} بدون سبب` : '');
       }
-      if (Array.isArray(visible) && (filterFineWeek !== 'all' || filterFineBranch !== 'all' || fineMissingOnly)) {
-        const vTotal = visible.reduce((t, f) => t + fineAmount(f.fine), 0);
-        const vMissing = visible.filter(f => !String(f.fine_reason || '').trim()).length;
-        text += ` · المعروض الآن: ${visible.length} غرامة (${vTotal.toFixed(0)} ج` +
+      if (Array.isArray(visible) && (filterFineWeek !== 'all' || filterFineBranch !== 'all' || fineMissingOnly || filterFineType !== 'all')) {
+        const vMissing = visible.filter(f => !fineIsRefund(f) && !String(f.fine_reason || '').trim()).length;
+        text += ` · المعروض الآن: ${visible.length} حركة (${sum(visible, false).toFixed(0)} ج غرامات، ${sum(visible, true).toFixed(0)} ج إرجاع` +
           (vMissing ? ` — ${vMissing} بدون سبب` : '') + ')';
       }
       return text;
     }
 
-    // الغرامات المعروضة حاليًا بعد كل الفلاتر (أسبوع + فرع + بدون سبب + بحث)
+    // الغرامات المعروضة حاليًا بعد كل الفلاتر (نوع + أسبوع + فرع + بدون سبب + بحث)
     function filteredFines() {
       const q = ($('finesSearchInput') && $('finesSearchInput').value || '').trim().toLowerCase();
       return allFines.filter(f => {
         if (filterFineWeek !== 'all' && fineWeekOf(f) !== filterFineWeek) return false;
         if (filterFineBranch !== 'all' && fineBranchOf(f) !== filterFineBranch) return false;
-        if (fineMissingOnly && String(f.fine_reason || '').trim()) return false;
+        if (filterFineType === 'fine' && fineIsRefund(f)) return false;
+        if (filterFineType === 'refund' && !fineIsRefund(f)) return false;
+        if (fineMissingOnly && (fineIsRefund(f) || String(f.fine_reason || '').trim())) return false;
         if (!q) return true;
-        return [f.rider_name, f.rider_id, f.period, f.zone, f.fine_reason]
+        return [f.rider_name, f.rider_id, f.period, f.zone, f.fine_reason, fineTypeLabel(f)]
           .some(v => String(v || '').toLowerCase().includes(q));
       });
     }
@@ -3215,10 +3243,11 @@
         if (!badge) { badge = document.createElement('span'); badge.className = 'chip-count'; chip.appendChild(badge); }
         badge.textContent = counts[b] == null ? 0 : counts[b];
       });
-      // عدّاد «بدون سبب» بيتحسب على الأسبوع + الفرع + البحث الحاليين
+      // عدّاد «بدون سبب» بيتحسب على الأسبوع + الفرع + البحث الحاليين (الغرامات بس مش الإرجاعات)
       const missingScope = scoped.filter(f =>
+        !fineIsRefund(f) && String(f.fine_reason || '').trim() === '' &&
         (filterFineBranch === 'all' || fineBranchOf(f) === filterFineBranch) &&
-        !String(f.fine_reason || '').trim());
+        (filterFineType === 'all' || (filterFineType === 'refund') === fineIsRefund(f)));
       const missingToggle = $('finesMissingToggle');
       if (missingToggle) {
         let badge = missingToggle.querySelector('.chip-count');
@@ -3226,20 +3255,34 @@
         badge.textContent = missingScope.length;
         missingToggle.title = DAS.t('غرامات من غير سبب') + ': ' + missingScope.length;
       }
+      // عدادات نوع الحركة (الكل / غرامات / إرجاعات) — بتتحسب على الأسبوع والفرع والبحث بدون نوع
+      const typeScoped = scoped.filter(f =>
+        (filterFineBranch === 'all' || fineBranchOf(f) === filterFineBranch) &&
+        (!fineMissingOnly || (!fineIsRefund(f) && !String(f.fine_reason || '').trim())));
+      const typeCounts = { all: typeScoped.length, fine: 0, refund: 0 };
+      typeScoped.forEach(f => { typeCounts[fineIsRefund(f) ? 'refund' : 'fine']++; });
+      document.querySelectorAll('#finesTypeChips .chip').forEach(chip => {
+        const t = chip.dataset.fineType || 'all';
+        let badge = chip.querySelector('.chip-count');
+        if (!badge) { badge = document.createElement('span'); badge.className = 'chip-count'; chip.appendChild(badge); }
+        badge.textContent = typeCounts[t] == null ? 0 : typeCounts[t];
+        chip.classList.toggle('active', t === filterFineType);
+      });
       $('finesSummary').textContent = allFines.length ? finesSummaryText(filteredFines()) : 'مفيش غرامات في الشيتات المرفوعة';
 
       const rows = filteredFines();
       const tbody = $('finesTableBody');
       if (!rows.length) {
-        tbody.innerHTML = `<tr><td colspan="6"><div class="empty fade"><div class="eic">${DAS.icon('alert', 'ico-lg')}</div><b>${allFines.length ? 'مفيش نتائج مطابقة' : 'مفيش غرامات لسه'}</b>${allFines.length ? 'جرّب فلتر أو بحث مختلف' : 'أي غرامة في شيت القبض هتظهر هنا تلقائي'}</div></td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="6"><div class="empty fade"><div class="eic">${DAS.icon('alert', 'ico-lg')}</div><b>${allFines.length ? 'مفيش نتائج مطابقة' : 'مفيش غرامات لسه'}</b>${allFines.length ? 'جرّب فلتر أو بحث مختلف' : 'أي حركة في عمود الغرامة هتظهر هنا تلقائي'}</div></td></tr>`;
         updateFineBadge();
         return;
       }
       tbody.innerHTML = rows.map(f => {
         const reason = String(f.fine_reason || '');
+        const refund = fineIsRefund(f);
         const filled = !!reason.trim();
         return `
-        <tr id="fine-row-${f.id}" class="${filled ? '' : 'fine-missing'}">
+        <tr id="fine-row-${f.id}" class="${filled || refund ? '' : 'fine-missing'}">
           <td data-label="المندوب">
             <div class="cell-courier">
               <div class="av" style="background:${DAS.gradient(f.rider_id || f.rider_name)}" data-i18n-raw>${DAS.esc(DAS.initials(f.rider_name))}</div>
@@ -3248,10 +3291,15 @@
           </td>
           <td data-label="الفرع">${DAS.payrollBranchTag(f.branch) || '<span style="color:var(--text-3)">—</span>'}</td>
           <td data-label="الأسبوع"><span class="week-tag">${DAS.esc(fineWeekOf(f))}</span>${f.zone ? `<div class="meta">${DAS.esc(f.zone)}</div>` : ''}</td>
-          <td data-label="الغرامة"><span class="amt" style="color:var(--bad);white-space:nowrap"><span class="num-dir">-${fineAmount(f.fine).toFixed(0)}</span> ج</span></td>
+          <td data-label="الغرامة">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              <span class="badge ${refund ? 'ok' : 'bad'}"><span class="dot"></span>${refund ? 'إرجاع غرامة' : 'غرامة'}</span>
+              <span class="amt" style="color:var(--${refund ? 'ok' : 'bad'});white-space:nowrap"><span class="num-dir">${refund ? '+' : '-'}${fineAmount(f.fine).toFixed(0)}</span> ج</span>
+            </div>
+          </td>
           <td data-label="سبب الغرامة">
             <input type="text" id="fine-reason-${f.id}" class="input note-input" value="${DAS.esc(reason)}"
-              maxlength="300" placeholder="اكتب سبب الغرامة..." onkeydown="if(event.key==='Enter')this.blur()">
+              maxlength="300" placeholder="${refund ? 'اكتب سبب إرجاع الغرامة...' : 'اكتب سبب الغرامة...'}" onkeydown="if(event.key==='Enter')this.blur()">
           </td>
           <td data-label="الحفظ">
             <div class="fine-save">
@@ -3283,12 +3331,18 @@
           setTimeout(() => tick.classList.remove('show'), 1800);
         }
         const tr = $(`fine-row-${id}`);
-        if (tr) tr.classList.toggle('fine-missing', !reason);
+        if (tr) {
+          const refund = row ? fineIsRefund(row) : false;
+          tr.classList.toggle('fine-missing', !reason && !refund);
+        }
         if (fineMissingOnly && reason) renderFines();
         updateFineBadge();
         $('finesSummary').textContent = finesSummaryText(filteredFines());
         finesSig = JSON.stringify(allFines.map(f => [f.id, f.fine, f.fine_reason]));
-        DAS.toast(reason ? 'سبب الغرامة اتسجل — المندوب هيشوفه فورًا' : 'تم مسح سبب الغرامة');
+        const isRefund = row ? fineIsRefund(row) : false;
+        DAS.toast(reason
+          ? (isRefund ? 'سبب إرجاع الغرامة اتسجل — المندوب هيشوفه فورًا' : 'سبب الغرامة اتسجل — المندوب هيشوفه فورًا')
+          : 'تم مسح سبب الحركة');
       } catch (e) {
         DAS.toast(e.message || 'فشل حفظ سبب الغرامة', 'err');
       }

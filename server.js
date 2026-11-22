@@ -1420,6 +1420,7 @@ app.get('/api/admin/payroll/fines', (req, res) => {
   if (!safeEq(String(req.headers['x-admin-token'] || ''), ADMIN_TOKEN)) return res.status(401).json({ error: 'غير مصرح' });
   db.all(`SELECT p.id, p.file_id, p.branch, p.period, p.zone, p.rider_id, p.rider_name,
                  p.fine, p.fine_reason, p.wallet, p.wallet_type,
+                 CASE WHEN COALESCE(p.fine, 0) > 0 THEN 'refund' ELSE 'fine' END AS fine_type,
                  f.title AS file_title, f.uploaded_at AS file_uploaded_at
             FROM payroll p LEFT JOIN payroll_files f ON f.id = p.file_id
            WHERE ABS(COALESCE(p.fine, 0)) > 0
@@ -1460,13 +1461,15 @@ app.put('/api/admin/payroll/rows/:id/fine-reason', (req, res) => {
       BUS.publish('payroll', { rider_id: row.rider_id, file_id: row.file_id, reason: 'fine-reason' });
       if (!reason) return;
       const amount = Math.abs(Number(row.fine) || 0);
+      const isRefund = Number(row.fine) > 0;
       payrollCourierCode(row, (code) => {
         if (!code) return;
         // لو ملف القبض لسه مخفي عن المناديب، السبب يتحفظ بس مفيش تنبيه
         db.get('SELECT published FROM payroll_files WHERE id = ?', [row.file_id], (fErr, f) => {
           if (fErr || !f || Number(f.published) !== 1) return;
-          notifyCourier(code, 'غرامة على قبضك — ' + amount.toFixed(0) + ' ج', reason,
-            { kind: 'fine', ref: 'fine:' + row.id });
+          notifyCourier(code,
+            (isRefund ? 'إرجاع غرامة في قبضك — ' : 'غرامة على قبضك — ') + amount.toFixed(0) + ' ج',
+            reason, { kind: 'fine', ref: 'fine:' + row.id });
         });
       });
     });

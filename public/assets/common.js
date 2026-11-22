@@ -297,6 +297,17 @@
 
     // ===== فروع القبض: كل فرع له شيت وتفاصيل مختلفة =====
     // QCD 1 · المندرة / QCD 2 · سموحة — الترتيب ده هو اللي بيحدد أعمدة العرض
+
+    // إشارة الغرامة في شيت القبض: السالب = غرامة (خصم)، الموجب = إرجاع غرامة
+    fineIsRefund(v) { return Number(v) > 0; },
+    fineAbs(v) { return Math.abs(Number(v) || 0); },
+    fineLabel(v) { return this.fineIsRefund(v) ? 'إرجاع غرامة' : 'غرامة'; },
+    fineSigned(v) {
+      const n = Number(v) || 0;
+      if (!n) return '0';
+      return (n > 0 ? '+' : '-') + Math.abs(n).toFixed(0);
+    },
+
     payrollBranchInfo(branch) {
       const b = String(branch || '').trim().toUpperCase().replace(/\s+/g, ' ');
       if (b === 'QCD 2' || b === 'QCD2') return { key: 'QCD 2', code: 'QCD 2', area: 'سموحة', cls: 'qcd2', license: true };
@@ -324,7 +335,7 @@
         ['holiday_bonus', 'بونص أجازات', '+'],
         ['distance_bonus', 'بونص مسافة', '+'], ['tibas', 'تبس', '+'],
         ['prev_taken', 'قبض سابق', ''], ['office_bonus', 'بونص مكتب', '+'],
-        ['advance_deduct', 'سلفة', '-'], ['fine', 'غرامة', '-'],
+        ['advance_deduct', 'سلفة', '-'], ['fine', 'غرامة/إرجاع', '±'],
         ['prior_debt', 'ديون سابقة', '-']
       ];
       // رخصة الإعلان موجودة في شيت QCD 2 بس
@@ -340,7 +351,7 @@
         ['days', 'أيام'], ['orders_n', 'أوردرات'],
         ['holiday_bonus', 'بونص أجازات', '+'],
         ['total_pilot', 'اجمالي مرتب'],
-        ['advance_deduct', 'سلفة', '-'], ['fine', 'غرامة', '-'],
+        ['advance_deduct', 'سلفة', '-'], ['fine', 'غرامة/إرجاع', '±'],
         ['prior_debt', 'ديون سابقة', '-']
       ];
       if (info.license) list.push(['license', 'رخصة إعلان', '-']);
